@@ -37,9 +37,10 @@ struct HttpServerOptions {
 HttpResponse json_response(std::string body, int status = 200);
 HttpResponse error_response(int status, const std::string & message, const std::string & type);
 
-// Blocking HTTP/1.1 server. Each accepted connection is handled on a joined
-// worker thread; responses close the connection. Content-Length bodies are
-// bounded before allocation and transfer-coding is deliberately rejected.
+// Blocking HTTP/1.1 server. Each accepted connection is handled on its own
+// worker thread, joined once it finishes; responses close the connection.
+// Content-Length bodies are bounded before allocation and transfer-coding is
+// deliberately rejected.
 void serve_http(
     const HttpServerOptions & options,
     const HttpHandler & handler,

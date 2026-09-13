@@ -134,7 +134,13 @@ Q6_K. Norms, biases, and the flow branch's latent bridges, timestep MLP, and
 latent position table keep their source storage. Metadata, including the
 checkpoint fingerprint LoRA adapters bind to, is preserved.
 `yue2-quant-check` dequantizes every converted tensor and exits nonzero if any
-falls below the cosine threshold.
+falls below the cosine threshold. `yue2-quant-eval` compares generation behavior
+against the reference one stage at a time:
+- teacher-forced AR codec logits, with KL divergence and top-k agreement;
+- fixed-noise flow latents and decoded audio, with waveform and log-spectral
+  distance;
+- official fixtures, when supplied;
+- optional seeded renders for listening.
 
 The VAE and the transcription model are refused: both stay F16/F32. The
 1.26 GiB F16 transcription model already runs on an 8 GB laptop GPU. Quantized
@@ -258,6 +264,11 @@ JUCE-style planar input PCM, and returns library-owned ABC/MIDI/events or
 waveform/intermediate buffers with matching free functions. Progress and
 cooperative cancellation are available at AR-token, flow-step, VAE-tile, and
 transcription-window boundaries. See [docs/embedding.md](docs/embedding.md).
+
+`yue2-server` exposes generation, audio-to-song covers, and transcription over
+HTTP in the async session/poll shape gary4juce uses for the other gary4local
+services. It runs on port 8007 by default, resolves models by file name, and
+releases them after each job by default. See [docs/server.md](docs/server.md).
 
 ## Models and licenses
 

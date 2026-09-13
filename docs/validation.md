@@ -41,6 +41,17 @@ working merely because a graph compiles.
 - `yue2-quant-check` on the real transcription GGUFs (F32 reference, F16
   candidate) compares all 390 converted tensors with minimum cosine 1.000000,
   exercising the streamed checker on multi-gigabyte files.
+- `yue2-server` passes an HTTP smoke test on the RTX 5070 Laptop GPU with the
+  real F16 transcription model and no generation model:
+  - **Transcription:** a 60.04-second song through `POST /transcribe` and
+    `/poll_status` returns 1,643 characters of ABC, a 2,679-byte MIDI file, and
+    the events document in 7.7 seconds, including model load.
+  - **Errors:** unknown sessions and routes return 404, malformed requests 400,
+    and wrong methods 405. A generation job fails cleanly with a readable
+    error when no generation GGUF resolves.
+  - **Job controls:** `?consume=1` removes a finished job. A queued job cancels
+    immediately. `/unload` returns 409 while a job runs, and releases a model
+    kept by `keep_models` afterwards.
 - A current-source CUDA 12.8 rebuild on the RTX 5070 Laptop GPU passes the
   real-weight F16 transcription integration test (single window plus
   four-window stitching) in 1.5 seconds and the pure-C transcription test in
@@ -179,9 +190,10 @@ uninitialized and would otherwise make the oracle itself incorrect.
 
 - Run `yue2-quant-check` on each real Q8_0/Q5_K_M/Q4_K_M file against the
   BF16 source.
-- Compare quantized AR logits and flow latents with the official fixtures.
-  The existing AR parity bound (relative RMS 0.003) is a BF16 gate; quantized
-  tiers need their own recorded tolerances and top-token agreement.
+- Run `yue2-quant-eval` with the official AR and flow fixtures. Record
+  teacher-forced codec KL, top-1 agreement, flow latent and audio error, and
+  log-spectral distance per tier. The existing AR parity bound (relative RMS
+  0.003) is a BF16 gate; quantized tiers need their own recorded tolerances.
 - Run the complete generation smoke test and listening comparisons per tier.
 - Measure peak VRAM per stage on an 8 GB GPU, including the F16 AR KV caches
   (about 0.11 MiB per token, two sessions under guidance).

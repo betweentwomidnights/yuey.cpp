@@ -18,6 +18,7 @@ option(YUE2_BUILD_SHARED "Build the stable C ABI shared library" ON)
 
 if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
     add_library(yue2-server-support STATIC
+        tools/server/base64.cpp
         tools/server/http.cpp
         tools/server/json.cpp
         tools/server/multipart.cpp
@@ -106,6 +107,10 @@ if(YUE2_BUILD_TOOLS)
 
     add_executable(yue2-quant-check tools/yue2-quant-check.cpp)
     target_link_libraries(yue2-quant-check PRIVATE yue2)
+
+    # yue2-quant-eval: teacher-forced AR, fixed-noise flow and rendered comparisons.
+    add_executable(yue2-quant-eval tools/yue2-quant-eval.cpp)
+    target_link_libraries(yue2-quant-eval PRIVATE yue2)
 
     add_executable(yue2-generate tools/yue2-generate.cpp)
     target_link_libraries(yue2-generate PRIVATE yue2)

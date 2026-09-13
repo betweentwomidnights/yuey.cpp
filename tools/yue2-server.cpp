@@ -1,43 +1,127 @@
+// yue2-server: gary4local-style HTTP service for YuE2 generation, covers, and
+// audio-to-score transcription. Every compute request returns a session id at
+// once; a single worker thread runs jobs in order and clients poll
+// /poll_status/<id>, the same contract sa3-server and the gary4local Python
+// services expose to gary4juce. See docs/server.md.
 #include "yue2/audio.h"
 #include "yue2/generation_pipeline.h"
 #include "yue2/transcription.h"
 
+#include "server/base64.h"
 #include "server/http.h"
 #include "server/json.h"
-#include "server/multipart.h"
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <csignal>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <filesystem>
+#include <initializer_list>
 #include <iostream>
-#include <locale>
 #include <limits>
+#include <locale>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
+
+namespace fs = std::filesystem;
+namespace json = yue2::server::json;
+using yue2::server::HttpRequest;
+using yue2::server::HttpResponse;
+
+constexpr int kDefaultPort = 8007;
+// The VAE emits one 64-channel latent frame per 1920 samples at 48 kHz, and
+// each semantic codec token becomes one frame.
+constexpr double kSemanticTokensPerSecond = 25.0;
+constexpr auto kFinishedJobLifetime = std::chrono::minutes(5);
+// Automatic tier selection prefers precision; small GPUs pass --encoding.
+const std::vector<std::string> kEncodingPreference = {"BF16", "F16", "Q8_0", "Q5_K_M", "Q4_K_M", "F32"};
 
 std::atomic<bool> stop_requested{false};
 
 void stop_signal(int) { stop_requested.store(true); }
 
+bool starts_with(std::string_view value, std::string_view prefix) {
+    return value.size() >= prefix.size() && value.compare(0, prefix.size(), prefix) == 0;
+}
+
+bool ends_with(std::string_view value, std::string_view suffix) {
+    return value.size() >= suffix.size() &&
+        value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string upper(std::string value) {
+    for (auto & c : value) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return value;
+}
+
+std::string environment(const char * name) {
+    const char * value = std::getenv(name);
+    return value ? std::string(value) : std::string();
+}
+
+std::string real(double value) {
+    std::ostringstream output;
+    output.imbue(std::locale::classic());
+    output.precision(17);
+    output << value;
+    return output.str();
+}
+
+std::string json_bool(bool value) { return value ? "true" : "false"; }
+
+std::string json_path(const fs::path & path) {
+    return path.empty() ? "null" : json::quote(path.string());
+}
+
+std::uint64_t random_u64() {
+    static std::mutex mutex;
+    static std::mt19937_64 generator(
+        std::random_device{}() ^
+        static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::lock_guard<std::mutex> lock(mutex);
+    return generator();
+}
+
+std::string random_session_id() {
+    char buffer[33];
+    std::snprintf(buffer, sizeof buffer, "%016llx%016llx",
+        static_cast<unsigned long long>(random_u64()), static_cast<unsigned long long>(random_u64()));
+    return buffer;
+}
+
+// ---------------------------------------------------------------------------
+// Configuration
+
 struct Configuration {
     yue2::server::HttpServerOptions http;
-    std::string transcription_model;
-    std::string generation_model;
-    std::string vae;
-    std::string tokenizer;
+    fs::path models_dir = "models";
+    fs::path adapters_dir;
+    std::string encoding = "auto";
+    fs::path generation_model;
+    fs::path vae;
+    fs::path tokenizer;
+    fs::path transcription_model;
     std::string device;
     int threads = 0;
-    std::string transcription_id = "yue2-transcription";
-    std::string generation_id = "yue2-generation";
+    bool keep_models = false;
     std::vector<yue2::LoraAdapterSpec> loras;
 };
 
@@ -48,8 +132,7 @@ bool has(int argc, char ** argv, std::string_view name) {
     return false;
 }
 
-std::string option(
-    int argc, char ** argv, std::string_view name, bool required = false) {
+std::string option(int argc, char ** argv, std::string_view name) {
     for (int index = 1; index < argc; ++index) {
         if (std::string_view(argv[index]) != name) continue;
         if (index + 1 == argc || std::string_view(argv[index + 1]).rfind("--", 0) == 0) {
@@ -57,7 +140,6 @@ std::string option(
         }
         return argv[index + 1];
     }
-    if (required) throw std::invalid_argument("missing required option " + std::string(name));
     return {};
 }
 
@@ -92,27 +174,34 @@ yue2::LoraAdapterSpec lora_spec(const std::string & value) {
 
 void usage(const char * executable) {
     std::cout
-        << "Usage: " << executable << " [model options] [server options]\n\n"
-        << "Model options:\n"
-        << "  --transcription-model PATH   Enable audio-to-ABC transcription\n"
-        << "  --model PATH --vae PATH --tokenizer PATH   Enable music generation\n"
-        << "  --lora PATH[=SCALE]          Resident generation adapter; repeatable\n"
-        << "  --device NAME                cpu, cuda, or another GGML backend\n"
+        << "Usage: " << executable << " [options]\n\n"
+        << "Models (resolved by the GGUF naming convention; loaded on first use):\n"
+        << "  --models-dir DIR             Default ./models (YUE2_MODELS_DIR)\n"
+        << "  --encoding ENC               auto, BF16, F16, F32, Q8_0, Q5_K_M, Q4_K_M (YUE2_ENCODING)\n"
+        << "  --model PATH --vae PATH --tokenizer PATH --transcription-model PATH\n"
+        << "                               Explicit files instead of resolution\n"
+        << "  --adapters-dir DIR           LoRA discovery, default models dir (YUE2_ADAPTERS_DIR)\n"
+        << "  --lora PATH[=SCALE]          Default adapter for requests without \"loras\"; repeatable\n"
+        << "  --keep-models                Keep models resident between jobs by default\n"
+        << "  --device NAME                cpu, cuda, or another GGML backend (YUE2_DEVICE)\n"
         << "  --threads N                  CPU worker threads\n\n"
-        << "Server options:\n"
+        << "Server:\n"
         << "  --host IPV4                  Bind address (default 127.0.0.1)\n"
-        << "  --port N                     Port (default 8080)\n"
-        << "  --max-body-mb N              Upload limit (default 512)\n"
-        << "  --transcription-id ID        Model id advertised by /v1/models\n"
-        << "  --generation-id ID           Model id advertised by /v1/models\n\n"
-        << "Routes: GET /health, GET /v1/models, POST /v1/audio/transcriptions,\n"
-        << "        POST /v1/music/generations, POST /v1/tasks/run\n";
+        << "  --port N                     Port (default 8007, YUE2_PORT)\n"
+        << "  --max-body-mb N              Upload limit (default 512)\n\n"
+        << "Routes: GET /health, GET /loras, POST /generate, POST /cover, POST /transcribe,\n"
+        << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload\n";
 }
 
 Configuration parse_configuration(int argc, char ** argv) {
     Configuration result;
+    const auto pick = [&](std::string_view flag, const char * variable) {
+        auto value = option(argc, argv, flag);
+        return value.empty() ? environment(variable) : value;
+    };
+    result.http.port = kDefaultPort;
     if (const auto value = option(argc, argv, "--host"); !value.empty()) result.http.host = value;
-    if (const auto value = option(argc, argv, "--port"); !value.empty()) result.http.port = std::stoi(value);
+    if (const auto value = pick("--port", "YUE2_PORT"); !value.empty()) result.http.port = std::stoi(value);
     if (const auto value = option(argc, argv, "--max-body-mb"); !value.empty()) {
         const auto megabytes = std::stoull(value);
         if (megabytes == 0 || megabytes > std::numeric_limits<std::uint64_t>::max() / (1024 * 1024)) {
@@ -120,311 +209,839 @@ Configuration parse_configuration(int argc, char ** argv) {
         }
         result.http.max_request_body_bytes = megabytes * 1024 * 1024;
     }
-    result.transcription_model = option(argc, argv, "--transcription-model");
+    if (const auto value = pick("--models-dir", "YUE2_MODELS_DIR"); !value.empty()) result.models_dir = value;
+    const auto adapters = pick("--adapters-dir", "YUE2_ADAPTERS_DIR");
+    result.adapters_dir = adapters.empty() ? result.models_dir : fs::path(adapters);
+    if (const auto value = pick("--encoding", "YUE2_ENCODING"); !value.empty()) {
+        result.encoding = upper(value) == "AUTO" ? "auto" : upper(value);
+        if (result.encoding != "auto" &&
+            std::find(kEncodingPreference.begin(), kEncodingPreference.end(), result.encoding) ==
+                kEncodingPreference.end()) {
+            throw std::invalid_argument("--encoding must be auto, BF16, F16, F32, Q8_0, Q5_K_M, or Q4_K_M");
+        }
+    }
     result.generation_model = option(argc, argv, "--model");
     result.vae = option(argc, argv, "--vae");
     result.tokenizer = option(argc, argv, "--tokenizer");
+    result.transcription_model = option(argc, argv, "--transcription-model");
     result.device = option(argc, argv, "--device");
     if (const auto value = option(argc, argv, "--threads"); !value.empty()) result.threads = std::stoi(value);
-    if (const auto value = option(argc, argv, "--transcription-id"); !value.empty()) {
-        result.transcription_id = value;
-    }
-    if (const auto value = option(argc, argv, "--generation-id"); !value.empty()) {
-        result.generation_id = value;
-    }
-    for (const auto & value : options(argc, argv, "--lora")) result.loras.push_back(lora_spec(value));
-    const bool any_generation = !result.generation_model.empty() || !result.vae.empty() || !result.tokenizer.empty();
-    const bool full_generation = !result.generation_model.empty() && !result.vae.empty() && !result.tokenizer.empty();
-    if (any_generation != full_generation) {
-        throw std::invalid_argument("generation requires --model, --vae, and --tokenizer together");
-    }
-    if (result.transcription_model.empty() && !full_generation) {
-        throw std::invalid_argument("enable transcription, generation, or both");
-    }
-    if (!full_generation && !result.loras.empty()) throw std::invalid_argument("--lora requires generation");
     if (result.threads < 0) throw std::invalid_argument("--threads cannot be negative");
+    result.keep_models = has(argc, argv, "--keep-models");
+    for (const auto & value : options(argc, argv, "--lora")) result.loras.push_back(lora_spec(value));
     return result;
 }
 
-std::string header(
-    const yue2::server::HttpRequest & request,
-    const std::string & name) {
-    const auto found = request.headers.find(name);
-    return found == request.headers.end() ? std::string{} : found->second;
+// ---------------------------------------------------------------------------
+// Model and adapter resolution
+
+std::vector<fs::path> gguf_files(const fs::path & directory) {
+    std::vector<fs::path> output;
+    std::error_code error;
+    if (!fs::is_directory(directory, error)) return output;
+    const auto collect = [&](const fs::path & folder) {
+        for (const auto & entry : fs::directory_iterator(folder, error)) {
+            if (entry.is_regular_file(error) && entry.path().extension() == ".gguf") {
+                output.push_back(entry.path());
+            }
+        }
+    };
+    collect(directory);
+    // One level deeper covers the converter's models/YuE2-3B-GGUF/ layout.
+    for (const auto & entry : fs::directory_iterator(directory, error)) {
+        if (entry.is_directory(error)) collect(entry.path());
+    }
+    std::sort(output.begin(), output.end());
+    return output;
 }
 
-std::string base64(const std::vector<std::uint8_t> & input) {
-    static constexpr char alphabet[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string output;
-    output.reserve((input.size() + 2) / 3 * 4);
-    for (std::size_t offset = 0; offset < input.size(); offset += 3) {
-        const auto remaining = input.size() - offset;
-        const std::uint32_t value = static_cast<std::uint32_t>(input[offset]) << 16 |
-            (remaining > 1 ? static_cast<std::uint32_t>(input[offset + 1]) << 8 : 0) |
-            (remaining > 2 ? input[offset + 2] : 0);
-        output.push_back(alphabet[(value >> 18) & 63]);
-        output.push_back(alphabet[(value >> 12) & 63]);
-        output.push_back(remaining > 1 ? alphabet[(value >> 6) & 63] : '=');
-        output.push_back(remaining > 2 ? alphabet[value & 63] : '=');
+std::optional<fs::path> find_component(
+    const fs::path & directory,
+    std::string_view prefix,
+    std::string_view excluded_prefix,
+    const std::vector<std::string> & encodings) {
+    const auto files = gguf_files(directory);
+    for (const auto & encoding : encodings) {
+        const std::string suffix = "-" + encoding + ".gguf";
+        for (const auto & file : files) {
+            const auto name = file.filename().string();
+            if (starts_with(name, prefix) && ends_with(name, suffix) &&
+                (excluded_prefix.empty() || !starts_with(name, excluded_prefix))) {
+                return file;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+struct GenerationPaths {
+    fs::path model;
+    fs::path vae;
+    fs::path tokenizer;
+};
+
+GenerationPaths resolve_generation(const Configuration & configuration) {
+    GenerationPaths paths;
+    if (!configuration.generation_model.empty()) {
+        paths.model = configuration.generation_model;
+    } else {
+        const auto encodings = configuration.encoding == "auto"
+            ? kEncodingPreference
+            : std::vector<std::string>{configuration.encoding};
+        const auto found = find_component(configuration.models_dir, "yue2-", "yue2-vae-", encodings);
+        if (!found) {
+            throw std::runtime_error(
+                "no YuE2 generation GGUF (" +
+                (configuration.encoding == "auto" ? std::string("any encoding") : configuration.encoding) +
+                ") under " + configuration.models_dir.string());
+        }
+        paths.model = *found;
+    }
+    if (!configuration.vae.empty()) {
+        paths.vae = configuration.vae;
+    } else if (const auto found = find_component(configuration.models_dir, "yue2-vae-", "", {"F16", "F32"})) {
+        paths.vae = *found;
+    } else {
+        throw std::runtime_error("no yue2-vae GGUF under " + configuration.models_dir.string());
+    }
+    if (!configuration.tokenizer.empty()) {
+        paths.tokenizer = configuration.tokenizer;
+    } else {
+        const auto folder = paths.model.parent_path();
+        for (const fs::path & candidate : {
+                 folder / "sidecars" / "yue2-qwen.tiktoken", folder / "qwen.tiktoken",
+                 configuration.models_dir / "sidecars" / "yue2-qwen.tiktoken",
+                 configuration.models_dir / "qwen.tiktoken"}) {
+            std::error_code error;
+            if (fs::is_regular_file(candidate, error)) {
+                paths.tokenizer = candidate;
+                break;
+            }
+        }
+        if (paths.tokenizer.empty()) {
+            throw std::runtime_error("no qwen.tiktoken beside " + paths.model.string());
+        }
+    }
+    return paths;
+}
+
+fs::path resolve_transcription(const Configuration & configuration) {
+    if (!configuration.transcription_model.empty()) return configuration.transcription_model;
+    if (const auto found = find_component(configuration.models_dir, "sheetsage2-mert2-", "", {"F16", "F32"})) {
+        return *found;
+    }
+    throw std::runtime_error("no sheetsage2-mert2 GGUF under " + configuration.models_dir.string());
+}
+
+// <name>-v1.0-F16-LoRA.gguf -> <name>
+std::string adapter_name(const std::string & filename) {
+    constexpr std::string_view kSuffix = "-LoRA.gguf";
+    if (!ends_with(filename, kSuffix)) return {};
+    std::string stem = filename.substr(0, filename.size() - kSuffix.size());
+    auto dash = stem.rfind('-');
+    if (dash == std::string::npos) return stem;
+    stem.resize(dash); // Encoding
+    dash = stem.rfind('-');
+    if (dash != std::string::npos && dash + 1 < stem.size() && stem[dash + 1] == 'v') stem.resize(dash);
+    return stem;
+}
+
+std::vector<std::pair<std::string, fs::path>> list_adapters(const fs::path & directory) {
+    std::vector<std::pair<std::string, fs::path>> output;
+    for (const auto & file : gguf_files(directory)) {
+        const auto name = adapter_name(file.filename().string());
+        if (!name.empty()) output.emplace_back(name, file);
     }
     return output;
 }
 
-std::string real(double value) {
-    std::ostringstream output;
-    output.imbue(std::locale::classic());
-    output.precision(17);
-    output << value;
-    return output.str();
+fs::path resolve_adapter(const Configuration & configuration, const std::string & reference) {
+    std::error_code error;
+    const fs::path candidate(reference);
+    if (candidate.extension() == ".gguf") {
+        if (fs::is_regular_file(candidate, error)) return candidate;
+        if (fs::is_regular_file(configuration.adapters_dir / candidate, error)) {
+            return configuration.adapters_dir / candidate;
+        }
+        throw std::invalid_argument("LoRA adapter not found: " + reference);
+    }
+    for (const auto & [name, path] : list_adapters(configuration.adapters_dir)) {
+        if (name == reference) return path;
+    }
+    throw std::invalid_argument("unknown LoRA adapter: " + reference);
+}
+
+// ---------------------------------------------------------------------------
+// Request parsing helpers
+
+bool present(const json::Value & object, std::string_view key) {
+    const auto * value = object.find(key);
+    return value && value->type != json::Type::null;
+}
+
+std::string first_string(const json::Value & object, std::initializer_list<std::string_view> keys) {
+    for (const auto key : keys) {
+        if (present(object, key)) return json::string(object, key);
+    }
+    return {};
+}
+
+std::string header(const HttpRequest & request, const std::string & name) {
+    const auto found = request.headers.find(name);
+    return found == request.headers.end() ? std::string{} : found->second;
+}
+
+bool query_flag(const std::string & query, std::string_view name) {
+    std::size_t start = 0;
+    while (start <= query.size()) {
+        const auto end = std::min(query.find('&', start), query.size());
+        const std::string_view pair(query.data() + start, end - start);
+        if (pair == name || pair == std::string(name) + "=1" || pair == std::string(name) + "=true") {
+            return true;
+        }
+        start = end + 1;
+    }
+    return false;
+}
+
+json::Value parse_object(const std::string & body) {
+    json::Value root;
+    try {
+        root = json::parse(body);
+    } catch (const std::exception & error) {
+        throw std::invalid_argument(std::string("invalid JSON: ") + error.what());
+    }
+    if (root.type != json::Type::object) throw std::invalid_argument("request body must be a JSON object");
+    return root;
 }
 
 yue2::SymbolicMode symbolic_mode(const std::string & value) {
     if (value == "off") return yue2::SymbolicMode::off;
     if (value == "melody") return yue2::SymbolicMode::melody;
-    if (value == "full" || value.empty()) return yue2::SymbolicMode::full;
+    if (value == "full") return yue2::SymbolicMode::full;
     throw std::invalid_argument("symbolic_mode must be off, melody, or full");
 }
 
+bool melody_only(const std::string & value) {
+    if (value.empty() || value == "melody") return true;
+    if (value == "full") return false;
+    throw std::invalid_argument("transcription mode must be melody or full");
+}
+
+// 16-bit PCM is what the gary4local services return and gary4juce expects.
+std::vector<std::uint8_t> encode_wav_pcm16(
+    const std::vector<float> & samples,
+    std::int32_t sample_rate,
+    std::int32_t channels) {
+    const std::uint64_t data_bytes = static_cast<std::uint64_t>(samples.size()) * 2;
+    if (data_bytes > std::numeric_limits<std::uint32_t>::max() - 36) {
+        throw std::runtime_error("audio is too long for a WAV file");
+    }
+    std::vector<std::uint8_t> output;
+    output.reserve(44 + static_cast<std::size_t>(data_bytes));
+    const auto text = [&](const char * value) { output.insert(output.end(), value, value + 4); };
+    const auto u16 = [&](std::uint32_t value) {
+        output.push_back(static_cast<std::uint8_t>(value & 255));
+        output.push_back(static_cast<std::uint8_t>((value >> 8) & 255));
+    };
+    const auto u32 = [&](std::uint32_t value) {
+        u16(value & 0xffff);
+        u16(value >> 16);
+    };
+    text("RIFF");
+    u32(static_cast<std::uint32_t>(36 + data_bytes));
+    text("WAVE");
+    text("fmt ");
+    u32(16);
+    u16(1);
+    u16(static_cast<std::uint32_t>(channels));
+    u32(static_cast<std::uint32_t>(sample_rate));
+    u32(static_cast<std::uint32_t>(sample_rate * channels * 2));
+    u16(static_cast<std::uint32_t>(channels * 2));
+    u16(16);
+    text("data");
+    u32(static_cast<std::uint32_t>(data_bytes));
+    for (const float sample : samples) {
+        const float clamped = std::isfinite(sample) ? std::clamp(sample, -1.0F, 1.0F) : 0.0F;
+        const auto value = static_cast<std::int16_t>(std::lrint(clamped * 32767.0F));
+        u16(static_cast<std::uint16_t>(value));
+    }
+    return output;
+}
+
+HttpResponse failure(int status, const std::string & message) {
+    return yue2::server::json_response(
+        "{\"success\":false,\"error\":" + json::quote(message) + "}", status);
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+
+enum class JobKind { generate, cover, transcribe };
+
+struct Job {
+    std::string id;
+    JobKind kind = JobKind::generate;
+
+    // Request, fixed at submission.
+    yue2::SongRequest song;
+    yue2::GenerationRunOptions run;
+    std::vector<yue2::LoraAdapterSpec> loras;
+    yue2::audio::MonoAudio input;
+    yue2::TranscriptionOptions transcription;
+    bool keep_models = false;
+    bool float_wav = false;
+    std::atomic<bool> cancel{false};
+
+    // Progress and result, guarded by ServerState::jobs_mutex_.
+    std::string status = "queued";
+    std::string stage = "queued";
+    int progress = 0;
+    std::uint32_t step = 0;
+    std::uint32_t total_steps = 0;
+    std::string audio_data;
+    std::string abc;
+    std::string midi_data;
+    std::string events_json;
+    std::string error;
+    bool cancelled = false;
+    std::size_t semantic_frames = 0;
+    bool abc_truncated = false;
+    bool semantic_truncated = false;
+    double duration_seconds = 0.0;
+    std::chrono::steady_clock::time_point finished;
+
+    bool done() const { return status == "completed" || status == "failed"; }
+};
+
 class ServerState {
 public:
-    explicit ServerState(const Configuration & configuration)
-        : configuration_(configuration) {
-        if (!configuration.transcription_model.empty()) {
-            yue2::TranscriberRuntimeOptions options;
-            options.device = configuration.device;
-            options.threads = configuration.threads;
-            transcriber_ = std::make_unique<yue2::Transcriber>(
-                configuration.transcription_model, options);
+    explicit ServerState(Configuration configuration)
+        : configuration_(std::move(configuration)), worker_([this]() { work(); }) {}
+
+    ~ServerState() {
+        {
+            std::lock_guard<std::mutex> lock(jobs_mutex_);
+            stopping_ = true;
+            if (running_) running_->cancel.store(true);
         }
-        if (!configuration.generation_model.empty()) {
-            yue2::GenerationPipelineOptions options;
-            options.autoregressive.device = configuration.device;
-            options.autoregressive.threads = configuration.threads;
-            options.autoregressive.lora_adapters = configuration.loras;
-            generation_defaults_ = {options.generation, options.flow};
-            generator_ = std::make_unique<yue2::GenerationPipeline>(
-                configuration.generation_model, configuration.vae,
-                configuration.tokenizer, options);
-        }
+        jobs_ready_.notify_all();
+        worker_.join();
     }
 
-    yue2::server::HttpResponse handle(const yue2::server::HttpRequest & request) {
+    ServerState(const ServerState &) = delete;
+    ServerState & operator=(const ServerState &) = delete;
+
+    HttpResponse handle(const HttpRequest & request) {
         try {
-            if (request.method == "GET" && request.path == "/health") return health();
-            if (request.method == "GET" && request.path == "/v1/models") return models();
-            if (request.method == "POST" && request.path == "/v1/audio/transcriptions") {
-                return transcribe(request);
+            const auto & path = request.path;
+            const bool get = request.method == "GET";
+            const bool post = request.method == "POST";
+            if (path == "/health") return get ? health() : not_allowed();
+            if (path == "/loras") return get ? loras() : not_allowed();
+            if (path == "/generate") return post ? submit(request, JobKind::generate) : not_allowed();
+            if (path == "/cover") return post ? submit(request, JobKind::cover) : not_allowed();
+            if (path == "/transcribe") return post ? submit(request, JobKind::transcribe) : not_allowed();
+            if (path == "/unload") return post ? unload() : not_allowed();
+            if (starts_with(path, "/poll_status/")) {
+                return get ? poll(path.substr(std::strlen("/poll_status/")), request.query) : not_allowed();
             }
-            if (request.method == "POST" &&
-                (request.path == "/v1/music/generations" || request.path == "/v1/tasks/run")) {
-                return generate(request);
+            if (starts_with(path, "/cancel/")) {
+                return post ? cancel(path.substr(std::strlen("/cancel/"))) : not_allowed();
             }
-            if (request.path == "/health" || request.path == "/v1/models" ||
-                request.path == "/v1/audio/transcriptions" ||
-                request.path == "/v1/music/generations" || request.path == "/v1/tasks/run") {
-                return yue2::server::error_response(
-                    405, "method is not allowed for this route", "method_not_allowed");
-            }
-            return yue2::server::error_response(404, "route not found", "not_found");
+            return failure(404, "route not found");
         } catch (const std::invalid_argument & error) {
-            return yue2::server::error_response(400, error.what(), "invalid_request_error");
+            return failure(400, error.what());
         } catch (const std::exception & error) {
-            return yue2::server::error_response(500, error.what(), "inference_error");
+            return failure(500, error.what());
         }
     }
 
 private:
-    yue2::server::HttpResponse health() const {
+    static HttpResponse not_allowed() { return failure(405, "method is not allowed for this route"); }
+
+    // --- HTTP handlers ------------------------------------------------------
+
+    HttpResponse health() {
+        std::string generation;
+        try {
+            const auto paths = resolve_generation(configuration_);
+            generation = "{\"available\":true,\"loaded\":" + json_bool(generator_loaded_.load()) +
+                ",\"model\":" + json_path(paths.model) + ",\"vae\":" + json_path(paths.vae) +
+                ",\"tokenizer\":" + json_path(paths.tokenizer) + "}";
+        } catch (const std::exception & error) {
+            generation = "{\"available\":false,\"loaded\":false,\"error\":" + json::quote(error.what()) + "}";
+        }
+        std::string transcription;
+        try {
+            transcription = "{\"available\":true,\"loaded\":" + json_bool(transcriber_loaded_.load()) +
+                ",\"model\":" + json_path(resolve_transcription(configuration_)) + "}";
+        } catch (const std::exception & error) {
+            transcription = "{\"available\":false,\"loaded\":false,\"error\":" + json::quote(error.what()) + "}";
+        }
+        bool busy = false;
+        std::size_t queued = 0;
+        {
+            std::lock_guard<std::mutex> lock(jobs_mutex_);
+            busy = static_cast<bool>(running_);
+            queued = queue_.size();
+        }
+        const auto device = configuration_.device.empty() ? environment("YUE2_DEVICE") : configuration_.device;
         return yue2::server::json_response(
-            "{\"status\":\"ok\",\"version\":" +
-            yue2::server::json::quote(yue2::version()) +
-            ",\"transcription\":" + (transcriber_ ? "true" : "false") +
-            ",\"generation\":" + (generator_ ? "true" : "false") + "}");
+            "{\"status\":\"ok\",\"service\":\"yue2\",\"version\":" + json::quote(yue2::version()) +
+            ",\"device\":" + json::quote(device.empty() ? "auto" : device) +
+            ",\"encoding\":" + json::quote(configuration_.encoding) +
+            ",\"models_dir\":" + json_path(configuration_.models_dir) +
+            ",\"keep_models\":" + json_bool(configuration_.keep_models) +
+            ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
+            ",\"generation\":" + generation + ",\"transcription\":" + transcription + "}");
     }
 
-    yue2::server::HttpResponse models() const {
-        std::string body = "{\"object\":\"list\",\"data\":[";
-        bool comma = false;
-        if (transcriber_) {
-            body += "{\"id\":" + yue2::server::json::quote(configuration_.transcription_id) +
-                ",\"object\":\"model\",\"owned_by\":\"yue2.cpp\",\"task\":\"transcription\"}";
-            comma = true;
-        }
-        if (generator_) {
-            if (comma) body.push_back(',');
-            body += "{\"id\":" + yue2::server::json::quote(configuration_.generation_id) +
-                ",\"object\":\"model\",\"owned_by\":\"yue2.cpp\",\"task\":\"music-generation\"}";
+    HttpResponse loras() {
+        std::string body = "{\"success\":true,\"adapters_dir\":" + json_path(configuration_.adapters_dir) +
+            ",\"loras\":[";
+        std::size_t index = 0;
+        for (const auto & [name, path] : list_adapters(configuration_.adapters_dir)) {
+            if (index) body.push_back(',');
+            body += "{\"index\":" + std::to_string(index++) + ",\"name\":" + json::quote(name) +
+                ",\"path\":" + json_path(path) + "}";
         }
         body += "]}";
         return yue2::server::json_response(std::move(body));
     }
 
-    yue2::server::HttpResponse transcribe(const yue2::server::HttpRequest & request) {
-        if (!transcriber_) return yue2::server::error_response(503, "transcription model is disabled", "model_unavailable");
-        std::string audio;
-        std::map<std::string, std::string> fields;
-        const auto content_type = header(request, "content-type");
-        if (const auto boundary = yue2::server::multipart_boundary(content_type)) {
-            for (auto & part : yue2::server::parse_multipart(request.body, *boundary)) {
-                if (part.name == "file") {
-                    if (!audio.empty()) throw std::invalid_argument("multipart request has multiple file fields");
-                    audio = std::move(part.data);
-                } else {
-                    fields[part.name] = std::move(part.data);
-                }
+    HttpResponse submit(const HttpRequest & request, JobKind kind) {
+        if (header(request, "content-type").rfind("application/json", 0) != 0) {
+            return failure(415, "send application/json");
+        }
+        const auto root = parse_object(request.body);
+        auto job = std::make_shared<Job>();
+        job->kind = kind;
+        job->keep_models = json::boolean(root, "keep_models", configuration_.keep_models);
+
+        if (kind == JobKind::cover && present(root, "abc")) {
+            throw std::invalid_argument("/cover scores audio_data itself; use /generate to supply abc");
+        }
+        if (kind != JobKind::generate) {
+            const auto encoded = json::string(root, "audio_data");
+            if (encoded.empty()) throw std::invalid_argument("audio_data (base64 WAV) is required");
+            const auto wav = yue2::server::base64_decode(encoded);
+            try {
+                job->input = yue2::audio::decode_wav_mono(wav.data(), wav.size());
+            } catch (const std::exception & error) {
+                throw std::invalid_argument(std::string("audio_data is not a readable WAV: ") + error.what());
             }
-        } else if (content_type.rfind("audio/wav", 0) == 0 ||
-                   content_type.rfind("audio/x-wav", 0) == 0 ||
-                   content_type.rfind("application/octet-stream", 0) == 0) {
-            audio = request.body;
-        } else {
-            return yue2::server::error_response(415, "send a WAV body or multipart/form-data", "unsupported_media_type");
+            if (job->input.samples.empty()) throw std::invalid_argument("audio_data contains no samples");
+            job->transcription.melody_only = melody_only(first_string(root, {"transcription_mode", "mode"}));
         }
-        if (audio.empty()) throw std::invalid_argument("transcription audio is empty");
-        if (const auto found = fields.find("model"); found != fields.end() &&
-            found->second != configuration_.transcription_id) {
-            throw std::invalid_argument("unknown transcription model: " + found->second);
-        }
-        yue2::TranscriptionOptions options;
-        if (const auto found = fields.find("mode"); found != fields.end()) {
-            if (found->second == "full") options.melody_only = false;
-            else if (found->second == "melody") options.melody_only = true;
-            else throw std::invalid_argument("transcription mode must be melody or full");
-        }
-        const auto decoded = yue2::audio::decode_wav_mono(
-            reinterpret_cast<const std::uint8_t *>(audio.data()), audio.size());
-        yue2::TranscriptionResult result;
+        if (kind != JobKind::transcribe) parse_song(root, *job);
+
+        job->id = random_session_id();
         {
-            std::lock_guard<std::mutex> lock(transcription_mutex_);
-            result = transcriber_->transcribe_mono(
-                decoded.samples.data(), decoded.samples.size(), decoded.sample_rate, options);
+            std::lock_guard<std::mutex> lock(jobs_mutex_);
+            prune_locked();
+            jobs_[job->id] = job;
+            queue_.push_back(job);
         }
-        const auto format = fields.count("response_format") ? fields["response_format"] : "json";
-        if (format == "abc" || format == "text") {
-            return {200, "text/plain; charset=utf-8", std::move(result.abc), {}};
-        }
-        const auto native = yue2::serialize_transcription_json(result);
-        if (format == "verbose_json") return yue2::server::json_response(native);
-        if (format != "json") throw std::invalid_argument("response_format must be json, verbose_json, or abc");
-        return yue2::server::json_response(
-            "{\"text\":" + yue2::server::json::quote(result.abc) +
-            ",\"abc\":" + yue2::server::json::quote(result.abc) +
-            ",\"duration\":" + real(result.duration_seconds) +
-            ",\"model\":" + yue2::server::json::quote(configuration_.transcription_id) +
-            ",\"result\":" + native + "}");
-    }
-
-    yue2::server::HttpResponse generate(const yue2::server::HttpRequest & request) {
-        if (!generator_) return yue2::server::error_response(503, "generation model is disabled", "model_unavailable");
-        const auto content_type = header(request, "content-type");
-        if (content_type.rfind("application/json", 0) != 0) {
-            return yue2::server::error_response(415, "music generation requires application/json", "unsupported_media_type");
-        }
-        const auto root = yue2::server::json::parse(request.body);
-        if (root.type != yue2::server::json::Type::object) throw std::invalid_argument("request body must be a JSON object");
-        const auto model = yue2::server::json::string(root, "model", configuration_.generation_id);
-        if (model != configuration_.generation_id) throw std::invalid_argument("unknown generation model: " + model);
-        const auto * payload = &root;
-        if (request.path == "/v1/tasks/run") {
-            if (const auto * nested = root.find("request")) {
-                if (nested->type != yue2::server::json::Type::object) {
-                    throw std::invalid_argument("request must be a JSON object");
-                }
-                payload = nested;
-            }
-        }
-
-        yue2::SongRequest song;
-        song.style = yue2::server::json::string(
-            *payload, "style", yue2::server::json::string(*payload, "instructions", {}));
-        song.lyrics = yue2::server::json::string(
-            *payload, "lyrics", yue2::server::json::string(*payload, "input", {}));
-        const auto abc = yue2::server::json::string(*payload, "abc", {});
-        if (!abc.empty()) song.abc = abc;
-        song.symbolic_mode = symbolic_mode(yue2::server::json::string(*payload, "symbolic_mode", "full"));
-        song.seed = yue2::server::json::u64(*payload, "seed", 831001);
-        song.guidance_scale = static_cast<float>(
-            yue2::server::json::number(*payload, "guidance_scale", 1.5));
-
-        auto run = generation_defaults_;
-        run.generation.abc.min_tokens = yue2::server::json::u32(
-            *payload, "abc_min_tokens", run.generation.abc.min_tokens);
-        run.generation.abc.max_tokens = yue2::server::json::u32(
-            *payload, "abc_max_tokens", run.generation.abc.max_tokens);
-        run.generation.semantic.min_tokens = yue2::server::json::u32(
-            *payload, "semantic_min_tokens", run.generation.semantic.min_tokens);
-        run.generation.semantic.max_tokens = yue2::server::json::u32(
-            *payload, "semantic_max_tokens", run.generation.semantic.max_tokens);
-        run.generation.semantic.temperature = static_cast<float>(
-            yue2::server::json::number(*payload, "temperature", run.generation.semantic.temperature));
-        run.generation.semantic.top_k = yue2::server::json::u32(
-            *payload, "top_k", run.generation.semantic.top_k);
-        run.generation.semantic.top_p = static_cast<float>(
-            yue2::server::json::number(*payload, "top_p", run.generation.semantic.top_p));
-        run.generation.semantic.repetition_penalty = static_cast<float>(
-            yue2::server::json::number(
-                *payload, "repetition_penalty", run.generation.semantic.repetition_penalty));
-        run.generation.semantic.penalty_window = yue2::server::json::u32(
-            *payload, "penalty_window", run.generation.semantic.penalty_window);
-        run.flow.ode_steps = yue2::server::json::u32(*payload, "ode_steps", run.flow.ode_steps);
-
-        yue2::GeneratedSong generated;
-        {
-            std::lock_guard<std::mutex> lock(generation_mutex_);
-            generated = generator_->generate(song, run);
-        }
-        const auto wav = yue2::audio::encode_wav_float(
-            generated.audio.interleaved_samples,
-            generated.audio.sample_rate,
-            generated.audio.channels);
-        const auto format = yue2::server::json::string(*payload, "response_format", "wav");
-        if (format == "wav") {
-            yue2::server::HttpResponse response;
-            response.content_type = "audio/wav";
-            response.body.assign(reinterpret_cast<const char *>(wav.data()), wav.size());
-            response.headers["X-YuE2-Seed"] = std::to_string(song.seed);
-            response.headers["X-YuE2-Semantic-Frames"] =
-                std::to_string(generated.semantic_codec_ids.size());
-            return response;
-        }
-        if (format != "json") throw std::invalid_argument("response_format must be wav or json");
-        std::string body = "{\"model\":" + yue2::server::json::quote(configuration_.generation_id) +
-            ",\"seed\":\"" + std::to_string(song.seed) + "\",\"abc\":" +
-            yue2::server::json::quote(generated.abc) +
-            ",\"semantic_count\":" + std::to_string(generated.semantic_codec_ids.size()) +
-            ",\"audio\":{\"format\":\"wav\",\"encoding\":\"base64\",\"sample_rate\":" +
-            std::to_string(generated.audio.sample_rate) + ",\"channels\":" +
-            std::to_string(generated.audio.channels) + ",\"data\":" +
-            yue2::server::json::quote(base64(wav)) + "}}";
+        jobs_ready_.notify_one();
+        std::string body = "{\"success\":true,\"session_id\":" + json::quote(job->id);
+        if (kind != JobKind::transcribe) body += ",\"seed\":" + std::to_string(job->song.seed);
+        body += ",\"status\":\"queued\"}";
         return yue2::server::json_response(std::move(body));
     }
 
+    void parse_song(const json::Value & root, Job & job) {
+        auto & song = job.song;
+        song.style = first_string(root, {"style", "caption", "prompt", "tags"});
+        song.lyrics = json::string(root, "lyrics");
+        const auto abc = json::string(root, "abc");
+        if (job.kind == JobKind::cover && !abc.empty()) {
+            throw std::invalid_argument("/cover scores audio_data itself; use /generate to supply abc");
+        }
+        if (!abc.empty()) song.abc = abc;
+        const bool scored = job.kind == JobKind::cover || song.abc.has_value();
+        auto mode = first_string(root, {"symbolic_mode", "cot"});
+        if (mode.empty()) {
+            // A supplied or transcribed score conditions melody by default, as
+            // the upstream cover workflow recommends; without one YuE2 plans a
+            // full score first.
+            mode = job.kind == JobKind::cover
+                ? (job.transcription.melody_only ? "melody" : "full")
+                : (scored ? "melody" : "full");
+        }
+        song.symbolic_mode = symbolic_mode(mode);
+        if (scored && song.symbolic_mode == yue2::SymbolicMode::off) {
+            throw std::invalid_argument("a score requires symbolic_mode melody or full");
+        }
+
+        const auto * seed = root.find("seed");
+        const bool random = !seed || seed->type == json::Type::null ||
+            (!seed->text.empty() && seed->text.front() == '-');
+        song.seed = random ? (random_u64() & 0x7fffffffULL) : json::u64(root, "seed", 0);
+        if (present(root, "guidance_scale")) {
+            song.guidance_scale = static_cast<float>(json::number(root, "guidance_scale", 1.0));
+        }
+
+        auto & run = job.run;
+        if (present(root, "duration")) {
+            const double seconds = json::number(root, "duration", 0.0);
+            if (!(seconds > 0.0) || seconds > 900.0) {
+                throw std::invalid_argument("duration must be in (0, 900] seconds");
+            }
+            run.generation.semantic.max_tokens =
+                static_cast<std::uint32_t>(std::ceil(seconds * kSemanticTokensPerSecond));
+        }
+        auto & semantic = run.generation.semantic;
+        semantic.max_tokens = json::u32(root, "semantic_max_tokens", semantic.max_tokens);
+        semantic.min_tokens = std::min(json::u32(root, "semantic_min_tokens", semantic.min_tokens), semantic.max_tokens);
+        semantic.temperature = static_cast<float>(json::number(root, "temperature", semantic.temperature));
+        semantic.top_k = json::u32(root, "top_k", semantic.top_k);
+        semantic.top_p = static_cast<float>(json::number(root, "top_p", semantic.top_p));
+        semantic.repetition_penalty = static_cast<float>(
+            json::number(root, "repetition_penalty", semantic.repetition_penalty));
+        run.generation.abc.max_tokens = json::u32(root, "abc_max_tokens", run.generation.abc.max_tokens);
+        run.flow.ode_steps = json::u32(root, "ode_steps", run.flow.ode_steps);
+
+        const auto format = json::string(root, "audio_format", "wav");
+        if (format != "wav" && format != "wav_float") {
+            throw std::invalid_argument("audio_format must be wav or wav_float");
+        }
+        job.float_wav = format == "wav_float";
+        job.loras = parse_loras(root);
+    }
+
+    std::vector<yue2::LoraAdapterSpec> parse_loras(const json::Value & root) {
+        const auto * value = root.find("loras");
+        if (!value || value->type == json::Type::null) return configuration_.loras;
+        if (value->type != json::Type::array) throw std::invalid_argument("loras must be an array");
+        std::vector<yue2::LoraAdapterSpec> output;
+        for (const auto & item : value->array) {
+            if (item.type != json::Type::object) throw std::invalid_argument("each lora must be an object");
+            auto reference = json::string(item, "path");
+            if (reference.empty()) reference = json::string(item, "name");
+            if (reference.empty()) throw std::invalid_argument("each lora needs a name or path");
+            yue2::LoraAdapterSpec spec;
+            spec.path = resolve_adapter(configuration_, reference).string();
+            spec.strength = static_cast<float>(
+                json::number(item, "strength", json::number(item, "scale", 1.0)));
+            if (!std::isfinite(spec.strength)) throw std::invalid_argument("lora strength must be finite");
+            output.push_back(std::move(spec));
+        }
+        return output;
+    }
+
+    HttpResponse poll(const std::string & id, const std::string & query) {
+        const bool consume = query_flag(query, "consume");
+        std::string body;
+        std::lock_guard<std::mutex> lock(jobs_mutex_);
+        prune_locked();
+        const auto found = jobs_.find(id);
+        if (found == jobs_.end()) return failure(404, "unknown session: " + id);
+        const Job & job = *found->second;
+        const bool in_progress = !job.done();
+        body = "{\"success\":" + json_bool(job.status != "failed") +
+            ",\"session_id\":" + json::quote(job.id) +
+            ",\"generation_in_progress\":" + json_bool(in_progress) +
+            ",\"transform_in_progress\":false" +
+            ",\"progress\":" + std::to_string(job.progress) +
+            ",\"step\":" + std::to_string(job.step) +
+            ",\"total_steps\":" + std::to_string(job.total_steps) +
+            ",\"status\":" + json::quote(job.status) +
+            ",\"stage\":" + json::quote(job.stage) +
+            ",\"queue_status\":" + queue_status_locked(job);
+        if (job.kind != JobKind::transcribe) body += ",\"seed\":" + std::to_string(job.song.seed);
+        if (job.status == "completed") {
+            if (job.kind == JobKind::transcribe) {
+                body += ",\"abc\":" + json::quote(job.abc) + ",\"midi_data\":\"" + job.midi_data +
+                    "\",\"duration\":" + real(job.duration_seconds) + ",\"events\":" + job.events_json;
+            } else {
+                // Base64 needs no JSON escaping.
+                body += ",\"audio_data\":\"" + job.audio_data + "\",\"abc\":" + json::quote(job.abc) +
+                    ",\"meta\":{\"seed\":" + std::to_string(job.song.seed) +
+                    ",\"duration\":" + real(job.duration_seconds) +
+                    ",\"sample_rate\":48000,\"channels\":2" +
+                    ",\"semantic_frames\":" + std::to_string(job.semantic_frames) +
+                    ",\"abc_truncated\":" + json_bool(job.abc_truncated) +
+                    ",\"semantic_truncated\":" + json_bool(job.semantic_truncated) + "}";
+            }
+        }
+        if (job.status == "failed") {
+            body += ",\"error\":" + json::quote(job.error) + ",\"cancelled\":" + json_bool(job.cancelled);
+        }
+        body += "}";
+        if (consume && job.done()) jobs_.erase(found);
+        return yue2::server::json_response(std::move(body));
+    }
+
+    std::string queue_status_locked(const Job & job) const {
+        if (job.status == "queued") {
+            std::size_t position = 1;
+            for (const auto & entry : queue_) {
+                if (entry.get() == &job) break;
+                ++position;
+            }
+            return "{\"status\":\"queued\",\"position\":" + std::to_string(position) +
+                ",\"total_queued\":" + std::to_string(queue_.size()) + ",\"message\":\"queued locally\"}";
+        }
+        if (!job.done()) return "{\"status\":\"ready\",\"message\":" + json::quote(job.stage) + "}";
+        return "{}";
+    }
+
+    HttpResponse cancel(const std::string & id) {
+        std::lock_guard<std::mutex> lock(jobs_mutex_);
+        const auto found = jobs_.find(id);
+        if (found == jobs_.end()) return failure(404, "unknown session: " + id);
+        auto & job = *found->second;
+        if (job.done()) return failure(409, "session already finished");
+        job.cancel.store(true);
+        const auto queued = std::find(queue_.begin(), queue_.end(), found->second);
+        if (queued != queue_.end()) {
+            queue_.erase(queued);
+            fail_locked(job, "cancelled");
+        }
+        return yue2::server::json_response(
+            "{\"success\":true,\"session_id\":" + json::quote(id) + ",\"status\":" + json::quote(job.status) + "}");
+    }
+
+    HttpResponse unload() {
+        std::unique_lock<std::mutex> lock(models_mutex_, std::try_to_lock);
+        if (!lock.owns_lock()) return failure(409, "a job is running; unload after it finishes");
+        release_models();
+        return yue2::server::json_response("{\"success\":true,\"status\":\"unloaded\"}");
+    }
+
+    // --- Worker -------------------------------------------------------------
+
+    void work() {
+        for (;;) {
+            std::shared_ptr<Job> job;
+            {
+                std::unique_lock<std::mutex> lock(jobs_mutex_);
+                jobs_ready_.wait(lock, [this]() { return stopping_ || !queue_.empty(); });
+                if (stopping_) return;
+                job = queue_.front();
+                queue_.pop_front();
+                running_ = job;
+            }
+            {
+                std::lock_guard<std::mutex> models(models_mutex_);
+                execute(*job);
+            }
+            std::lock_guard<std::mutex> lock(jobs_mutex_);
+            running_.reset();
+        }
+    }
+
+    void execute(Job & job) {
+        try {
+            if (job.cancel.load()) throw std::runtime_error("cancelled");
+            if (job.kind != JobKind::generate) transcribe(job);
+            if (job.kind != JobKind::transcribe) generate(job);
+        } catch (const std::exception & error) {
+            // Whatever failed may have been an allocation; hand the memory back.
+            if (!job.keep_models) release_models();
+            std::lock_guard<std::mutex> lock(jobs_mutex_);
+            fail_locked(job, job.cancel.load() ? "cancelled" : error.what());
+        }
+    }
+
+    void update(Job & job, const char * status, const char * stage, int progress,
+        std::uint32_t step, std::uint32_t total_steps) {
+        std::lock_guard<std::mutex> lock(jobs_mutex_);
+        job.status = status;
+        job.stage = stage;
+        job.progress = std::clamp(std::max(job.progress, progress), 0, 99);
+        job.step = step;
+        job.total_steps = total_steps;
+    }
+
+    void transcribe(Job & job) {
+        const bool cover = job.kind == JobKind::cover;
+        update(job, "transcribing", "load", 0, 0, 0);
+        if (!transcriber_) {
+            yue2::TranscriberRuntimeOptions options;
+            options.device = configuration_.device;
+            options.threads = configuration_.threads;
+            transcriber_ = std::make_unique<yue2::Transcriber>(resolve_transcription(configuration_), options);
+            transcriber_loaded_.store(true);
+        }
+        yue2::TranscriptionControl control;
+        control.should_cancel = [&job]() { return job.cancel.load(); };
+        control.on_progress = [&](std::size_t current, std::size_t total) {
+            const int span = cover ? 15 : 99;
+            update(job, "transcribing", "transcription",
+                static_cast<int>(span * current / std::max<std::size_t>(1, total)),
+                static_cast<std::uint32_t>(current), static_cast<std::uint32_t>(total));
+        };
+        auto result = transcriber_->transcribe_mono(
+            job.input.samples.data(), job.input.samples.size(), job.input.sample_rate,
+            job.transcription, control);
+        if (!job.keep_models) {
+            transcriber_.reset();
+            transcriber_loaded_.store(false);
+        }
+        if (job.cancel.load()) throw std::runtime_error("cancelled");
+
+        std::lock_guard<std::mutex> lock(jobs_mutex_);
+        job.abc = result.abc;
+        if (cover) {
+            if (result.abc.empty()) throw std::runtime_error("transcription produced no score");
+            job.song.abc = result.abc;
+            job.input = {};
+            return;
+        }
+        job.midi_data = yue2::server::base64_encode(result.midi.data(), result.midi.size());
+        job.events_json = yue2::serialize_transcription_json(result);
+        job.duration_seconds = result.duration_seconds;
+        complete_locked(job);
+    }
+
+    void generate(Job & job) {
+        const int base = job.kind == JobKind::cover ? 15 : 0;
+        update(job, "generating", "load", base, 0, 0);
+        load_generator(job.loras);
+
+        yue2::GenerationControl control;
+        control.should_cancel = [&job]() { return job.cancel.load(); };
+        control.on_progress = [&, base](yue2::GenerationStage stage, std::uint32_t current, std::uint32_t total) {
+            const double fraction = total ? static_cast<double>(current) / total : 1.0;
+            const auto at = [&](double from, double to) {
+                return static_cast<int>(base + (100 - base) * (from + (to - from) * fraction));
+            };
+            switch (stage) {
+                case yue2::GenerationStage::abc:
+                    update(job, "generating", "abc", at(0.0, 0.10), current, total);
+                    break;
+                case yue2::GenerationStage::semantic:
+                    update(job, "generating", "semantic", at(0.10, 0.80), current, total);
+                    break;
+                case yue2::GenerationStage::flow:
+                    update(job, "generating", "flow", at(0.80, 0.92), current, total);
+                    break;
+                case yue2::GenerationStage::decode:
+                case yue2::GenerationStage::complete:
+                    update(job, "decoding", "decode", at(0.92, 0.99), current, total);
+                    break;
+            }
+        };
+        auto song = generator_->generate(job.song, job.run, control);
+        if (!job.keep_models) {
+            generator_.reset();
+            generator_loaded_.store(false);
+        }
+        const auto wav = job.float_wav
+            ? yue2::audio::encode_wav_float(song.audio.interleaved_samples, song.audio.sample_rate, song.audio.channels)
+            : encode_wav_pcm16(song.audio.interleaved_samples, song.audio.sample_rate, song.audio.channels);
+        auto encoded = yue2::server::base64_encode(wav.data(), wav.size());
+
+        std::lock_guard<std::mutex> lock(jobs_mutex_);
+        job.audio_data = std::move(encoded);
+        job.abc = song.abc;
+        job.semantic_frames = song.semantic_codec_ids.size();
+        job.abc_truncated = song.abc_truncated;
+        job.semantic_truncated = song.semantic_truncated;
+        job.duration_seconds = static_cast<double>(song.audio.interleaved_samples.size()) /
+            (static_cast<double>(song.audio.sample_rate) * song.audio.channels);
+        complete_locked(job);
+    }
+
+    void load_generator(const std::vector<yue2::LoraAdapterSpec> & loras) {
+        const auto same = generator_ && loras.size() == generator_loras_.size() &&
+            std::equal(loras.begin(), loras.end(), generator_loras_.begin(),
+                [](const yue2::LoraAdapterSpec & a, const yue2::LoraAdapterSpec & b) {
+                    return a.path == b.path && a.strength == b.strength;
+                });
+        if (same) return;
+        // Adapters are bound at construction, so a different set reloads.
+        generator_.reset();
+        generator_loaded_.store(false);
+        const auto paths = resolve_generation(configuration_);
+        yue2::GenerationPipelineOptions options;
+        options.autoregressive.device = configuration_.device;
+        options.autoregressive.threads = configuration_.threads;
+        options.autoregressive.lora_adapters = loras;
+        generator_ = std::make_unique<yue2::GenerationPipeline>(
+            paths.model.string(), paths.vae.string(), paths.tokenizer.string(), options);
+        generator_loras_ = loras;
+        generator_loaded_.store(true);
+    }
+
+    void release_models() {
+        generator_.reset();
+        generator_loaded_.store(false);
+        transcriber_.reset();
+        transcriber_loaded_.store(false);
+    }
+
+    void complete_locked(Job & job) {
+        job.status = "completed";
+        job.stage = "complete";
+        job.progress = 100;
+        job.finished = std::chrono::steady_clock::now();
+    }
+
+    void fail_locked(Job & job, const std::string & message) {
+        job.status = "failed";
+        job.stage = "failed";
+        job.error = message;
+        job.cancelled = job.cancel.load();
+        job.input = {};
+        job.finished = std::chrono::steady_clock::now();
+    }
+
+    void prune_locked() {
+        const auto now = std::chrono::steady_clock::now();
+        for (auto entry = jobs_.begin(); entry != jobs_.end();) {
+            if (entry->second->done() && now - entry->second->finished > kFinishedJobLifetime) {
+                entry = jobs_.erase(entry);
+            } else {
+                ++entry;
+            }
+        }
+    }
+
     Configuration configuration_;
+
+    std::mutex jobs_mutex_;
+    std::condition_variable jobs_ready_;
+    std::map<std::string, std::shared_ptr<Job>> jobs_;
+    std::deque<std::shared_ptr<Job>> queue_;
+    std::shared_ptr<Job> running_;
+    bool stopping_ = false;
+
+    // Models are used only by the worker, which holds models_mutex_ for a
+    // whole job; /unload takes it without waiting.
+    std::mutex models_mutex_;
     std::unique_ptr<yue2::Transcriber> transcriber_;
     std::unique_ptr<yue2::GenerationPipeline> generator_;
-    yue2::GenerationRunOptions generation_defaults_;
-    std::mutex transcription_mutex_;
-    std::mutex generation_mutex_;
+    std::vector<yue2::LoraAdapterSpec> generator_loras_;
+    std::atomic<bool> transcriber_loaded_{false};
+    std::atomic<bool> generator_loaded_{false};
+
+    std::thread worker_;
 };
 
 } // namespace
 
 int main(int argc, char ** argv) {
     try {
-        if (argc == 1 || has(argc, argv, "--help") || has(argc, argv, "-h")) {
+        if (has(argc, argv, "--help") || has(argc, argv, "-h")) {
             usage(argv[0]);
             return 0;
         }
-        const auto configuration = parse_configuration(argc, argv);
-        ServerState state(configuration);
+        auto configuration = parse_configuration(argc, argv);
+        const auto host = configuration.http.host;
+        const auto http = configuration.http;
+        if (host != "127.0.0.1") {
+            std::cerr << "[yue2-server] WARNING: bound to " << host
+                      << "; anyone who can reach this port can submit jobs\n";
+        }
+        ServerState state(std::move(configuration));
         std::signal(SIGINT, stop_signal);
         std::signal(SIGTERM, stop_signal);
         yue2::server::serve_http(
-            configuration.http,
-            [&state](const yue2::server::HttpRequest & request) {
-                return state.handle(request);
-            },
+            http,
+            [&state](const HttpRequest & request) { return state.handle(request); },
             stop_requested);
         return 0;
     } catch (const std::exception & error) {

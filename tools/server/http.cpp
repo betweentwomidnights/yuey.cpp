@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -63,6 +64,7 @@ const char * status_text(int status) {
         case 400: return "Bad Request";
         case 404: return "Not Found";
         case 405: return "Method Not Allowed";
+        case 409: return "Conflict";
         case 413: return "Payload Too Large";
         case 415: return "Unsupported Media Type";
         case 500: return "Internal Server Error";
@@ -352,9 +354,27 @@ void serve_http(
     }
     SocketRuntime runtime;
     auto listening = bind_socket(options);
-    std::vector<std::thread> workers;
+    struct Worker {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> done;
+    };
+    // Finished connection threads are joined as the loop runs. Polling clients
+    // open a connection every second or two, so leaving them joinable until
+    // shutdown would accumulate thread handles for the life of the server.
+    std::vector<Worker> workers;
+    const auto reap = [&workers]() {
+        for (auto worker = workers.begin(); worker != workers.end();) {
+            if (worker->done->load()) {
+                worker->thread.join();
+                worker = workers.erase(worker);
+            } else {
+                ++worker;
+            }
+        }
+    };
     std::cout << "yue2-server listening on http://" << options.host << ':' << options.port << '\n';
     while (!stop_requested.load()) {
+        reap();
         if (!wait_for_client(listening.get())) continue;
         sockaddr_in address{};
 #ifdef _WIN32
@@ -368,9 +388,16 @@ void serve_http(
             if (stop_requested.load()) break;
             continue;
         }
-        workers.emplace_back(handle_client, client, std::cref(options), std::cref(handler));
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        workers.push_back({std::thread([client, &options, &handler, done]() {
+            struct MarkDone {
+                std::atomic<bool> & flag;
+                ~MarkDone() { flag.store(true); }
+            } mark{*done};
+            handle_client(client, options, handler);
+        }), done});
     }
-    for (auto & worker : workers) if (worker.joinable()) worker.join();
+    for (auto & worker : workers) if (worker.thread.joinable()) worker.thread.join();
 }
 
 } // namespace yue2::server
