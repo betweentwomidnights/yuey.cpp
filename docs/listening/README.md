@@ -37,3 +37,9 @@ server should construct it from typed key, BPM, and meter fields, then parse and
 validate the completed plan before semantic generation begins. Changing only a
 completed score's `K:` or `M:` field is unsafe because the notes, chords, rests,
 ties, and bar lengths would no longer agree with the header.
+
+The first input-audio cover and score-continuation experiment is recorded in
+[sa3-8bar-e-major-results.md](sa3-8bar-e-major-results.md). It demonstrates that
+a duration request is a hard semantic ceiling rather than ending conditioning:
+the same completed plan ends cleanly when allowed to emit `MUSIC_END` and cuts
+active audio when capped early.
