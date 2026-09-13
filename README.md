@@ -143,9 +143,11 @@ against the reference one stage at a time:
 - optional seeded renders for listening.
 
 The VAE and the transcription model are refused: both stay F16/F32. The
-1.26 GiB F16 transcription model already runs on an 8 GB laptop GPU. Quantized
-generation tiers have not yet been validated against real-weight parity and
-listening tests.
+1.26 GiB F16 transcription model already runs on an 8 GB laptop GPU. Q8_0,
+Q5_K_M and Q4_K_M generation tiers have now passed real-weight tensor checks
+and a CUDA numerical evaluation against BF16 and the official AR/flow fixtures;
+listening approval and per-stage 8 GB peak-VRAM measurements remain open. See
+[docs/validation.md](docs/validation.md) for the recorded metrics.
 
 Convert a PEFT-style generation adapter and optionally bind it to the exact
 source-checkpoint fingerprint embedded in the base GGUF:

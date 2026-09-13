@@ -186,17 +186,40 @@ safetensors explicitly. This avoids a local Transformers low-memory-loading
 compatibility issue that left the non-persistent rotary-frequency buffer
 uninitialized and would otherwise make the oracle itself incorrect.
 
-## Required before publishing quantized generation GGUFs
+## Quantized generation validation
 
-- Run `yue2-quant-check` on each real Q8_0/Q5_K_M/Q4_K_M file against the
-  BF16 source.
-- Run `yue2-quant-eval` with the official AR and flow fixtures. Record
-  teacher-forced codec KL, top-1 agreement, flow latent and audio error, and
-  log-spectral distance per tier. The existing AR parity bound (relative RMS
-  0.003) is a BF16 gate; quantized tiers need their own recorded tolerances.
-- Run the complete generation smoke test and listening comparisons per tier.
+The first real-weight comparison ran on an NVIDIA GB10 with CUDA at commit
+`ff14003` on 2026-09-13. The converter regenerated the conventionally named
+BF16 generation model and F16 VAE from the released safetensors, preserving
+their source SHA-256 metadata. Each tier quantized 394 tensors and retained 234
+precision-sensitive tensors.
+
+| Tier | File size | Minimum tensor cosine | Mean/max AR KL | AR top-1 | Top-100 overlap | Flow latent rel. RMS/cosine | Flow audio rel. RMS/cosine | Audio LSD |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Q8_0 | 3.64 GiB | 0.999969 | 0.000415 / 0.002067 | 98.4% | 0.988 | 0.010396 / 0.999948 | 0.023817 / 0.999926 | 4.528 dB |
+| Q5_K_M | 2.59 GiB | 0.999239 | 0.003332 / 0.011723 | 95.3% | 0.968 | 0.042942 / 0.999102 | 0.063456 / 0.998680 | 4.696 dB |
+| Q4_K_M | 2.36 GiB | 0.997061 | 0.010700 / 0.044953 | 89.1% | 0.945 | 0.136123 / 0.990774 | 0.279711 / 0.991767 | 5.688 dB |
+
+The evaluator used 64 teacher-forced codec steps, identical fixed noise, 32
+midpoint flow steps, the official Y2AR v3 and end-to-end Y2FL v2 fixtures, and
+the shared F16 VAE decoder. BF16 matched both official AR fixture steps exactly;
+its remaining official flow difference was relative RMS 0.002532 for latents
+and 0.008097 for audio, consistent with the existing native CUDA parity result.
+Seeded 64-frame renders were also produced for listening; their first token
+divergence from BF16 was frame 3 for Q8_0, frame 2 for Q5_K_M, and frame 1 for
+Q4_K_M, which is expected for autoregressive sampling and is not a quality
+metric.
+
+Before publishing quantized generation GGUFs:
+
+- Complete listening comparisons of the seeded renders and a longer generation
+  smoke test for each tier.
 - Measure peak VRAM per stage on an 8 GB GPU, including the F16 AR KV caches
   (about 0.11 MiB per token, two sessions under guidance).
+- Choose release tolerances from the numerical results above plus the listening
+  and laptop-memory evidence. Q8_0 is the numerical reference tier; Q5_K_M is
+  the leading compact candidate. Q4_K_M needs especially careful listening due
+  to its much larger flow/audio error.
 
 ## Required before calling transcription complete
 
