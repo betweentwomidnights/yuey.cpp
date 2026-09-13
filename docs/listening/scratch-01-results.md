@@ -36,6 +36,21 @@ quality remained good across tiers, with audible but acceptable variation.
 No tier was rejected in this first sample. Planning adherence remains a
 separate concern even when the resulting song sounds convincing.
 
+## Locked-header proof
+
+Commit `a3c1346` added the low-level `abc_prefix` injection point. Native BF16
+was rerun with [scratch-01-locked-header.abc](scratch-01-locked-header.abc)
+prefilled immediately after `ABC_START`. The completed 1,588-byte plan preserved
+the prefix byte-for-byte and continued with D-minor harmony and pitch material,
+beginning `Dm` to `Gm` and later moving through `Bb`. It did not emit a second
+header and did not require post-hoc transposition. The completed plan then
+conditioned the normal semantic, 32-step flow, and VAE stages for a 30.72-second
+listening render.
+
+This validates the injection location. Typed key, BPM, and meter fields still
+need a host-side builder and strict ABC validation before this becomes the
+high-level gary4local or plugin interface.
+
 ## Follow-up gates
 
 - Score requested versus planned key, tempo, and meter explicitly.
@@ -44,5 +59,6 @@ separate concern even when the resulting song sounds convincing.
 - Add instrumental, dense transient-heavy, acoustic, and exposed-vocal cases.
 - Repeat important prompts across seeds before assigning a failure to a model
   tier.
-- Consider structured key/tempo/meter request fields and constrained or retried
-  planning for gary4local instead of relying only on free-form tags.
+- Wrap the validated planning prefix with structured key, tempo, meter, and
+  unit-length fields for gary4local instead of exposing raw ABC construction to
+  UI clients.

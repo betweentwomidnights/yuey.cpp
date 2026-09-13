@@ -83,6 +83,11 @@ return `404`, as in sa3-server.
 - **`abc`** applies to `/generate` only. With a score the default
   `symbolic_mode` is `melody`, as the upstream cover workflow recommends.
   Without one it is `full`, and YuE2 plans the score itself.
+- **`abc_prefix`** applies to `/generate` only and is mutually exclusive with
+  `abc`. It seeds planning immediately after `ABC_START`; use a validated header
+  ending in a newline to lock host-provided meter, tempo, voices, and key before
+  the model composes the score body. UI clients should send structured musical
+  fields to a trusted header builder rather than assemble arbitrary ABC.
 - **`seed`**: absent or negative picks a random seed, reported back.
 - **`duration`** caps the song at 25 semantic frames per second.
   `semantic_max_tokens` overrides it.

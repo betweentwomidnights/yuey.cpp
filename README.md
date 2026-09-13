@@ -213,10 +213,13 @@ build/bin/yue2-generate \
   --device cuda
 ```
 
-Omit `--abc` to let the AR branch plan a score, or use `--symbolic off` for
-text-only generation. The CLI also exposes seed, guidance, ABC/semantic token
-limits, semantic sampling, ODE steps, and CPU thread controls. Repeat `--lora
-PATH[=SCALE]` to stack additive adapters.
+Omit `--abc` to let the AR branch plan a score, or pass `--abc-prefix header.abc`
+to seed planning with an exact validated header after `ABC_START`. This is the
+low-level lock point for host-provided meter, tempo, voices, and key; YuE2
+generates the score body under it. A prefix and complete `--abc` are mutually
+exclusive. Use `--symbolic off` for text-only generation. The CLI also exposes
+seed, guidance, ABC/semantic token limits, semantic sampling, ODE steps, and CPU
+thread controls. Repeat `--lora PATH[=SCALE]` to stack additive adapters.
 
 Run a single-window transcription:
 

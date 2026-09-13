@@ -52,9 +52,14 @@ yue2_transcriber_free(ctx);
 
 The generator context loads the combined AR/NAR GGUF, VAE GGUF, and tokenizer
 once. Each request may use an external ABC score, ask the AR model to plan one,
-or disable symbolic conditioning. Token budgets, sampling, guidance, and flow
-steps can vary per call without reloading the model. Results contain interleaved
-48 kHz stereo PCM plus ABC, raw semantic codec IDs, and `[frames,64]` latents.
+seed planning with `abc_prefix`, or disable symbolic conditioning. The prefix is
+placed immediately after `ABC_START`, must end with a newline, and is mutually
+exclusive with a complete `abc`; it lets a host lock a validated tempo/key/meter
+header before the model composes any notes. Token budgets, sampling, guidance,
+and flow steps can vary per call without reloading the model. Results contain
+interleaved 48 kHz stereo PCM plus ABC, raw semantic codec IDs, and
+`[frames,64]` latents. Older request structs remain ABI-compatible because the
+new pointer is a size-gated tail field.
 
 Generation LoRAs are fixed when the resident context is created. They remain
 unmerged on the same backend as the base model, so hosts can use F16 or F32
