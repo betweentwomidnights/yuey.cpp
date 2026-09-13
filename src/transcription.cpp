@@ -663,6 +663,27 @@ std::string sanitize_structure(const std::string & label) {
     return clean;
 }
 
+double infer_quarter_bpm(
+    const std::vector<ScoreEvent> & events,
+    std::int32_t denominator) {
+    std::vector<double> seconds_per_step;
+    const ScoreEvent * previous_anchor = nullptr;
+    for (const auto & event : events) {
+        if (!event.has_timestamp) continue;
+        if (previous_anchor && event.subbeat > previous_anchor->subbeat &&
+            event.time_seconds > previous_anchor->time_seconds) {
+            seconds_per_step.push_back(
+                (event.time_seconds - previous_anchor->time_seconds) /
+                static_cast<double>(event.subbeat - previous_anchor->subbeat));
+        }
+        previous_anchor = &event;
+    }
+    if (seconds_per_step.empty()) return 120.0;
+    std::sort(seconds_per_step.begin(), seconds_per_step.end());
+    const auto seconds = seconds_per_step[seconds_per_step.size() / 2];
+    return std::clamp(60.0 / (seconds * std::max(1, denominator)), 30.0, 300.0);
+}
+
 std::string make_abc(const std::vector<ScoreEvent> & events, bool melody_only) {
     int numerator = 4;
     int denominator = 4;
@@ -678,24 +699,7 @@ std::string make_abc(const std::vector<ScoreEvent> & events, bool melody_only) {
         const auto candidate = abc_key(event.key);
         if (!candidate.empty()) { key = candidate; break; }
     }
-    std::vector<double> seconds_per_step;
-    const ScoreEvent * previous_anchor = nullptr;
-    for (const auto & event : events) {
-        if (!event.has_timestamp) continue;
-        if (previous_anchor && event.subbeat > previous_anchor->subbeat &&
-            event.time_seconds > previous_anchor->time_seconds) {
-            seconds_per_step.push_back(
-                (event.time_seconds - previous_anchor->time_seconds) /
-                static_cast<double>(event.subbeat - previous_anchor->subbeat));
-        }
-        previous_anchor = &event;
-    }
-    double tempo = 120.0;
-    if (!seconds_per_step.empty()) {
-        std::sort(seconds_per_step.begin(), seconds_per_step.end());
-        tempo = 60.0 / (seconds_per_step[seconds_per_step.size() / 2] * denominator);
-        tempo = std::clamp(tempo, 30.0, 300.0);
-    }
+    const double tempo = infer_quarter_bpm(events, denominator);
 
     std::int64_t content_steps = 0;
     std::map<std::int64_t, std::string> keys;
@@ -825,38 +829,349 @@ void append_vlq(std::vector<std::uint8_t> & out, std::uint32_t value) {
     while (count-- > 0) out.push_back(bytes[count]);
 }
 
-std::vector<std::uint8_t> make_midi(const std::vector<ScoreEvent> & events) {
-    struct MidiEvent { std::uint32_t tick; std::uint8_t status; std::uint8_t pitch; std::uint8_t velocity; };
-    std::vector<MidiEvent> midi_events;
-    for (const auto & event : events) {
-        for (const auto & note : event.notes) {
-            const auto start = static_cast<std::uint32_t>(std::llround(
-                std::max(0.0, event.time_seconds) * 960.0));
-            const auto end = std::max(start + 1U, static_cast<std::uint32_t>(std::llround(
-                std::max(event.time_seconds, note.end_time_seconds) * 960.0)));
-            midi_events.push_back({start, static_cast<std::uint8_t>(0x90 | note.track), static_cast<std::uint8_t>(note.pitch), 100});
-            midi_events.push_back({end, static_cast<std::uint8_t>(0x80 | note.track), static_cast<std::uint8_t>(note.pitch), 0});
-        }
-    }
-    std::sort(midi_events.begin(), midi_events.end(), [](const auto & left, const auto & right) {
-        return std::tie(left.tick, left.status) < std::tie(right.tick, right.status);
+constexpr std::uint16_t midi_ppq = 960;
+
+struct TimedMidiEvent {
+    std::uint32_t tick = 0;
+    std::int32_t order = 0;
+    std::vector<std::uint8_t> bytes;
+};
+
+void add_midi_meta(
+    std::vector<TimedMidiEvent> & events,
+    std::uint32_t tick,
+    std::int32_t order,
+    std::uint8_t type,
+    const std::vector<std::uint8_t> & payload) {
+    std::vector<std::uint8_t> bytes = {0xff, type};
+    append_vlq(bytes, static_cast<std::uint32_t>(payload.size()));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    events.push_back({tick, order, std::move(bytes)});
+}
+
+void add_midi_text(
+    std::vector<TimedMidiEvent> & events,
+    std::uint32_t tick,
+    std::int32_t order,
+    std::uint8_t type,
+    const std::string & text) {
+    add_midi_meta(events, tick, order, type,
+                  std::vector<std::uint8_t>(text.begin(), text.end()));
+}
+
+std::vector<std::uint8_t> make_midi_track(
+    const std::string & name,
+    std::vector<TimedMidiEvent> events) {
+    add_midi_text(events, 0, -100, 0x03, name);
+    std::stable_sort(events.begin(), events.end(), [](const auto & left, const auto & right) {
+        return std::tie(left.tick, left.order) < std::tie(right.tick, right.order);
     });
-    std::vector<std::uint8_t> track = {0x00, 0xff, 0x51, 0x03, 0x07, 0xa1, 0x20};
+    std::vector<std::uint8_t> track;
     std::uint32_t previous = 0;
-    for (const auto & event : midi_events) {
+    for (const auto & event : events) {
         append_vlq(track, event.tick - previous);
         previous = event.tick;
-        track.insert(track.end(), {event.status, event.pitch, event.velocity});
+        track.insert(track.end(), event.bytes.begin(), event.bytes.end());
     }
     track.insert(track.end(), {0x00, 0xff, 0x2f, 0x00});
-    std::vector<std::uint8_t> result = {'M','T','h','d'};
-    append_u32be(result, 6);
-    append_u16be(result, 0);
-    append_u16be(result, 1);
-    append_u16be(result, 480);
-    result.insert(result.end(), {'M','T','r','k'});
+    std::vector<std::uint8_t> result = {'M','T','r','k'};
     append_u32be(result, static_cast<std::uint32_t>(track.size()));
     result.insert(result.end(), track.begin(), track.end());
+    return result;
+}
+
+struct MidiTimeline {
+    std::vector<AbcMeasure> measures;
+    std::vector<std::uint32_t> measure_ticks;
+    std::uint32_t end_tick = 0;
+
+    std::uint32_t tick(std::int64_t step) const {
+        if (measures.empty()) return 0;
+        step = std::max<std::int64_t>(0, step);
+        for (std::size_t index = 0; index < measures.size(); ++index) {
+            const auto & measure = measures[index];
+            if (step < measure.start_step ||
+                (step >= measure.end_step && index + 1 < measures.size())) {
+                continue;
+            }
+            const auto ticks_per_step = midi_ppq /
+                static_cast<std::uint32_t>(std::max(1, measure.denominator));
+            const auto offset_steps = measure.pad_before_steps +
+                std::clamp<std::int64_t>(
+                    step - measure.start_step, 0, measure.end_step - measure.start_step);
+            const auto value = static_cast<std::uint64_t>(measure_ticks[index]) +
+                static_cast<std::uint64_t>(offset_steps) * ticks_per_step;
+            return static_cast<std::uint32_t>(std::min<std::uint64_t>(value, end_tick));
+        }
+        return end_tick;
+    }
+};
+
+MidiTimeline make_midi_timeline(
+    const std::vector<ScoreEvent> & events,
+    double duration_seconds,
+    double bpm,
+    std::int32_t first_denominator) {
+    std::int32_t numerator = 4;
+    std::int32_t denominator = 4;
+    bool found_meter = false;
+    std::int64_t content_steps = 1;
+    for (const auto & event : events) {
+        if (!found_meter && valid_meter(event.meter_numerator, event.meter_denominator)) {
+            numerator = event.meter_numerator;
+            denominator = event.meter_denominator;
+            found_meter = true;
+        }
+        content_steps = std::max(content_steps, std::max<std::int64_t>(0, event.subbeat) + 1);
+        for (const auto & note : event.notes) {
+            content_steps = std::max(
+                content_steps,
+                std::max<std::int64_t>(0, event.subbeat) + std::max(1, note.duration_steps));
+        }
+    }
+    if (std::isfinite(duration_seconds) && duration_seconds > 0.0 && bpm > 0.0) {
+        const auto duration_steps = static_cast<std::int64_t>(std::ceil(
+            duration_seconds * bpm * std::max(1, first_denominator) / 60.0 - 1.0e-6));
+        content_steps = std::max(content_steps, duration_steps);
+    }
+    MidiTimeline result;
+    result.measures = infer_abc_measures(
+        events, content_steps, numerator, denominator);
+    std::uint64_t tick = 0;
+    for (const auto & measure : result.measures) {
+        result.measure_ticks.push_back(static_cast<std::uint32_t>(tick));
+        const auto ticks_per_step = midi_ppq /
+            static_cast<std::uint32_t>(std::max(1, measure.denominator));
+        const auto steps = measure.pad_before_steps +
+            (measure.end_step - measure.start_step) + measure.pad_after_steps;
+        tick += static_cast<std::uint64_t>(std::max<std::int64_t>(0, steps)) * ticks_per_step;
+        if (tick > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::runtime_error("SheetSage2 MIDI timeline is too long");
+        }
+    }
+    result.end_tick = static_cast<std::uint32_t>(tick);
+    return result;
+}
+
+std::pair<std::int8_t, bool> midi_key_signature(const std::string & label) {
+    static constexpr std::array<std::int8_t, 12> major = {
+        0, -5, 2, -3, 4, -1, -6, 1, -4, 3, -2, 5,
+    };
+    static constexpr std::array<std::int8_t, 12> minor = {
+        -3, 4, -1, -6, 1, -4, 3, -2, 5, 0, -5, 2,
+    };
+    const auto root = label.substr(0, label.find(':'));
+    std::size_t root_id = 0;
+    while (root_id < chromatic_sharps.size() && root != chromatic_sharps[root_id]) ++root_id;
+    if (root_id == chromatic_sharps.size()) return {0, false};
+    const bool is_minor = label.find(":minor") != std::string::npos;
+    return {is_minor ? minor[root_id] : major[root_id], is_minor};
+}
+
+std::vector<std::int32_t> chord_pitches(const std::string & label) {
+    if (label.empty() || label == "N" || label == "X" || label == "?") return {};
+    const auto colon = label.find(':');
+    if (colon == std::string::npos) return {};
+    const auto root_name = label.substr(0, colon);
+    std::int32_t root = 0;
+    while (root < static_cast<std::int32_t>(chromatic_sharps.size()) &&
+           root_name != chromatic_sharps[static_cast<std::size_t>(root)]) ++root;
+    if (root == static_cast<std::int32_t>(chromatic_sharps.size())) return {};
+    auto quality = label.substr(colon + 1);
+    std::string inversion;
+    if (const auto slash = quality.find('/'); slash != std::string::npos) {
+        inversion = quality.substr(slash + 1);
+        quality.resize(slash);
+    }
+    std::vector<std::int32_t> intervals;
+    if (quality == "maj") intervals = {0, 4, 7};
+    else if (quality == "min") intervals = {0, 3, 7};
+    else if (quality == "dim") intervals = {0, 3, 6};
+    else if (quality == "aug") intervals = {0, 4, 8};
+    else if (quality == "maj7") intervals = {0, 4, 7, 11};
+    else if (quality == "min7") intervals = {0, 3, 7, 10};
+    else if (quality == "7") intervals = {0, 4, 7, 10};
+    else if (quality == "hdim7") intervals = {0, 3, 6, 10};
+    else if (quality == "dim7") intervals = {0, 3, 6, 9};
+    else if (quality == "minmaj7") intervals = {0, 3, 7, 11};
+    else if (quality == "sus2") intervals = {0, 2, 7};
+    else if (quality == "sus4") intervals = {0, 5, 7};
+    else if (quality == "sus4(b7)") intervals = {0, 5, 7, 10};
+    else if (quality == "maj6") intervals = {0, 4, 7, 9};
+    else if (quality == "min6") intervals = {0, 3, 7, 9};
+    else return {};
+    static const std::map<std::string, std::int32_t> bass_intervals = {
+        {"2", 2}, {"3", 4}, {"b3", 3}, {"5", 7}, {"7", 11}, {"b7", 10},
+    };
+    auto bass = 0;
+    if (const auto found = bass_intervals.find(inversion); found != bass_intervals.end()) {
+        bass = found->second;
+    }
+    std::vector<std::int32_t> pitches = {36 + (root + bass) % 12};
+    for (const auto interval : intervals) pitches.push_back(48 + root + interval);
+    std::sort(pitches.begin(), pitches.end());
+    pitches.erase(std::unique(pitches.begin(), pitches.end()), pitches.end());
+    return pitches;
+}
+
+std::vector<std::uint8_t> assemble_midi(
+    const std::vector<const std::vector<std::uint8_t> *> & tracks) {
+    std::vector<std::uint8_t> result = {'M','T','h','d'};
+    append_u32be(result, 6);
+    append_u16be(result, 1);
+    append_u16be(result, static_cast<std::uint16_t>(tracks.size()));
+    append_u16be(result, midi_ppq);
+    for (const auto * track : tracks) result.insert(result.end(), track->begin(), track->end());
+    return result;
+}
+
+TranscriptionMidiExports make_midis(
+    const std::vector<ScoreEvent> & events,
+    bool melody_only,
+    double duration_seconds) {
+    std::int32_t first_denominator = 4;
+    for (const auto & event : events) {
+        if (valid_meter(event.meter_numerator, event.meter_denominator)) {
+            first_denominator = event.meter_denominator;
+            break;
+        }
+    }
+    const auto bpm = std::max<std::int64_t>(1, std::llround(
+        infer_quarter_bpm(events, first_denominator)));
+    const auto timeline = make_midi_timeline(
+        events, duration_seconds, static_cast<double>(bpm), first_denominator);
+    const auto tempo = static_cast<std::uint32_t>(std::clamp<std::int64_t>(
+        std::llround(60000000.0 / static_cast<double>(bpm)), 1, 0xffffff));
+
+    std::vector<TimedMidiEvent> conductor;
+    add_midi_meta(conductor, 0, -90, 0x51, {
+        static_cast<std::uint8_t>(tempo >> 16),
+        static_cast<std::uint8_t>(tempo >> 8),
+        static_cast<std::uint8_t>(tempo),
+    });
+    std::pair<std::int32_t, std::int32_t> last_meter = {-1, -1};
+    for (std::size_t index = 0; index < timeline.measures.size(); ++index) {
+        const auto & measure = timeline.measures[index];
+        const auto meter = std::make_pair(measure.numerator, measure.denominator);
+        if (meter == last_meter) continue;
+        last_meter = meter;
+        std::uint8_t power = 0;
+        auto denominator = static_cast<std::uint32_t>(std::max(1, measure.denominator));
+        while (denominator > 1) { denominator >>= 1U; ++power; }
+        add_midi_meta(conductor, timeline.measure_ticks[index], -80, 0x58, {
+            static_cast<std::uint8_t>(std::clamp(measure.numerator, 1, 255)),
+            power, 24, 8,
+        });
+    }
+    std::string active_key;
+    std::string active_structure;
+    for (const auto & event : events) {
+        const auto tick = timeline.tick(event.subbeat);
+        if (!event.key.empty() && event.key != active_key) {
+            active_key = event.key;
+            const auto [signature, minor] = midi_key_signature(event.key);
+            add_midi_meta(conductor, tick, -70, 0x59, {
+                static_cast<std::uint8_t>(signature), static_cast<std::uint8_t>(minor),
+            });
+        }
+        const auto structure = sanitize_structure(event.structure);
+        if (!structure.empty() && structure != active_structure) {
+            active_structure = structure;
+            add_midi_text(conductor, tick, -60, 0x06, structure);
+        }
+    }
+
+    std::array<std::vector<TimedMidiEvent>, 2> melody_tracks;
+    for (const auto & event : events) {
+        const auto start = timeline.tick(event.subbeat);
+        for (const auto & note : event.notes) {
+            if (note.track < 0 || note.track >= static_cast<std::int32_t>(melody_tracks.size())) continue;
+            auto end = timeline.tick(event.subbeat + std::max(1, note.duration_steps));
+            end = std::max(start + 1U, end);
+            const auto pitch = static_cast<std::uint8_t>(std::clamp(note.pitch, 0, 127));
+            const auto channel = static_cast<std::uint8_t>(note.track);
+            melody_tracks[static_cast<std::size_t>(note.track)].push_back({
+                start, 10, {static_cast<std::uint8_t>(0x90 | channel), pitch, 100},
+            });
+            melody_tracks[static_cast<std::size_t>(note.track)].push_back({
+                end, 0, {static_cast<std::uint8_t>(0x80 | channel), pitch, 0},
+            });
+        }
+    }
+
+    std::vector<TimedMidiEvent> chord_track;
+    if (!melody_only) {
+        std::map<std::int64_t, std::string> chords;
+        for (const auto & event : events) {
+            if (!event.chord.empty()) chords[std::max<std::int64_t>(0, event.subbeat)] = event.chord;
+        }
+        std::vector<std::pair<std::int64_t, std::string>> ordered(chords.begin(), chords.end());
+        for (std::size_t index = 0; index < ordered.size(); ++index) {
+            const auto start_step = ordered[index].first;
+            const auto end_step = index + 1 < ordered.size()
+                ? ordered[index + 1].first
+                : (timeline.measures.empty() ? start_step + 1 : timeline.measures.back().end_step);
+            const auto label = ordered[index].second;
+            add_midi_text(chord_track, timeline.tick(start_step), -20, 0x01, label);
+            const auto pitches = chord_pitches(label);
+            if (pitches.empty()) continue;
+            std::vector<std::int64_t> cuts = {start_step};
+            for (const auto & measure : timeline.measures) {
+                if (measure.start_step > start_step && measure.start_step < end_step) {
+                    cuts.push_back(measure.start_step);
+                }
+            }
+            cuts.push_back(end_step);
+            for (std::size_t cut = 0; cut + 1 < cuts.size(); ++cut) {
+                const auto start = timeline.tick(cuts[cut]);
+                auto end = timeline.tick(cuts[cut + 1]);
+                end = std::max(start + 1U, end);
+                for (const auto value : pitches) {
+                    const auto pitch = static_cast<std::uint8_t>(std::clamp(value, 0, 127));
+                    chord_track.push_back({start, 10, {0x92, pitch, 48}});
+                    chord_track.push_back({end, 0, {0x82, pitch, 0}});
+                }
+            }
+        }
+    }
+
+    const auto conductor_file = make_midi_track("Conductor", std::move(conductor));
+    std::vector<std::uint8_t> vocal_file;
+    std::vector<std::uint8_t> instrumental_file;
+    std::vector<std::uint8_t> chord_file;
+    if (!melody_tracks[0].empty()) {
+        melody_tracks[0].push_back({0, -90, {0xc0, 0}});
+        vocal_file = make_midi_track("Vocal Melody", std::move(melody_tracks[0]));
+    }
+    if (!melody_tracks[1].empty()) {
+        melody_tracks[1].push_back({0, -90, {0xc1, 0}});
+        instrumental_file = make_midi_track("Instrument Melody", std::move(melody_tracks[1]));
+    }
+    if (!melody_only && !chord_track.empty()) {
+        chord_track.push_back({0, -90, {0xc2, 0}});
+        chord_file = make_midi_track("Chords", std::move(chord_track));
+    }
+
+    std::vector<const std::vector<std::uint8_t> *> melody_files = {&conductor_file};
+    if (!vocal_file.empty()) melody_files.push_back(&vocal_file);
+    if (!instrumental_file.empty()) melody_files.push_back(&instrumental_file);
+    auto transcription_files = melody_files;
+    if (!chord_file.empty()) transcription_files.push_back(&chord_file);
+
+    TranscriptionMidiExports result;
+    result.transcription = assemble_midi(transcription_files);
+    result.melody = assemble_midi(melody_files);
+    result.vocal = assemble_midi(vocal_file.empty()
+        ? std::vector<const std::vector<std::uint8_t> *>{&conductor_file}
+        : std::vector<const std::vector<std::uint8_t> *>{&conductor_file, &vocal_file});
+    result.instrumental = assemble_midi(instrumental_file.empty()
+        ? std::vector<const std::vector<std::uint8_t> *>{&conductor_file}
+        : std::vector<const std::vector<std::uint8_t> *>{&conductor_file, &instrumental_file});
+    if (!melody_only) {
+        result.chords = assemble_midi(chord_file.empty()
+            ? std::vector<const std::vector<std::uint8_t> *>{&conductor_file}
+            : std::vector<const std::vector<std::uint8_t> *>{&conductor_file, &chord_file});
+    }
     return result;
 }
 
@@ -869,8 +1184,17 @@ std::string serialize_sheetsage2_abc(
 }
 
 std::vector<std::uint8_t> serialize_sheetsage2_midi(
-    const std::vector<ScoreEvent> & events) {
-    return make_midi(events);
+    const std::vector<ScoreEvent> & events,
+    bool melody_only,
+    double duration_seconds) {
+    return make_midis(events, melody_only, duration_seconds).transcription;
+}
+
+TranscriptionMidiExports serialize_sheetsage2_midis(
+    const std::vector<ScoreEvent> & events,
+    bool melody_only,
+    double duration_seconds) {
+    return make_midis(events, melody_only, duration_seconds);
 }
 
 std::vector<TranscriptionWindow> make_transcription_window_plan(
@@ -1109,7 +1433,9 @@ TranscriptionResult Transcriber::transcribe_mono(
     if (result.windows.size() == 1) result.tokens = result.windows.front().tokens;
     result.events = std::move(stitched);
     result.abc = serialize_sheetsage2_abc(result.events, options.melody_only);
-    result.midi = serialize_sheetsage2_midi(result.events);
+    result.midi_exports = serialize_sheetsage2_midis(
+        result.events, options.melody_only, result.duration_seconds);
+    result.midi = result.midi_exports.transcription;
     if (options.melody_only) {
         result.warnings.push_back(
             "melody-only prompts omit meter and key; ABC uses a 4/4, C-major fallback header while retaining both melody voices");

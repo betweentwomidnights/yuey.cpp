@@ -171,6 +171,11 @@ if(YUE2_BUILD_TESTS)
     yue2_enable_test_assertions(yue2-transcription-json-test)
     add_test(NAME yue2-transcription-json-test COMMAND yue2-transcription-json-test)
 
+    add_executable(yue2-midi-export-test tests/midi_export_test.cpp)
+    target_link_libraries(yue2-midi-export-test PRIVATE yue2)
+    yue2_enable_test_assertions(yue2-midi-export-test)
+    add_test(NAME yue2-midi-export-test COMMAND yue2-midi-export-test)
+
     add_executable(yue2-lora-test tests/lora_test.cpp)
     target_include_directories(yue2-lora-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(yue2-lora-test PRIVATE yue2)

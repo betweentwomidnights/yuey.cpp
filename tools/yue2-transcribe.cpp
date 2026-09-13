@@ -15,6 +15,7 @@ void usage(const char * argv0) {
         << "Usage: " << argv0 << " --model sheetsage2.gguf --audio input.wav --output score.abc [options]\n\n"
         << "Options:\n"
         << "  --midi PATH          Also write a Standard MIDI File\n"
+        << "  --midi-dir DIR       Also write transcription, melody, vocal, instrumental, and chord MIDIs\n"
         << "  --events PATH        Also write decoded events and raw tokens as JSON\n"
         << "  --full               Also decode meter, structure, key, and chords\n"
         << "  --max-tokens N       Maximum sequence length (default 5120)\n"
@@ -78,6 +79,7 @@ int main(int argc, char ** argv) {
         const auto audio_path = std::filesystem::path(value_after(argc, argv, "--audio"));
         const auto output_path = std::filesystem::path(value_after(argc, argv, "--output"));
         const auto midi_value = value_after(argc, argv, "--midi", false);
+        const auto midi_dir_value = value_after(argc, argv, "--midi-dir", false);
         const auto events_value = value_after(argc, argv, "--events", false);
         yue2::TranscriptionOptions options;
         options.melody_only = !has(argc, argv, "--full");
@@ -98,6 +100,16 @@ int main(int argc, char ** argv) {
         const auto result = transcriber.transcribe(audio_path, options);
         write_text(output_path, result.abc);
         if (!midi_value.empty()) write_bytes(midi_value, result.midi);
+        if (!midi_dir_value.empty()) {
+            const auto directory = std::filesystem::path(midi_dir_value);
+            write_bytes(directory / "transcription.mid", result.midi_exports.transcription);
+            write_bytes(directory / "melody.mid", result.midi_exports.melody);
+            write_bytes(directory / "melody_vocal.mid", result.midi_exports.vocal);
+            write_bytes(directory / "melody_instrumental.mid", result.midi_exports.instrumental);
+            if (!result.midi_exports.chords.empty()) {
+                write_bytes(directory / "chords.mid", result.midi_exports.chords);
+            }
+        }
         if (!events_value.empty()) {
             write_text(events_value, yue2::serialize_transcription_json(result));
         }
@@ -106,6 +118,7 @@ int main(int argc, char ** argv) {
         std::cout << "wrote " << output_path << " (" << result.events.size()
                   << " events, " << note_count << " notes)\n";
         if (!midi_value.empty()) std::cout << "wrote " << midi_value << '\n';
+        if (!midi_dir_value.empty()) std::cout << "wrote MIDI set under " << midi_dir_value << '\n';
         if (!events_value.empty()) std::cout << "wrote " << events_value << '\n';
         for (const auto & warning : result.warnings) std::cerr << "warning: " << warning << '\n';
         return 0;

@@ -80,9 +80,21 @@ struct TranscriptionWindowResult {
     std::size_t accepted_events = 0;
 };
 
+struct TranscriptionMidiExports {
+    // Full conductor + active melodies + optional chord-note arrangement.
+    std::vector<std::uint8_t> transcription;
+    // Official-style component files, each with its own conductor track.
+    std::vector<std::uint8_t> melody;
+    std::vector<std::uint8_t> vocal;
+    std::vector<std::uint8_t> instrumental;
+    std::vector<std::uint8_t> chords;
+};
+
 struct TranscriptionResult {
     std::string abc;
+    // Compatibility alias for midi_exports.transcription.
     std::vector<std::uint8_t> midi;
+    TranscriptionMidiExports midi_exports;
     // Populated for a one-window result. Whole-song callers should use the
     // lossless per-window sequences in windows instead.
     std::vector<std::int32_t> tokens;
@@ -111,9 +123,21 @@ std::string serialize_sheetsage2_abc(
     const std::vector<ScoreEvent> & events,
     bool melody_only = true);
 
-// Serialize both decoded melody tracks as a Standard MIDI File.
+// Serialize a DAW-oriented format-1 Standard MIDI File. The conductor track
+// carries inferred tempo, meter, key, and structure markers; active vocal and
+// instrumental melody lanes get named tracks; full mode also adds SheetSage2's
+// chord labels as voiced, downbeat-rearticulated chord notes.
 std::vector<std::uint8_t> serialize_sheetsage2_midi(
-    const std::vector<ScoreEvent> & events);
+    const std::vector<ScoreEvent> & events,
+    bool melody_only = false,
+    double duration_seconds = 0.0);
+
+// Build the combined transcription MIDI and the same component MIDI set as
+// the released SheetSage2 exporter.
+TranscriptionMidiExports serialize_sheetsage2_midis(
+    const std::vector<ScoreEvent> & events,
+    bool melody_only = false,
+    double duration_seconds = 0.0);
 
 // Lossless JSON form used by the CLI and C ABI. It includes raw per-window
 // tokens, typed events, notes, timing provenance, and warnings.

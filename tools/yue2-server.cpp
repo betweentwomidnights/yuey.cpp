@@ -502,6 +502,10 @@ struct Job {
     std::string audio_data;
     std::string abc;
     std::string midi_data;
+    std::string melody_midi_data;
+    std::string vocal_midi_data;
+    std::string instrumental_midi_data;
+    std::string chords_midi_data;
     std::string events_json;
     std::string error;
     bool cancelled = false;
@@ -763,7 +767,14 @@ private:
         if (job.status == "completed") {
             if (job.kind == JobKind::transcribe) {
                 body += ",\"abc\":" + json::quote(job.abc) + ",\"midi_data\":\"" + job.midi_data +
-                    "\",\"duration\":" + real(job.duration_seconds) + ",\"events\":" + job.events_json;
+                    "\",\"midi_files\":{\"transcription.mid\":\"" + job.midi_data +
+                    "\",\"melody.mid\":\"" + job.melody_midi_data +
+                    "\",\"melody_vocal.mid\":\"" + job.vocal_midi_data +
+                    "\",\"melody_instrumental.mid\":\"" + job.instrumental_midi_data + "\"";
+                if (!job.chords_midi_data.empty()) {
+                    body += ",\"chords.mid\":\"" + job.chords_midi_data + "\"";
+                }
+                body += "},\"duration\":" + real(job.duration_seconds) + ",\"events\":" + job.events_json;
             } else {
                 // Base64 needs no JSON escaping.
                 body += ",\"audio_data\":\"" + job.audio_data + "\",\"abc\":" + json::quote(job.abc) +
@@ -901,6 +912,16 @@ private:
             return;
         }
         job.midi_data = yue2::server::base64_encode(result.midi.data(), result.midi.size());
+        job.melody_midi_data = yue2::server::base64_encode(
+            result.midi_exports.melody.data(), result.midi_exports.melody.size());
+        job.vocal_midi_data = yue2::server::base64_encode(
+            result.midi_exports.vocal.data(), result.midi_exports.vocal.size());
+        job.instrumental_midi_data = yue2::server::base64_encode(
+            result.midi_exports.instrumental.data(), result.midi_exports.instrumental.size());
+        if (!result.midi_exports.chords.empty()) {
+            job.chords_midi_data = yue2::server::base64_encode(
+                result.midi_exports.chords.data(), result.midi_exports.chords.size());
+        }
         job.events_json = yue2::serialize_transcription_json(result);
         job.duration_seconds = result.duration_seconds;
         complete_locked(job);
