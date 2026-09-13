@@ -87,3 +87,35 @@ This experiment motivates a two-phase product API: plan/continue and validate
 the score first, then render the accepted score with a computed safe semantic
 ceiling. It also gives the UI separate controls for cover, score continuation,
 target bars, tonal interpretation, and ending behavior.
+
+## Transcription API and MIDI drag fixture
+
+The same source was submitted directly to `/transcribe` with `mode: full`. The
+API completed in one transcription window and returned the same 448-byte ABC,
+the lossless 61-event document, and a 525-byte Standard MIDI file. There are 53
+note events, all in the instrumental melody lane, spanning MIDI pitches 63-80.
+The vocal lane is empty. The retained subbeat grid ends exactly at step 128,
+which is eight 4/4 bars.
+
+`transcription-full.mid` is the untouched API response. It exposes two current
+limitations for DAW use:
+
+- It is SMF format 0 with one physical track; the two possible SheetSage lanes
+  are represented by MIDI channels, not separate DAW tracks. This input has only
+  one active channel.
+- Its tempo event is fixed at 120 BPM and its tick positions preserve elapsed
+  seconds rather than the inferred 95 BPM grid. It plays for approximately the
+  right wall-clock duration in a standalone player but does not land on eight
+  bars when imported into a 95 BPM session.
+
+For the Ableton drag experiment,
+`transcription-full-grid-95bpm-format1.mid` is a derived comparison artifact.
+It uses SMF format 1 with a conductor track (95 BPM, 4/4, C-sharp minor) and a
+named Instrument Melody track. Note starts and durations come from the lossless
+subbeat events, so the final note ends at tick 15,360: exactly eight bars at 480
+PPQ. This file is not yet emitted by the API; it demonstrates the export shape
+the DAW integration should adopt.
+
+SheetSage2 does not infer separate drum, bass, and synthesizer tracks. Its chord
+labels could support an optional generated chord lane, but that would be a
+derived accompaniment representation rather than source-separated MIDI.

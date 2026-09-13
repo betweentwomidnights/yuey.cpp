@@ -57,6 +57,34 @@ loads generation, so the two models never share the GPU. Send
 Errors are `{success:false, error}` with an HTTP status. Unknown sessions
 return `404`, as in sa3-server.
 
+## User-facing modes
+
+The low-level routes support three distinct generative product modes. A client
+should name them according to musical intent rather than expose the internal
+pipeline stages directly:
+
+1. **Create** sends text and optional structured musical controls to
+   `/generate`. YuE2 plans a new ABC score and renders it.
+2. **Cover** sends input audio to `/cover`. SheetSage2 transcribes the audio and
+   YuE2 renders a new performance of that score. It does not extend the score.
+3. **Continue** is currently a composed client workflow: transcribe the input,
+   pass the accepted ABC back to `/generate` as `abc_prefix`, let YuE2 append
+   new sections, then render the combined score. This is therefore
+   **cover-then-continue**: the output re-renders the source bars as well as the
+   new bars. It is not waveform-conditioned, sample-contiguous audio extension.
+
+A future `/continue` convenience route can combine the two calls while still
+returning the intermediate transcription and completed plan for inspection.
+Score editing can also be added later without changing this contract: the
+lossless transcription events already expose timed notes, lanes, chords, key,
+meter, and structure labels suitable for a piano-roll-style editor, while
+`abc` remains the interchange representation sent to generation.
+
+**Transcribe** is an independent utility rather than a fourth generation mode.
+It needs only the smaller SheetSage2 model and returns ABC, Standard MIDI, and
+lossless events without loading YuE2 or the VAE. This supports audio-to-MIDI
+dragging even when the user does not want generated audio.
+
 ### Generation requests
 
 `/generate` and `/cover` take JSON:
@@ -107,6 +135,18 @@ rejects `abc`; the score comes from the audio.
 ```json
 {"audio_data": "<base64 wav>", "mode": "melody"}
 ```
+
+SheetSage2 supplies two melodic lanes (vocal and instrumental) plus symbolic
+chords; it does not perform drum/bass/synth source separation. The current MIDI
+serializer writes one format-0 track, using MIDI channels for the two melodic
+lanes. It does not turn chord labels into chord-note events. Hosts that want
+separate DAW tracks should split the lanes or offer a format-1 export.
+
+The current format-0 serializer also uses a fixed 120 BPM tempo event and maps
+ticks from wall-clock seconds. Standalone playback length is preserved, but the
+clip will not necessarily align to the tempo and bar grid inferred in the ABC.
+This must be corrected or supplemented with a grid-aligned format-1 export
+before the MIDI response is considered DAW-ready.
 
 ### Polling
 
