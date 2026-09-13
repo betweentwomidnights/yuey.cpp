@@ -263,14 +263,14 @@ std::string serialize(const HttpResponse & response) {
 }
 
 UniqueSocket bind_socket(const HttpServerOptions & options) {
-    UniqueSocket socket(socket(AF_INET, SOCK_STREAM, 0));
-    if (socket.get() == kInvalidSocket) throw std::runtime_error("could not create listen socket");
+    UniqueSocket listen_socket(::socket(AF_INET, SOCK_STREAM, 0));
+    if (listen_socket.get() == kInvalidSocket) throw std::runtime_error("could not create listen socket");
     int yes = 1;
 #ifdef _WIN32
-    setsockopt(socket.get(), SOL_SOCKET, SO_REUSEADDR,
+    setsockopt(listen_socket.get(), SOL_SOCKET, SO_REUSEADDR,
         reinterpret_cast<const char *>(&yes), sizeof(yes));
 #else
-    setsockopt(socket.get(), SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    setsockopt(listen_socket.get(), SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #endif
     sockaddr_in address{};
     address.sin_family = AF_INET;
@@ -278,11 +278,11 @@ UniqueSocket bind_socket(const HttpServerOptions & options) {
     if (inet_pton(AF_INET, options.host.c_str(), &address.sin_addr) != 1) {
         throw std::invalid_argument("server host must be an IPv4 address");
     }
-    if (bind(socket.get(), reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0) {
+    if (bind(listen_socket.get(), reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0) {
         throw std::runtime_error("could not bind " + options.host + ':' + std::to_string(options.port));
     }
-    if (listen(socket.get(), 16) != 0) throw std::runtime_error("could not listen on socket");
-    return socket;
+    if (listen(listen_socket.get(), 16) != 0) throw std::runtime_error("could not listen on socket");
+    return listen_socket;
 }
 
 bool wait_for_client(SocketHandle socket) {
