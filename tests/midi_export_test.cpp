@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -237,6 +238,83 @@ int main() {
         return track.name == "Chords";
     }));
 
-    std::cout << "format-1 MIDI conductor, split melodies, chords, and grid timing: ok\n";
+    std::vector<yue2::ScoreEvent> changing_meter(4);
+    changing_meter[0].subbeat = 0;
+    changing_meter[0].time_seconds = 0.0;
+    changing_meter[0].has_timestamp = true;
+    changing_meter[0].meter_numerator = 4;
+    changing_meter[0].meter_denominator = 4;
+    changing_meter[0].eighth_position = 0;
+    changing_meter[0].notes.push_back({60, 0, 10, 48, 0.0});
+    changing_meter[1].subbeat = 16;
+    changing_meter[1].time_seconds = 2.0;
+    changing_meter[1].has_timestamp = true;
+    changing_meter[1].meter_numerator = 3;
+    changing_meter[1].meter_denominator = 4;
+    changing_meter[1].eighth_position = 0;
+    changing_meter[2].subbeat = 28;
+    changing_meter[2].time_seconds = 3.5;
+    changing_meter[2].has_timestamp = true;
+    changing_meter[2].meter_numerator = 5;
+    changing_meter[2].meter_denominator = 8;
+    changing_meter[2].eighth_position = 0;
+    changing_meter[3].subbeat = 48;
+    changing_meter[3].time_seconds = 4.75;
+    changing_meter[3].has_timestamp = true;
+    changing_meter[3].meter_numerator = 5;
+    changing_meter[3].meter_denominator = 8;
+    changing_meter[3].eighth_position = 0;
+    const auto changing = parse_midi(
+        yue2::serialize_sheetsage2_midi(changing_meter, true));
+    const auto & changing_conductor = track_named(changing, "Conductor");
+    std::vector<MidiMeta> signatures;
+    std::copy_if(
+        changing_conductor.meta.begin(), changing_conductor.meta.end(),
+        std::back_inserter(signatures), [](const auto & meta) { return meta.type == 0x58; });
+    assert(signatures.size() == 3);
+    assert(signatures[0].tick == 0 && signatures[0].payload[0] == 4 && signatures[0].payload[1] == 2);
+    assert(signatures[1].tick == 3840 && signatures[1].payload[0] == 3 && signatures[1].payload[1] == 2);
+    assert(signatures[2].tick == 6720 && signatures[2].payload[0] == 5 && signatures[2].payload[1] == 3);
+    assert(track_named(changing, "Vocal Melody").end_tick == 9120);
+
+    std::vector<yue2::ScoreEvent> pickup(2);
+    pickup[0].subbeat = 0;
+    pickup[0].time_seconds = 0.0;
+    pickup[0].has_timestamp = true;
+    pickup[0].notes.push_back({64, 1, 3, 4, 0.0});
+    pickup[1].subbeat = 4;
+    pickup[1].time_seconds = 0.631578947368421;
+    pickup[1].has_timestamp = true;
+    pickup[1].meter_numerator = 4;
+    pickup[1].meter_denominator = 4;
+    pickup[1].eighth_position = 0;
+    pickup[1].notes.push_back({67, 1, 7, 16, 0.0});
+    const auto pickup_midi = parse_midi(
+        yue2::serialize_sheetsage2_midi(pickup, true, 3.157894736842105));
+    const auto & pickup_notes = track_named(pickup_midi, "Instrument Melody").notes;
+    assert(pickup_notes.size() == 2);
+    assert(pickup_notes[0].tick == 2880);
+    assert(pickup_notes[1].tick == 3840);
+
+    std::vector<yue2::ScoreEvent> inversion(2);
+    inversion[0].subbeat = 0;
+    inversion[0].time_seconds = 0.0;
+    inversion[0].has_timestamp = true;
+    inversion[0].meter_numerator = 4;
+    inversion[0].meter_denominator = 4;
+    inversion[0].eighth_position = 0;
+    inversion[0].chord = "C:maj/3";
+    inversion[1].subbeat = 8;
+    inversion[1].time_seconds = 1.0;
+    inversion[1].has_timestamp = true;
+    const auto inversion_midi = parse_midi(
+        yue2::serialize_sheetsage2_midi(inversion, false, 2.0));
+    const auto & inversion_notes = track_named(inversion_midi, "Chords").notes;
+    assert(inversion_notes.size() == 4);
+    assert(std::any_of(inversion_notes.begin(), inversion_notes.end(), [](const auto & note) {
+        return note.pitch == 40;
+    }));
+
+    std::cout << "format-1 MIDI tracks, grid timing, meter changes, pickups, and inversions: ok\n";
     return 0;
 }

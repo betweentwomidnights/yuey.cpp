@@ -930,8 +930,30 @@ MidiTimeline make_midi_timeline(
         }
     }
     if (std::isfinite(duration_seconds) && duration_seconds > 0.0 && bpm > 0.0) {
-        const auto duration_steps = static_cast<std::int64_t>(std::ceil(
-            duration_seconds * bpm * std::max(1, first_denominator) / 60.0 - 1.0e-6));
+        const ScoreEvent * previous_anchor = nullptr;
+        const ScoreEvent * last_anchor = nullptr;
+        for (const auto & event : events) {
+            if (!event.has_timestamp || !std::isfinite(event.time_seconds)) continue;
+            if (!last_anchor || std::tie(event.time_seconds, event.subbeat) >
+                                std::tie(last_anchor->time_seconds, last_anchor->subbeat)) {
+                previous_anchor = last_anchor;
+                last_anchor = &event;
+            }
+        }
+        double duration_steps_value =
+            duration_seconds * bpm * std::max(1, first_denominator) / 60.0;
+        if (last_anchor && previous_anchor &&
+            last_anchor->subbeat > previous_anchor->subbeat &&
+            last_anchor->time_seconds > previous_anchor->time_seconds &&
+            duration_seconds > last_anchor->time_seconds) {
+            const auto seconds_per_step =
+                (last_anchor->time_seconds - previous_anchor->time_seconds) /
+                static_cast<double>(last_anchor->subbeat - previous_anchor->subbeat);
+            duration_steps_value = last_anchor->subbeat +
+                (duration_seconds - last_anchor->time_seconds) / seconds_per_step;
+        }
+        const auto duration_steps = static_cast<std::int64_t>(
+            std::ceil(duration_steps_value - 1.0e-6));
         content_steps = std::max(content_steps, duration_steps);
     }
     MidiTimeline result;
