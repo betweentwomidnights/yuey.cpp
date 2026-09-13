@@ -119,3 +119,31 @@ the DAW integration should adopt.
 SheetSage2 does not infer separate drum, bass, and synthesizer tracks. Its chord
 labels could support an optional generated chord lane, but that would be a
 derived accompaniment representation rather than source-separated MIDI.
+
+### Native parity follow-up
+
+Commits `430dd5a` and `dd4dde5` replaced that provisional serializer. The
+rebuilt Spark `/transcribe` endpoint now returns a grid-aligned format-1 MIDI
+set directly. On the same source, `native-midi-parity/transcription.mid`
+contains:
+
+| Track | Contents | End tick |
+|---|---|---:|
+| Conductor | 95 BPM, 4/4, C-sharp minor, `chorus` marker | 0 |
+| Instrument Melody | 53 notes, pitches 63-80 | 30,720 |
+| Chords | 48 voiced notes from the decoded `C#m - A - B` changes | 30,720 |
+
+At 960 PPQ, tick 30,720 is exactly eight 4/4 bars. The same API response also
+returned `melody.mid`, `melody_vocal.mid`, `melody_instrumental.mid`, and
+`chords.mid`; the legacy `midi_data` bytes exactly matched the
+`midi_files["transcription.mid"]` value. Synthetic tests cover chord inversions,
+downbeat rearticulation, silent tails, pickups, meter changes, notes crossing a
+meter boundary, empty lanes, and melody-only chord omission on both Windows and
+the Spark build. A separate real-weight `yue2-transcribe --midi-dir` run then
+matched all five API-returned MIDI files byte-for-byte.
+
+This reaches—and exceeds—the released exporter contract for the combined and
+component MIDI files while retaining the native lossless event document. It
+does not claim source separation: the chord notes are a deterministic playback
+voicing of SheetSage2's harmonic labels, not recovered bass, drum, or keyboard
+stems.

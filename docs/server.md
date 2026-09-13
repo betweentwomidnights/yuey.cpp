@@ -137,16 +137,18 @@ rejects `abc`; the score comes from the audio.
 ```
 
 SheetSage2 supplies two melodic lanes (vocal and instrumental) plus symbolic
-chords; it does not perform drum/bass/synth source separation. The current MIDI
-serializer writes one format-0 track, using MIDI channels for the two melodic
-lanes. It does not turn chord labels into chord-note events. Hosts that want
-separate DAW tracks should split the lanes or offer a format-1 export.
+chords; it does not perform drum/bass/synth source separation. Full mode's
+combined MIDI is format 1 at 960 PPQ with a conductor track, each active melody
+lane on a named track, and a `Chords` track. Chord labels use the released
+SheetSage2 voicings and rearticulate at downbeats. The conductor carries the
+same inferred tempo and meter as ABC, key-signature changes, and section
+markers. Musical subbeats—not wall-clock seconds—place notes, so the result
+lands on the DAW bar grid and remains correct through pickups and meter changes.
 
-The current format-0 serializer also uses a fixed 120 BPM tempo event and maps
-ticks from wall-clock seconds. Standalone playback length is preserved, but the
-clip will not necessarily align to the tempo and bar grid inferred in the ABC.
-This must be corrected or supplemented with a grid-aligned format-1 export
-before the MIDI response is considered DAW-ready.
+The completed response keeps `midi_data` as the combined compatibility file.
+It also returns `midi_files`, whose base64 values are keyed by
+`transcription.mid`, `melody.mid`, `melody_vocal.mid`,
+`melody_instrumental.mid`, and, in full mode, `chords.mid`.
 
 ### Polling
 
@@ -171,8 +173,9 @@ before the MIDI response is considered DAW-ready.
 - **A completed generation** adds `audio_data`, `abc` (the score used or
   planned), and `meta:{seed, duration, sample_rate, channels, semantic_frames,
   abc_truncated, semantic_truncated}`.
-- **A completed transcription** adds `abc`, `midi_data` (base64 Standard MIDI),
-  `duration`, and `events` (the lossless events document).
+- **A completed transcription** adds `abc`, `midi_data` (the combined base64
+  Standard MIDI), `midi_files` (combined and component MIDIs), `duration`, and
+  `events` (the lossless events document).
 - **Failures** add `error` and `cancelled`.
 
 Finished jobs are kept for five minutes. Poll with `?consume=1` to take the

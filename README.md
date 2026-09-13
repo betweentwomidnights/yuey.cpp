@@ -229,15 +229,22 @@ build/bin/yue2-transcribe \
   --audio input.wav \
   --output score.abc \
   --midi score.mid \
+  --midi-dir midi \
   --events events.json \
   --device cuda \
   --overlap-seconds 200 \
   --lookahead-seconds 100
 ```
 
-Both modes retain the vocal and instrumental melody tracks. Use `--full` to
-also decode meter, structure, key, and chords; the default melody-only prompt
-omits those annotations for YuE2 melody conditioning. Backend selection
+`--midi` writes a DAW-oriented format-1 file with a conductor track and each
+active melody lane on a named track. With `--full`, it also contains a voiced
+chord track derived from SheetSage2's chord labels; `--midi-dir` writes the
+combined `transcription.mid` plus separate `melody.mid`, `melody_vocal.mid`,
+`melody_instrumental.mid`, and `chords.mid` files. Tempo, meter, key, section
+markers, pickups, and meter changes remain aligned to the same musical grid as
+the ABC. Both modes retain the vocal and instrumental melody lanes. Use
+`--full` to also decode meter, structure, key, and chords; the default
+melody-only prompt omits those annotations for YuE2 melody conditioning. Backend selection
 uses `YUE2_DEVICE=cpu` to force CPU, `YUE2_DEVICE=cuda` to require CUDA, or
 `YUE2_GPU=<index-or-name>` to select a registered accelerator. Explicit
 accelerator requests fail if the device cannot be found or initialized; they
@@ -255,7 +262,9 @@ greedy tokens on long material.
 Library clients can call `Transcriber::transcribe_mono()` with an existing mono
 float PCM buffer and its sample rate. This bypasses file I/O and is the intended
 gary4juce/server boundary; the runtime performs the same amplitude-preserving
-24 kHz resampling and returns the same tokens, events, ABC, and MIDI. Pass
+24 kHz resampling and returns the same tokens, events, ABC, and MIDI set. The
+combined compatibility field is `result.midi`; C++ clients can also use
+`result.midi_exports` for the component files. Pass
 `TranscriberRuntimeOptions` at construction to select a device and CPU thread
 count per model instance without changing process-global environment state.
 Concurrent calls on one instance are safe and serialize its mutable GGML

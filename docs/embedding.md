@@ -17,7 +17,11 @@ afford duplicate weights.
 The transcription request accepts float PCM as either ordinary interleaved
 frames or channel-planar buffers (the native shape of a JUCE `AudioBuffer`). It
 downmixes without normalization, resamples internally to 24 kHz, and returns
-ABC, Standard MIDI bytes, and a lossless events JSON document.
+ABC, Standard MIDI bytes, and a lossless events JSON document. The C result's
+MIDI is the combined format-1 arrangement: conductor metadata, active named
+melody tracks, and a chord-note track in full mode. The C++
+`TranscriptionResult::midi_exports` additionally exposes the separate melody,
+vocal, instrumental, and chord files.
 
 ```c
 #include "yue2/c_api.h"
