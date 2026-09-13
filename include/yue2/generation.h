@@ -35,6 +35,10 @@ struct SongRequest {
     std::optional<std::string> abc;
     std::uint64_t seed = 831001;
     std::optional<float> guidance_scale;
+    // Optional exact text placed after ABC_START before symbolic sampling.
+    // This is the low-level injection point for a validated tempo/key/meter
+    // header. It is mutually exclusive with a complete external ABC score.
+    std::optional<std::string> abc_prefix;
 };
 
 struct GenerationSampling {

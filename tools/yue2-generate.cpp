@@ -19,6 +19,7 @@ void usage(const char * argv0) {
         << "Options:\n"
         << "  --symbolic MODE       off, melody, or full (default full)\n"
         << "  --abc PATH            Use an external ABC score instead of planning one\n"
+        << "  --abc-prefix PATH     Seed symbolic planning with an exact ABC text prefix\n"
         << "  --score-output PATH   Write the used or generated ABC score\n"
         << "  --seed N              Sampling and flow-noise seed (default 831001)\n"
         << "  --guidance N          Classifier-free guidance scale\n"
@@ -160,6 +161,8 @@ int main(int argc, char ** argv) {
         if (!symbolic.empty()) request.symbolic_mode = parse_symbolic(symbolic);
         const auto abc_path = value_after(argc, argv, "--abc", false);
         if (!abc_path.empty()) request.abc = read_text(abc_path);
+        const auto abc_prefix_path = value_after(argc, argv, "--abc-prefix", false);
+        if (!abc_prefix_path.empty()) request.abc_prefix = read_text(abc_prefix_path);
         const auto seed = value_after(argc, argv, "--seed", false);
         if (!seed.empty()) request.seed = std::stoull(seed);
         const auto guidance = value_after(argc, argv, "--guidance", false);

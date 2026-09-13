@@ -293,7 +293,9 @@ YUE2_API int32_t yue2_generate(
     char * error,
     int32_t error_size) {
     if (!initialize(result, error, error_size)) return 11;
-    if (!context || !request || request->size < sizeof(*request)) {
+    constexpr std::size_t original_request_size =
+        offsetof(yue2_generation_request, abc_prefix);
+    if (!context || !request || request->size < original_request_size) {
         set_error(error, error_size, "invalid generation request");
         return 1;
     }
@@ -303,6 +305,9 @@ YUE2_API int32_t yue2_generate(
         if (request->lyrics) song.lyrics = request->lyrics;
         song.symbolic_mode = symbolic_mode(request->symbolic_mode);
         if (request->abc) song.abc = request->abc;
+        if (request->size >= sizeof(*request) && request->abc_prefix) {
+            song.abc_prefix = request->abc_prefix;
+        }
         if (request->seed_set) song.seed = request->seed;
         if (request->guidance_set) song.guidance_scale = request->guidance_scale;
 

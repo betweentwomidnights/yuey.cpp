@@ -21,3 +21,19 @@ from interior quality.
 The transcription model is not part of this quantization matrix. Its F16 GGUF
 is already small enough for the target consumer hardware and remains the
 accuracy-preserving default.
+
+## Locked musical structure
+
+Free-form tags are soft conditioning: even the released BF16 planner may choose
+a different key, tempo, or meter. The native request therefore accepts an
+optional `abc_prefix`, placed exactly after the model's `ABC_START` token and
+before symbolic sampling. A host can supply a validated header containing its
+locked meter, unit length, tempo, voices, and key; YuE2 then composes the score
+body under that prefix. `abc_prefix` is mutually exclusive with a complete
+external `abc` score and must end with a newline.
+
+The prefix is the low-level transport primitive, not the intended UI. A DAW or
+server should construct it from typed key, BPM, and meter fields, then parse and
+validate the completed plan before semantic generation begins. Changing only a
+completed score's `K:` or `M:` field is unsafe because the notes, chords, rests,
+ties, and bar lengths would no longer agree with the header.

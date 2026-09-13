@@ -134,6 +134,11 @@ typedef struct {
     yue2_progress_cb on_progress;
     yue2_cancel_cb should_cancel;
     void * user;
+
+    /* Optional exact ABC text placed after ABC_START before planning. This is
+     * mutually exclusive with abc and must end with a newline. Added at the
+     * tail so callers compiled against the original request remain valid. */
+    const char * abc_prefix;
 } yue2_generation_request;
 
 typedef struct {

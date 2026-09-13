@@ -24,6 +24,18 @@ void validate_request(const SongRequest & request) {
         throw std::invalid_argument(
             "YuE2 external ABC must be nonempty and requires melody or full mode");
     }
+    if (request.abc_prefix &&
+        (request.symbolic_mode == SymbolicMode::off || request.abc_prefix->empty())) {
+        throw std::invalid_argument(
+            "YuE2 ABC prefix must be nonempty and requires melody or full mode");
+    }
+    if (request.abc && request.abc_prefix) {
+        throw std::invalid_argument(
+            "YuE2 ABC prefix and complete external ABC are mutually exclusive");
+    }
+    if (request.abc_prefix && request.abc_prefix->back() != '\n') {
+        throw std::invalid_argument("YuE2 ABC prefix must end with a newline");
+    }
     (void)generation_guidance(request);
 }
 
@@ -76,12 +88,19 @@ public:
                 result.abc = *request.abc;
                 result.abc_token_ids = tokenizer.encode(result.abc);
             } else {
-                const auto initial = make_positive_prefix(request, tokenizer);
+                auto initial = make_positive_prefix(request, tokenizer);
+                std::vector<std::int32_t> seeded_abc_ids;
+                if (request.abc_prefix) {
+                    seeded_abc_ids = tokenizer.encode(*request.abc_prefix);
+                    initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
+                }
                 const auto planned = autoregressive.generate(
                     initial, run_options.generation.abc,
                     AutoregressivePhase::abc, request.seed,
                     ar_control(control, GenerationStage::abc));
-                result.abc_token_ids = planned.tokens;
+                result.abc_token_ids = std::move(seeded_abc_ids);
+                result.abc_token_ids.insert(
+                    result.abc_token_ids.end(), planned.tokens.begin(), planned.tokens.end());
                 result.abc = tokenizer.decode(result.abc_token_ids);
                 result.abc_truncated = !planned.reached_end;
                 if (control.on_progress) {

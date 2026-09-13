@@ -659,6 +659,14 @@ private:
             throw std::invalid_argument("/cover scores audio_data itself; use /generate to supply abc");
         }
         if (!abc.empty()) song.abc = abc;
+        const auto abc_prefix = json::string(root, "abc_prefix");
+        if (job.kind == JobKind::cover && !abc_prefix.empty()) {
+            throw std::invalid_argument("/cover transcribes its own planning score; abc_prefix is not accepted");
+        }
+        if (!abc.empty() && !abc_prefix.empty()) {
+            throw std::invalid_argument("abc and abc_prefix are mutually exclusive");
+        }
+        if (!abc_prefix.empty()) song.abc_prefix = abc_prefix;
         const bool scored = job.kind == JobKind::cover || song.abc.has_value();
         auto mode = first_string(root, {"symbolic_mode", "cot"});
         if (mode.empty()) {
@@ -670,8 +678,10 @@ private:
                 : (scored ? "melody" : "full");
         }
         song.symbolic_mode = symbolic_mode(mode);
-        if (scored && song.symbolic_mode == yue2::SymbolicMode::off) {
-            throw std::invalid_argument("a score requires symbolic_mode melody or full");
+        if ((scored || song.abc_prefix.has_value()) &&
+            song.symbolic_mode == yue2::SymbolicMode::off) {
+            throw std::invalid_argument(
+                "a score or planning prefix requires symbolic_mode melody or full");
         }
 
         const auto * seed = root.find("seed");
