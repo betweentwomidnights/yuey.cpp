@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import shutil
 import sys
 from pathlib import Path
@@ -29,6 +30,11 @@ except ImportError as exc:
     raise SystemExit(
         "converter dependencies are missing; install numpy torch safetensors gguf"
     ) from exc
+
+try:
+    import gguf_meta
+except ImportError:  # imported as tools.convert_yue2_gguf by the unit tests
+    from tools import gguf_meta
 
 
 MODEL_ARCHITECTURE = {
@@ -67,6 +73,8 @@ MODEL_SIDECARS = (
 )
 VAE_SIDECARS = (("config.json", "yue2-vae-config.json"),)
 STORAGE_TYPES = ("f32", "f16", "bf16")
+MODEL_SOURCE = ("YuE2-3B", "m-a-p", "https://huggingface.co/m-a-p/YuE2-3B")
+VAE_SOURCE = ("YuE2-Vae", "m-a-p", "https://huggingface.co/m-a-p/YuE2-Vae")
 
 
 def load_json(path: Path) -> dict:
@@ -194,9 +202,13 @@ def write_model(
     generation_config: dict,
     storage_type: str,
     digest: str | None,
+    n_params: int,
+    revision: str | None = None,
 ) -> int:
     writer = gguf.GGUFWriter(str(output), "yue2", use_temp_file=True)
-    writer.add_name("YuE2-3B")
+    gguf_meta.add_general(writer, "yue2", "YuE2-3B", n_params=n_params)
+    gguf_meta.add_sources(writer, [(*MODEL_SOURCE, revision)])
+    gguf_meta.add_file_type(writer, storage_type)
     add_common_metadata(writer, "generation", config, digest)
     writer.add_string(
         "yue2.generation.config",
@@ -231,9 +243,12 @@ def write_vae(
     config: dict,
     storage_type: str,
     digest: str | None,
+    revision: str | None = None,
 ) -> tuple[int, int]:
     writer = gguf.GGUFWriter(str(output), "yue2_vae", use_temp_file=True)
-    writer.add_name("YuE2-VAE (weight norm folded)")
+    gguf_meta.add_general(writer, "yue2-vae", "YuE2-VAE (weight norm folded)")
+    gguf_meta.add_sources(writer, [(*VAE_SOURCE, revision)])
+    gguf_meta.add_file_type(writer, storage_type)
     add_common_metadata(writer, "vae", config, digest)
     writer.add_uint32("yue2.vae.sample_rate", config["sample_rate"])
     writer.add_uint32("yue2.vae.audio_channels", config["audio_channels"])
@@ -300,8 +315,9 @@ def require_sidecars(model_dir: Path, vae_dir: Path) -> None:
                 raise ValueError(f"missing sidecar: {source}")
 
 
-def typed_name(stem: str, storage_type: str) -> str:
-    return f"{stem}-{storage_type}.gguf"
+def count_parameters(checkpoint: Path) -> int:
+    with safe_open(str(checkpoint), framework="pt", device="cpu") as source:
+        return sum(math.prod(source.get_slice(name).get_shape()) for name in source.keys())
 
 
 def convert(args: argparse.Namespace) -> tuple[Path, Path]:
@@ -317,8 +333,9 @@ def convert(args: argparse.Namespace) -> tuple[Path, Path]:
     require_sidecars(model_dir, vae_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    model_output = output_dir / typed_name("yue2-3b", args.model_type)
-    vae_output = output_dir / typed_name("yue2-vae", args.vae_type)
+    model_params = count_parameters(model_checkpoint)
+    model_output = output_dir / gguf_meta.gguf_filename("yue2", args.model_type, model_params)
+    vae_output = output_dir / gguf_meta.gguf_filename("yue2-vae", args.vae_type)
     existing = [path for path in (model_output, vae_output) if path.exists()]
     if existing and not args.overwrite:
         raise ValueError(f"output already exists (pass --overwrite): {existing[0]}")
@@ -345,8 +362,13 @@ def convert(args: argparse.Namespace) -> tuple[Path, Path]:
             generation_config,
             args.model_type,
             model_digest,
+            model_params,
+            getattr(args, "model_revision", None),
         )
-        write_vae(vae_checkpoint, vae_work, vae_config, args.vae_type, vae_digest)
+        write_vae(
+            vae_checkpoint, vae_work, vae_config, args.vae_type, vae_digest,
+            getattr(args, "vae_revision", None),
+        )
         copy_sidecars(model_dir, vae_dir, output_dir)
         model_work.replace(model_output)
         vae_work.replace(vae_output)
@@ -365,6 +387,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", type=Path, required=True, help="output package directory")
     parser.add_argument("--model-type", choices=STORAGE_TYPES, default="bf16")
     parser.add_argument("--vae-type", choices=STORAGE_TYPES, default="f16")
+    parser.add_argument(
+        "--model-revision",
+        help="Hugging Face revision of the YuE2-3B download (general.base_model.0.version)",
+    )
+    parser.add_argument("--vae-revision", help="Hugging Face revision of the YuE2-Vae download")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--no-checksum", action="store_true", help="omit source SHA-256 metadata")
     return parser.parse_args()

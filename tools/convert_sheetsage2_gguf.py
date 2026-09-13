@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -30,10 +31,18 @@ except ImportError as exc:
         "converter dependencies are missing; install numpy safetensors gguf"
     ) from exc
 
+try:
+    import gguf_meta
+except ImportError:  # imported as tools.convert_sheetsage2_gguf by the unit tests
+    from tools import gguf_meta
+
 
 MERT_REVISION = "d8ba1c745e733b3908ce6ad16ebeb17ac7600a42"
 MERT_SHA256 = "e6dd2ab187d6dd62b6521cd7d8f932e237acf0c5757745a7232082e28391350d"
 TOKENIZER_FINGERPRINT = "5ba3325af0344c7f"
+BASENAME = "sheetsage2-mert2"
+SHEETSAGE_SOURCE = ("SheetSage2", "m-a-p", "https://huggingface.co/m-a-p/SheetSage2")
+MERT_SOURCE = ("MERT-v2-FullSong", "m-a-p", "https://huggingface.co/m-a-p/MERT-v2-FullSong")
 PROJECTION_RE = re.compile(
     r"^layers\.(\d+)\.attn\.(query_proj|key_proj|value_proj|out_proj)\.weight$"
 )
@@ -119,8 +128,44 @@ def adapter_names(layer: str, projection: str) -> tuple[str, str]:
     return f"{stem}.lora_A.weight", f"{stem}.lora_B.weight"
 
 
-def add_metadata(writer, sheet: dict, mert: dict, sheet_sha: str, mert_sha: str) -> None:
-    writer.add_name("SheetSage2 + MERT-v2-FullSong (merged)")
+def count_parameters(sheet_checkpoint: Path, mert_checkpoint: Path) -> int:
+    """Parameters of the merged model: the MERT2 parent plus SheetSage2's
+    non-adapter tensors (merged LoRA factors add no tensors)."""
+    total = 0
+    with safe_open(str(mert_checkpoint), framework="numpy") as source:
+        total += sum(math.prod(source.get_slice(name).get_shape()) for name in source.keys())
+    with safe_open(str(sheet_checkpoint), framework="numpy") as source:
+        total += sum(
+            math.prod(source.get_slice(name).get_shape())
+            for name in source.keys()
+            if not name.startswith("adapter.")
+        )
+    return total
+
+
+def resolve_output(out: Path, storage_type: str, n_params: int) -> Path:
+    """An explicit .gguf path is used as given; a directory receives the
+    conventional <BaseName>-<SizeLabel>-<Version>-<Encoding>.gguf name."""
+    if out.suffix == ".gguf":
+        return out
+    out.mkdir(parents=True, exist_ok=True)
+    return out / gguf_meta.gguf_filename(BASENAME, storage_type, n_params)
+
+
+def add_metadata(
+    writer,
+    sheet: dict,
+    mert: dict,
+    sheet_sha: str,
+    mert_sha: str,
+    n_params: int,
+    storage_type: str,
+) -> None:
+    gguf_meta.add_general(
+        writer, BASENAME, "SheetSage2 + MERT-v2-FullSong (merged)", n_params=n_params
+    )
+    gguf_meta.add_sources(writer, [(*SHEETSAGE_SOURCE, None), (*MERT_SOURCE, MERT_REVISION)])
+    gguf_meta.add_file_type(writer, storage_type)
     writer.add_string("yue2.component", "transcription")
     writer.add_string("yue2.transcription.architecture", "sheetsage2-mert2-fs")
     writer.add_string("yue2.transcription.tokenizer_fingerprint", TOKENIZER_FINGERPRINT)
@@ -136,7 +181,7 @@ def add_metadata(writer, sheet: dict, mert: dict, sheet_sha: str, mert_sha: str)
     writer.add_bool("yue2.transcription.lora_merged", True)
 
 
-def convert(args: argparse.Namespace) -> None:
+def convert(args: argparse.Namespace) -> Path:
     sheet_dir = args.sheetsage.resolve()
     mert_dir = args.mert.resolve()
     sheet_checkpoint = require_checkpoint(sheet_dir)
@@ -152,8 +197,13 @@ def convert(args: argparse.Namespace) -> None:
         raise ValueError(f"MERT2 SHA-256 mismatch: expected {expected_digest}, got {mert_digest}")
     sheet_digest = sha256(sheet_checkpoint)
 
-    writer = gguf.GGUFWriter(str(args.out), "yue2-sheetsage2", use_temp_file=True)
-    add_metadata(writer, sheet_config, mert_config, sheet_digest, mert_digest)
+    storage_type = "f32" if args.keep_f32 else "f16"
+    n_params = count_parameters(sheet_checkpoint, mert_checkpoint)
+    output = resolve_output(args.out, storage_type, n_params)
+    writer = gguf.GGUFWriter(str(output), "yue2-sheetsage2", use_temp_file=True)
+    add_metadata(
+        writer, sheet_config, mert_config, sheet_digest, mert_digest, n_params, storage_type
+    )
 
     count = 0
     merged = 0
@@ -195,18 +245,22 @@ def convert(args: argparse.Namespace) -> None:
     if merged != expected_merged:
         raise ValueError(f"merged {merged} attention projections; expected {expected_merged}")
 
-    print(f"[write] {count} tensors ({merged} LoRA-merged projections) -> {args.out}", file=sys.stderr)
+    print(f"[write] {count} tensors ({merged} LoRA-merged projections) -> {output}", file=sys.stderr)
     writer.write_header_to_file()
     writer.write_kv_data_to_file()
     writer.write_tensors_to_file(progress=True)
     writer.close()
+    return output
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sheetsage", type=Path, required=True, help="downloaded m-a-p/SheetSage2 directory")
     parser.add_argument("--mert", type=Path, required=True, help="downloaded m-a-p/MERT-v2-FullSong directory")
-    parser.add_argument("--out", type=Path, required=True, help="output .gguf")
+    parser.add_argument(
+        "--out", type=Path, required=True,
+        help="output directory (conventional file name) or an explicit .gguf path",
+    )
     parser.add_argument("--keep-f32", action="store_true", help="keep matrix weights in f32 instead of f16")
     parser.add_argument("--no-verify", action="store_true", help="skip the pinned MERT2 checksum (development only)")
     return parser.parse_args()

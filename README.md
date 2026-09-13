@@ -74,8 +74,13 @@ python -m pip install numpy safetensors gguf
 python tools/convert_sheetsage2_gguf.py \
   --sheetsage models/SheetSage2 \
   --mert models/MERT-v2-FullSong \
-  --out models/sheetsage2-mert2-f16.gguf
+  --out models
 ```
+
+Given a directory, converters write the GGUF naming convention shared with
+`sa3.cpp` and `audiocraft.cpp`, here `sheetsage2-mert2-0.7B-v1.0-F16.gguf`; an
+explicit `.gguf` path is used as given. See
+[docs/distribution.md](docs/distribution.md).
 
 The converter validates the released architecture, tokenizer fingerprint,
 pinned MERT revision and MERT SHA-256, then merges all 96 attention LoRA
@@ -95,15 +100,46 @@ python tools/convert_yue2_gguf.py \
   --out models/YuE2-3B-GGUF
 
 build/bin/yue2-inspect-generation \
-  models/YuE2-3B-GGUF/yue2-3b-bf16.gguf \
-  models/YuE2-3B-GGUF/yue2-vae-f16.gguf
+  models/YuE2-3B-GGUF/yue2-3.6B-v1.0-BF16.gguf \
+  models/YuE2-3B-GGUF/yue2-vae-v1.0-F16.gguf
 ```
 
 The defaults preserve the main model's released BF16 weights, cast the VAE to
 F16 after folding its 88 weight-normalization pairs, copy the Qwen tiktoken and
 configuration sidecars, and embed SHA-256 fingerprints of both source
 checkpoints. `--model-type` and `--vae-type` also accept `f32`, `f16`, or
-`bf16`. Existing outputs require an explicit `--overwrite`.
+`bf16`. Existing outputs require an explicit `--overwrite`. `--model-revision`
+and `--vae-revision` record the downloaded Hugging Face revisions in the
+standard `general.base_model.*` fields.
+
+## Quantization
+
+`yue2-quantize` re-encodes the generation GGUF with the same mixes as
+`sa3-quantize`. It streams one tensor at a time, so host memory stays bounded by
+the largest tensor rather than the 7 GB model:
+
+```bash
+build/bin/yue2-quantize \
+  --in models/YuE2-3B-GGUF/yue2-3.6B-v1.0-BF16.gguf \
+  --mix q4_k_m
+build/bin/yue2-quant-check \
+  --ref models/YuE2-3B-GGUF/yue2-3.6B-v1.0-BF16.gguf \
+  --quant models/YuE2-3B-GGUF/yue2-3.6B-v1.0-Q4_K_M.gguf
+```
+
+`--mix` accepts `q4_k_m`, `q5_k_m`, `q8_0`, `f16`, and `f32`; without `--out`
+the Encoding field of the input name is replaced. The K-quant mixes store
+attention values, MLP down projections, the embedding, and the LM head as
+Q6_K. Norms, biases, and the flow branch's latent bridges, timestep MLP, and
+latent position table keep their source storage. Metadata, including the
+checkpoint fingerprint LoRA adapters bind to, is preserved.
+`yue2-quant-check` dequantizes every converted tensor and exits nonzero if any
+falls below the cosine threshold.
+
+The VAE and the transcription model are refused: both stay F16/F32. The
+1.26 GiB F16 transcription model already runs on an 8 GB laptop GPU. Quantized
+generation tiers have not yet been validated against real-weight parity and
+listening tests.
 
 Convert a PEFT-style generation adapter and optionally bind it to the exact
 source-checkpoint fingerprint embedded in the base GGUF:
@@ -114,7 +150,7 @@ python tools/convert_yue2_lora.py \
   --config adapters/my-style/adapter_config.json \
   --base-sha256 <sha256-of-model.safetensors> \
   --type f16 \
-  --output models/my-style-f16.gguf
+  --output models/my-style-v1.0-F16-LoRA.gguf
 ```
 
 The converter accepts YuE2 AR/NAR attention and MLP projections, `lm_head`,
@@ -157,14 +193,14 @@ Generate a WAV with an existing full ABC score:
 
 ```bash
 build/bin/yue2-generate \
-  --model models/YuE2-3B-GGUF/yue2-3b-bf16.gguf \
-  --vae models/YuE2-3B-GGUF/yue2-vae-f16.gguf \
+  --model models/YuE2-3B-GGUF/yue2-3.6B-v1.0-BF16.gguf \
+  --vae models/YuE2-3B-GGUF/yue2-vae-v1.0-F16.gguf \
   --tokenizer models/YuE2-3B-GGUF/qwen.tiktoken \
   --style "acoustic, intimate" \
   --lyrics-file lyrics.txt \
   --symbolic full \
   --abc score.abc \
-  --lora models/my-style-f16.gguf=0.8 \
+  --lora models/my-style-v1.0-F16-LoRA.gguf=0.8 \
   --output song.wav \
   --device cuda
 ```
@@ -178,7 +214,7 @@ Run a single-window transcription:
 
 ```bash
 build/bin/yue2-transcribe \
-  --model models/sheetsage2-mert2-f16.gguf \
+  --model models/sheetsage2-mert2-0.7B-v1.0-F16.gguf \
   --audio input.wav \
   --output score.abc \
   --midi score.mid \

@@ -25,7 +25,7 @@ ABC, Standard MIDI bytes, and a lossless events JSON document.
 char error[512] = {0};
 yue2_transcriber_config config = {0};
 config.size = sizeof config;
-config.model_path = "sheetsage2-mert2-f16.gguf";
+config.model_path = "sheetsage2-mert2-0.7B-v1.0-F16.gguf";
 config.device = "cuda";
 yue2_transcriber_context *ctx =
     yue2_transcriber_create(&config, error, sizeof error);
@@ -71,8 +71,8 @@ adapters[1].strength = 0.5f;
 
 yue2_generator_config config = {0};
 config.size = sizeof config;
-config.model_path = "yue2-3b-bf16.gguf";
-config.vae_path = "yue2-vae-f16.gguf";
+config.model_path = "yue2-3.6B-v1.0-Q4_K_M.gguf";
+config.vae_path = "yue2-vae-v1.0-F16.gguf";
 config.tokenizer_path = "qwen.tiktoken";
 config.device = "cuda";
 config.lora_adapters = adapters;

@@ -15,11 +15,17 @@ import torch
 from gguf import GGMLQuantizationType, GGUFReader
 from safetensors.torch import save_file
 
+from tools import gguf_meta
 from tools.convert_yue2_gguf import (
     MODEL_ARCHITECTURE,
     VAE_ARCHITECTURE,
     convert,
 )
+
+
+def string_field(reader: GGUFReader, key: str) -> str:
+    field = reader.fields[key]
+    return bytes(field.parts[field.data[0]]).decode("utf-8")
 
 
 def model_config() -> dict:
@@ -90,9 +96,15 @@ class YuE2ConverterTest(unittest.TestCase):
                 out=output_dir,
                 model_type="bf16",
                 vae_type="f16",
+                model_revision="0123abcd",
+                vae_revision=None,
                 overwrite=False,
                 no_checksum=True,
             ))
+            # Six parameters: the 2x2 embedding and the 2-element norm.
+            self.assertEqual(model_output.name, gguf_meta.gguf_filename("yue2", "bf16", 6))
+            self.assertTrue(model_output.name.endswith("-v1.0-BF16.gguf"))
+            self.assertEqual(vae_output.name, "yue2-vae-v1.0-F16.gguf")
 
             with self.assertRaisesRegex(ValueError, "output already exists"):
                 convert(SimpleNamespace(
@@ -110,6 +122,17 @@ class YuE2ConverterTest(unittest.TestCase):
             model_tensors = {tensor.name: tensor for tensor in model_reader.tensors}
             vae_tensors = {tensor.name: tensor for tensor in vae_reader.tensors}
             try:
+                self.assertEqual(string_field(model_reader, "general.basename"), "yue2")
+                self.assertEqual(string_field(model_reader, "general.license"), "cc-by-nc-4.0")
+                self.assertEqual(string_field(model_reader, "general.version"), "v1.0")
+                self.assertEqual(
+                    string_field(model_reader, "general.base_model.0.repo_url"),
+                    "https://huggingface.co/m-a-p/YuE2-3B",
+                )
+                self.assertEqual(string_field(model_reader, "general.base_model.0.version"), "0123abcd")
+                self.assertEqual(int(model_reader.fields["general.file_type"].parts[-1][0]), 32)
+                self.assertEqual(string_field(vae_reader, "general.basename"), "yue2-vae")
+                self.assertNotIn("general.size_label", vae_reader.fields)
                 embedding = model_tensors["model.embed_tokens.weight"]
                 self.assertEqual(embedding.tensor_type, GGMLQuantizationType.BF16)
                 actual_words = np.frombuffer(embedding.data.tobytes(), dtype=np.uint16)

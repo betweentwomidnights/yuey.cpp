@@ -14,7 +14,13 @@ import numpy as np
 from gguf import GGUFReader
 from safetensors.numpy import save_file
 
+from tools import gguf_meta
 from tools.convert_sheetsage2_gguf import MERT_REVISION, TOKENIZER_FINGERPRINT, convert
+
+
+def string_field(reader: GGUFReader, key: str) -> str:
+    field = reader.fields[key]
+    return bytes(field.parts[field.data[0]]).decode("utf-8")
 
 
 class ConverterTest(unittest.TestCase):
@@ -74,15 +80,29 @@ class ConverterTest(unittest.TestCase):
             save_file(base, mert_dir / "model.safetensors")
             save_file(adapter, sheet_dir / "model.safetensors")
 
-            output = root / "model.gguf"
-            convert(SimpleNamespace(
+            explicit = root / "model.gguf"
+            self.assertEqual(convert(SimpleNamespace(
                 sheetsage=sheet_dir,
                 mert=mert_dir,
-                out=output,
+                out=explicit,
+                keep_f32=False,
+                no_verify=True,
+            )), explicit)
+
+            # 96 merged 2x2 projections plus the 25-way layer mixture.
+            output = convert(SimpleNamespace(
+                sheetsage=sheet_dir,
+                mert=mert_dir,
+                out=root / "converted",
                 keep_f32=False,
                 no_verify=True,
             ))
+            self.assertEqual(output.name, gguf_meta.gguf_filename("sheetsage2-mert2", "f16", 409))
+            self.assertTrue(output.name.endswith("-v1.0-F16.gguf"))
             reader = GGUFReader(output)
+            self.assertEqual(string_field(reader, "general.basename"), "sheetsage2-mert2")
+            self.assertEqual(string_field(reader, "general.license"), "cc-by-nc-4.0")
+            self.assertEqual(string_field(reader, "general.base_model.1.version"), MERT_REVISION)
             tensors = {tensor.name: tensor for tensor in reader.tensors}
             self.assertIn("mert2.layers.0.attn.query_proj.weight", tensors)
             merged = tensors["mert2.layers.0.attn.query_proj.weight"].data
