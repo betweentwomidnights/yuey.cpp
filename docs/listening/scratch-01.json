@@ -1,0 +1,14 @@
+{
+  "id": "scratch-01-neon-static",
+  "style": "Dark cinematic synth-pop and trip-hop, 92 BPM, D minor, smoky intimate female vocal, deep sub bass, dusty breakbeat drums, detuned analog pads, glassy arpeggios, wide dramatic chorus, detailed modern production",
+  "lyrics": "[Verse]\nStreetlights tremble on the rain\nYour reflection leaves the train\nEvery signal bends and breaks\nI can feel the city wake\n\n[Chorus]\nPull me through the static tonight\nHold the frequency just right\nIf the skyline disappears\nI will find you through the noise",
+  "symbolic_mode": "full",
+  "seed": 20260913,
+  "abc_min_tokens": 32,
+  "abc_max_tokens": 2048,
+  "semantic_frames": 768,
+  "ode_steps": 32,
+  "temperature": 1.0,
+  "top_k": 100,
+  "top_p": 0.95
+}
