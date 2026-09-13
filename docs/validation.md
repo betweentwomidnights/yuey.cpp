@@ -28,6 +28,23 @@ working merely because a graph compiles.
   resident generator returns the same semantic IDs, 128 latents, and 3,776
   stereo frames while rechecking deterministic repetition, progress, and
   cancellation in 2.12 seconds at 1,114,088 KiB.
+- The synthetic quantizer test (CTest `yue2-quantize-test`) builds a BF16
+  GGUF with YuE2 tensor names and checks the Q4_K_M, Q8_0, and
+  F16-from-Q4_K_M tensor plans. It also checks the streamed GGUF layout,
+  byte-identical kept tensors, and preserved metadata and fingerprint. It
+  covers `general.file_type`, the refusal of existing outputs, in-place writes,
+  the VAE, and transcription GGUFs. On synthetic N(0, 0.02) weights, Q4_K
+  cosine is 0.9976 and Q6_K is at least 0.9998. Quantized `get_rows` matches
+  host dequantization to 1e-5. Q4_K and Q6_K `mul_mat` relative RMS against host
+  math is 0.0101/0.0067 on the Windows CPU and 0.0089/0.0054 on the RTX 5070
+  Laptop GPU; the backends quantize activations for these dot products.
+- `yue2-quant-check` on the real transcription GGUFs (F32 reference, F16
+  candidate) compares all 390 converted tensors with minimum cosine 1.000000,
+  exercising the streamed checker on multi-gigabyte files.
+- A current-source CUDA 12.8 rebuild on the RTX 5070 Laptop GPU passes the
+  real-weight F16 transcription integration test (single window plus
+  four-window stitching) in 1.5 seconds and the pure-C transcription test in
+  1.0 second, with no quantization involved.
 - Full conversion of the released 7,261,441,640-byte YuE2-3B source checkpoint
   into a 7,261,418,432-byte, 628-tensor BF16 GGUF and the released
   530,512,720-byte YuE2-VAE source into a 265,189,792-byte, 347-tensor F16
@@ -157,6 +174,17 @@ The reference fixture loader constructs MERT2 normally and loads the pinned
 safetensors explicitly. This avoids a local Transformers low-memory-loading
 compatibility issue that left the non-persistent rotary-frequency buffer
 uninitialized and would otherwise make the oracle itself incorrect.
+
+## Required before publishing quantized generation GGUFs
+
+- Run `yue2-quant-check` on each real Q8_0/Q5_K_M/Q4_K_M file against the
+  BF16 source.
+- Compare quantized AR logits and flow latents with the official fixtures.
+  The existing AR parity bound (relative RMS 0.003) is a BF16 gate; quantized
+  tiers need their own recorded tolerances and top-token agreement.
+- Run the complete generation smoke test and listening comparisons per tier.
+- Measure peak VRAM per stage on an 8 GB GPU, including the F16 AR KV caches
+  (about 0.11 MiB per token, two sessions under guidance).
 
 ## Required before calling transcription complete
 

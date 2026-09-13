@@ -96,6 +96,14 @@ functionally as `W*x + scale*B*(A*x)`. Base tensors remain immutable, avoiding
 both merge cost and a second quantization pass. Multiple plain LoRAs compose
 additively, and strength zero is an explicit graph-level bypass.
 
+Quantized generation packages come from `yue2-quantize`, which rewrites only
+the main GGUF's 2-D projection and embedding matrices. Every AR/NAR
+projection already reaches GGML through `mul_mat` and the embedding through
+`get_rows`, both of which accept K-quant storage on CPU and CUDA, so the loader
+and graphs need no quantization-specific path. The latent position table is
+read through a view and an F32 cast, so it is excluded along with the rest of
+the flow boundary. The VAE and the transcription model are not quantized.
+
 The same model owns the released 28-layer NAR branch. Flow execution prefills
 the AR prefix and semantic codec sequence, projects seeded 64-channel noise,
 adds timestep and latent-position embeddings, attends over the cached AR keys

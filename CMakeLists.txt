@@ -66,6 +66,7 @@ add_library(yue2 STATIC
     src/lora.cpp
     src/mert2_encoder.cpp
     src/mert2_frontend.cpp
+    src/quantize.cpp
     src/sheetsage2_tokens.cpp
     src/tokenizer.cpp
     src/transcription.cpp
@@ -98,6 +99,13 @@ if(YUE2_BUILD_TOOLS)
 
     add_executable(yue2-inspect-generation tools/yue2-inspect-generation.cpp)
     target_link_libraries(yue2-inspect-generation PRIVATE yue2)
+
+    # yue2-quantize: K-quant/Q8_0 generation GGUFs; yue2-quant-check: per-tensor cosine.
+    add_executable(yue2-quantize tools/yue2-quantize.cpp)
+    target_link_libraries(yue2-quantize PRIVATE yue2)
+
+    add_executable(yue2-quant-check tools/yue2-quant-check.cpp)
+    target_link_libraries(yue2-quant-check PRIVATE yue2)
 
     add_executable(yue2-generate tools/yue2-generate.cpp)
     target_link_libraries(yue2-generate PRIVATE yue2)
@@ -163,6 +171,14 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-lora-test PRIVATE yue2)
     yue2_enable_test_assertions(yue2-lora-test)
     add_test(NAME yue2-lora-test COMMAND yue2-lora-test)
+
+    # Synthetic quantizer plan, layout, and quantized kernel test:
+    # yue2-quantize-test [DEVICE]
+    add_executable(yue2-quantize-test tests/quantize_test.cpp)
+    target_include_directories(yue2-quantize-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(yue2-quantize-test PRIVATE yue2)
+    yue2_enable_test_assertions(yue2-quantize-test)
+    add_test(NAME yue2-quantize-test COMMAND yue2-quantize-test)
 
     add_executable(yue2-server-support-test tests/server_support_test.cpp)
     target_link_libraries(yue2-server-support-test PRIVATE yue2-server-support)

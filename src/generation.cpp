@@ -128,6 +128,14 @@ std::string homogeneous_storage_type(const MetadataFile & file) {
     }
 }
 
+// Quantized packages mix storage types by design, so their recorded encoding
+// (e.g. Q4_K_M) describes them better than "mixed".
+std::string storage_type(const MetadataFile & file) {
+    auto encoding = optional_string(file, "yue2.quantization.encoding");
+    if (!encoding.empty()) return encoding;
+    return homogeneous_storage_type(file);
+}
+
 std::size_t tensor_count(const MetadataFile & file) {
     return static_cast<std::size_t>(gguf_get_n_tensors(file.gguf.get()));
 }
@@ -175,7 +183,7 @@ void validate_model(const MetadataFile & file, GenerationPackageInfo & info) {
     require_shape(file, "llm2vae.weight", {2048, 64});
     require_shape(file, "model.layers.0.self_attn.q_proj.weight", {2048, 2048});
     require_shape(file, "model.layers.27.nar_self_attn.q_proj.weight", {2048, 2048});
-    info.model_storage_type = homogeneous_storage_type(file);
+    info.model_storage_type = storage_type(file);
     info.model_checkpoint_sha256 = optional_string(file, "yue2.checkpoint.sha256");
 }
 
@@ -215,7 +223,7 @@ void validate_vae(const MetadataFile & file, GenerationPackageInfo & info) {
             throw package_error("unfolded VAE weight norm tensor: " + name);
         }
     }
-    info.vae_storage_type = homogeneous_storage_type(file);
+    info.vae_storage_type = storage_type(file);
     info.vae_checkpoint_sha256 = optional_string(file, "yue2.checkpoint.sha256");
 }
 
