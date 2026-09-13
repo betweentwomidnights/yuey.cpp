@@ -1,0 +1,12 @@
+/build*/
+/.venv*/
+/models/
+/outputs/
+*.gguf
+*.safetensors
+*.f32
+*.i32
+__pycache__/
+*.pyc
+/tests/fixtures/generated/
+/tests/fixtures/qwen.tiktoken
