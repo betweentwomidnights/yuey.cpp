@@ -4,10 +4,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -20,6 +22,8 @@ void usage(const char * argv0) {
         << "  --symbolic MODE       off, melody, or full (default full)\n"
         << "  --abc PATH            Use an external ABC score instead of planning one\n"
         << "  --abc-prefix PATH     Seed symbolic planning with an exact ABC text prefix\n"
+        << "  --bpm N --key KEY     Build a trusted planning prefix (for example --key \"C# minor\")\n"
+        << "  --meter N/D           Planning meter when --bpm/--key are used (default 4/4)\n"
         << "  --score-output PATH   Write the used or generated ABC score\n"
         << "  --seed N              Sampling and flow-noise seed (default 831001)\n"
         << "  --guidance N          Classifier-free guidance scale\n"
@@ -111,6 +115,34 @@ yue2::SymbolicMode parse_symbolic(const std::string & value) {
     throw std::runtime_error("--symbolic must be off, melody, or full");
 }
 
+std::pair<std::uint32_t, std::uint32_t> parse_meter(const std::string & value) {
+    const auto separator = value.find('/');
+    if (separator == std::string::npos || value.find('/', separator + 1) != std::string::npos) {
+        throw std::runtime_error("--meter expects N/D, for example 4/4");
+    }
+    std::size_t used_numerator = 0;
+    std::size_t used_denominator = 0;
+    const auto numerator = std::stoull(value.substr(0, separator), &used_numerator);
+    const auto denominator = std::stoull(value.substr(separator + 1), &used_denominator);
+    if (used_numerator != separator || used_denominator != value.size() - separator - 1) {
+        throw std::runtime_error("--meter expects integer N/D values");
+    }
+    if (numerator > std::numeric_limits<std::uint32_t>::max() ||
+        denominator > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::runtime_error("--meter is outside the uint32 range");
+    }
+    return {static_cast<std::uint32_t>(numerator), static_cast<std::uint32_t>(denominator)};
+}
+
+std::uint32_t parse_u32(const std::string & value, const char * option) {
+    std::size_t used = 0;
+    const auto parsed = std::stoull(value, &used);
+    if (used != value.size() || parsed > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::runtime_error(std::string(option) + " is outside the uint32 range");
+    }
+    return static_cast<std::uint32_t>(parsed);
+}
+
 } // namespace
 
 int main(int argc, char ** argv) {
@@ -163,6 +195,26 @@ int main(int argc, char ** argv) {
         if (!abc_path.empty()) request.abc = read_text(abc_path);
         const auto abc_prefix_path = value_after(argc, argv, "--abc-prefix", false);
         if (!abc_prefix_path.empty()) request.abc_prefix = read_text(abc_prefix_path);
+        const auto bpm = value_after(argc, argv, "--bpm", false);
+        const auto key = value_after(argc, argv, "--key", false);
+        const auto meter = value_after(argc, argv, "--meter", false);
+        if (!bpm.empty() || !key.empty() || !meter.empty()) {
+            if (bpm.empty() || key.empty()) {
+                throw std::runtime_error("--bpm and --key must be supplied together");
+            }
+            if (request.abc || request.abc_prefix) {
+                throw std::runtime_error("--bpm/--key are mutually exclusive with --abc and --abc-prefix");
+            }
+            yue2::PlanningHeader planning;
+            planning.bpm = parse_u32(bpm, "--bpm");
+            planning.key = key;
+            if (!meter.empty()) {
+                const auto parsed = parse_meter(meter);
+                planning.meter_numerator = parsed.first;
+                planning.meter_denominator = parsed.second;
+            }
+            request.abc_prefix = yue2::make_planning_abc_prefix(planning);
+        }
         const auto seed = value_after(argc, argv, "--seed", false);
         if (!seed.empty()) request.seed = std::stoull(seed);
         const auto guidance = value_after(argc, argv, "--guidance", false);

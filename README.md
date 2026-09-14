@@ -48,6 +48,11 @@ BF16/Q8/Q5/Q4 tiers with conservative fit and recommendation fields. This is
 the foundation for the standalone Yuey model picker; model downloads and score
 editing advertise as unavailable until their contracts are implemented.
 
+Structured `planning` fields on `/generate` provide the first UI-facing musical
+control: BPM, key, and meter are validated server-side and converted into the
+same two-voice `abc_prefix` proven by the locked-header listening test. Omitting
+the object retains automatic planning; clients never need to concatenate ABC.
+
 Decoder generation uses a persistent self-attention KV cache and precomputed
 encoder-attention keys and values. Whole-song input uses the released
 right-lookahead/overlap plan, re-encodes accepted overlap events as the next
@@ -224,7 +229,9 @@ Omit `--abc` to let the AR branch plan a score, or pass `--abc-prefix header.abc
 to seed planning with an exact validated header after `ABC_START`. This is the
 low-level lock point for host-provided meter, tempo, voices, and key; YuE2
 generates the score body under it. A prefix and complete `--abc` are mutually
-exclusive. Use `--symbolic off` for text-only generation. The CLI also exposes
+exclusive. The typed equivalent is `--bpm 95 --key "C# minor" --meter 4/4`;
+the CLI validates those fields and builds the same trusted prefix as the
+server. Use `--symbolic off` for text-only generation. The CLI also exposes
 seed, guidance, ABC/semantic token limits, semantic sampling, ODE steps, and CPU
 thread controls. Repeat `--lora PATH[=SCALE]` to stack additive adapters.
 

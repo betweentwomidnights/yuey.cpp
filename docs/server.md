@@ -119,7 +119,7 @@ dragging even when the user does not want generated audio.
 {
   "style": "indie folk, warm female vocal, fingerpicked guitar",
   "lyrics": "[Verse]\n...\n[Chorus]\n...",
-  "abc": "X:1\n...",
+  "planning": {"bpm": 95, "key": "C# minor", "meter_numerator": 4, "meter_denominator": 4},
   "symbolic_mode": "melody",
   "seed": -1,
   "duration": 60,
@@ -142,6 +142,11 @@ dragging even when the user does not want generated audio.
   ending in a newline to lock host-provided meter, tempo, voices, and key before
   the model composes the score body. UI clients should send structured musical
   fields to a trusted header builder rather than assemble arbitrary ABC.
+- **`planning`** is that trusted typed interface. It applies to `/generate`
+  only and requires `bpm` plus a major/minor `key`; meter defaults to 4/4. The
+  server validates the values and constructs the proven two-voice planning
+  prefix before sampling. It is mutually exclusive with `abc` and
+  `abc_prefix`. Omit the object entirely for automatic musical planning.
 - **`seed`**: absent or negative picks a random seed, reported back.
 - **`duration`** caps the song at 25 semantic frames per second.
   `semantic_max_tokens` overrides it.

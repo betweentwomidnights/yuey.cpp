@@ -201,6 +201,11 @@ if(YUE2_BUILD_TESTS)
     yue2_enable_test_assertions(yue2-runtime-info-test)
     add_test(NAME yue2-runtime-info-test COMMAND yue2-runtime-info-test)
 
+    add_executable(yue2-planning-header-test tests/planning_header_test.cpp)
+    target_link_libraries(yue2-planning-header-test PRIVATE yue2)
+    yue2_enable_test_assertions(yue2-planning-header-test)
+    add_test(NAME yue2-planning-header-test COMMAND yue2-planning-header-test)
+
     # Manual exact parity test against vectors emitted by the official Python
     # tokenizer: yue2-text-tokenizer-test QWEN.TIKTOKEN FIXTURE
     add_executable(yue2-text-tokenizer-test tests/text_tokenizer_test.cpp)

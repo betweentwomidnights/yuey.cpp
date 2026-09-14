@@ -65,6 +65,17 @@ interleaved 48 kHz stereo PCM plus ABC, raw semantic codec IDs, and
 `[frames,64]` latents. Older request structs remain ABI-compatible because the
 new pointer is a size-gated tail field.
 
+Native C++ callers can construct the same validated prefix without formatting
+ABC themselves:
+
+```cpp
+yue2::PlanningHeader planning{95, 4, 4, "C# minor"};
+request.abc_prefix = yue2::make_planning_abc_prefix(planning);
+```
+
+The HTTP server exposes this as a typed `planning` object. A client omits that
+object for automatic planning; it never sends partially assembled header text.
+
 Generation LoRAs are fixed when the resident context is created. They remain
 unmerged on the same backend as the base model, so hosts can use F16 or F32
 adapter factors with an unmodified quantized base:

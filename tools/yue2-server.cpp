@@ -617,7 +617,7 @@ private:
             "{\"success\":true,\"service\":\"yue2\",\"api_version\":1,\"version\":" +
             json::quote(yue2::version()) +
             ",\"capabilities\":{\"generate\":true,\"transcribe\":true,\"cover\":true,"
-            "\"score_editing\":false,\"model_downloads\":false},\"devices\":[";
+            "\"planning_controls\":true,\"score_editing\":false,\"model_downloads\":false},\"devices\":[";
         for (std::size_t index = 0; index < devices.size(); ++index) {
             const auto & device = devices[index];
             if (index) body.push_back(',');
@@ -733,10 +733,27 @@ private:
         if (job.kind == JobKind::cover && !abc_prefix.empty()) {
             throw std::invalid_argument("/cover transcribes its own planning score; abc_prefix is not accepted");
         }
-        if (!abc.empty() && !abc_prefix.empty()) {
+        const auto * planning = root.find("planning");
+        if (planning && planning->type != json::Type::null) {
+            if (job.kind == JobKind::cover) {
+                throw std::invalid_argument("/cover transcribes its own score; planning controls are not accepted");
+            }
+            if (planning->type != json::Type::object) {
+                throw std::invalid_argument("planning must be an object");
+            }
+            if (!abc.empty() || !abc_prefix.empty()) {
+                throw std::invalid_argument("planning is mutually exclusive with abc and abc_prefix");
+            }
+            yue2::PlanningHeader header;
+            header.bpm = json::u32(*planning, "bpm", 0);
+            header.meter_numerator = json::u32(*planning, "meter_numerator", 4);
+            header.meter_denominator = json::u32(*planning, "meter_denominator", 4);
+            header.key = json::string(*planning, "key");
+            song.abc_prefix = yue2::make_planning_abc_prefix(header);
+        } else if (!abc.empty() && !abc_prefix.empty()) {
             throw std::invalid_argument("abc and abc_prefix are mutually exclusive");
         }
-        if (!abc_prefix.empty()) song.abc_prefix = abc_prefix;
+        if (!abc_prefix.empty() && !song.abc_prefix) song.abc_prefix = abc_prefix;
         const bool scored = job.kind == JobKind::cover || song.abc.has_value();
         auto mode = first_string(root, {"symbolic_mode", "cot"});
         if (mode.empty()) {

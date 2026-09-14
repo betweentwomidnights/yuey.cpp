@@ -4,6 +4,8 @@
 #include "ggml.h"
 #include "gguf.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <memory>
@@ -13,6 +15,17 @@
 
 namespace yue2 {
 namespace {
+
+std::string trim(std::string value) {
+    const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char c) {
+        return std::isspace(c) != 0;
+    });
+    const auto last = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) {
+        return std::isspace(c) != 0;
+    }).base();
+    if (first >= last) return {};
+    return std::string(first, last);
+}
 
 void validate_abc_ids(const std::vector<std::int32_t> & ids) {
     for (const auto id : ids) {
@@ -228,6 +241,54 @@ void validate_vae(const MetadataFile & file, GenerationPackageInfo & info) {
 }
 
 } // namespace
+
+std::string normalize_abc_key(const std::string & input) {
+    auto value = trim(input);
+    if (value.empty()) throw std::invalid_argument("planning key is required");
+
+    const unsigned char root = static_cast<unsigned char>(value.front());
+    if (std::toupper(root) < 'A' || std::toupper(root) > 'G') {
+        throw std::invalid_argument("planning key must start with A through G");
+    }
+    std::string output(1, static_cast<char>(std::toupper(root)));
+    std::size_t offset = 1;
+    if (offset < value.size() && (value[offset] == '#' || value[offset] == 'b')) {
+        output.push_back(value[offset++]);
+    }
+
+    std::string quality;
+    for (; offset < value.size(); ++offset) {
+        const unsigned char c = static_cast<unsigned char>(value[offset]);
+        if (std::isspace(c) || c == ':' || c == '-' || c == '_') continue;
+        if (!std::isalpha(c)) {
+            throw std::invalid_argument("planning key must be a major or minor key name");
+        }
+        quality.push_back(static_cast<char>(std::tolower(c)));
+    }
+    if (quality.empty() || quality == "major" || quality == "maj") return output;
+    if (quality == "m" || quality == "minor" || quality == "min") return output + 'm';
+    throw std::invalid_argument("planning key must use major or minor quality");
+}
+
+std::string make_planning_abc_prefix(const PlanningHeader & header) {
+    if (header.bpm < 20 || header.bpm > 400) {
+        throw std::invalid_argument("planning bpm must be in [20, 400]");
+    }
+    if (header.meter_numerator == 0 || header.meter_numerator > 32) {
+        throw std::invalid_argument("planning meter numerator must be in [1, 32]");
+    }
+    const auto denominator = header.meter_denominator;
+    if (denominator == 0 || denominator > 32 || (denominator & (denominator - 1)) != 0) {
+        throw std::invalid_argument("planning meter denominator must be a power of two up to 32");
+    }
+    const auto key = normalize_abc_key(header.key);
+    return "X:1\nT:\nM:" + std::to_string(header.meter_numerator) + '/' +
+        std::to_string(header.meter_denominator) +
+        "\nL:1/32\nQ:1/4=" + std::to_string(header.bpm) +
+        "\nV: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\""
+        "\nV: Ins clef=treble name=\"Ins Melody\" snm=\"Inst.\""
+        "\nK:" + key + "\n% intro\n";
+}
 
 const char * generation_instruction(SymbolicMode mode) noexcept {
     switch (mode) {

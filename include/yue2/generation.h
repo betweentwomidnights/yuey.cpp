@@ -28,6 +28,25 @@ enum class SymbolicMode {
     full,
 };
 
+// Typed UI/host controls for the trusted planning-prefix builder. Supplying
+// this header locks musical structure before YuE2 samples any score notes.
+// A client should omit the whole object to retain automatic planning.
+struct PlanningHeader {
+    std::uint32_t bpm = 0;
+    std::uint32_t meter_numerator = 4;
+    std::uint32_t meter_denominator = 4;
+    std::string key;
+};
+
+// Accepts UI-friendly spellings such as C# minor, C#:minor, C#m, and Db major,
+// returning canonical ABC (C#m, Db). Throws std::invalid_argument on invalid
+// or injection-prone input.
+std::string normalize_abc_key(const std::string & key);
+
+// Emits the YuE2 two-voice header validated by the locked-header listening
+// test, including the initial section marker expected before score notes.
+std::string make_planning_abc_prefix(const PlanningHeader & header);
+
 struct SongRequest {
     std::string style;
     std::string lyrics;
