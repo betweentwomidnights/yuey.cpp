@@ -11,6 +11,7 @@
 #include "server/base64.h"
 #include "server/http.h"
 #include "server/json.h"
+#include "yue2_ui_html.h"
 
 #include <algorithm>
 #include <atomic>
@@ -190,7 +191,7 @@ void usage(const char * executable) {
         << "  --host IPV4                  Bind address (default 127.0.0.1)\n"
         << "  --port N                     Port (default 8007, YUE2_PORT)\n"
         << "  --max-body-mb N              Upload limit (default 512)\n\n"
-        << "Routes: GET /health, GET /props, GET /loras, POST /generate, POST /cover, POST /transcribe,\n"
+        << "Routes: GET /, GET /health, GET /props, GET /loras, POST /generate, POST /cover, POST /transcribe,\n"
         << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload\n";
 }
 
@@ -271,19 +272,22 @@ struct GenerationPaths {
     fs::path tokenizer;
 };
 
-GenerationPaths resolve_generation(const Configuration & configuration) {
+GenerationPaths resolve_generation(
+    const Configuration & configuration,
+    const std::string & requested_encoding = {}) {
     GenerationPaths paths;
     if (!configuration.generation_model.empty()) {
         paths.model = configuration.generation_model;
     } else {
-        const auto encodings = configuration.encoding == "auto"
+        const auto & encoding = requested_encoding.empty() ? configuration.encoding : requested_encoding;
+        const auto encodings = encoding == "auto"
             ? kEncodingPreference
-            : std::vector<std::string>{configuration.encoding};
+            : std::vector<std::string>{encoding};
         const auto found = find_component(configuration.models_dir, "generation", encodings);
         if (!found) {
             throw std::runtime_error(
                 "no YuE2 generation GGUF (" +
-                (configuration.encoding == "auto" ? std::string("any encoding") : configuration.encoding) +
+                (encoding == "auto" ? std::string("any encoding") : encoding) +
                 ") under " + configuration.models_dir.string());
         }
         paths.model = *found;
@@ -482,6 +486,7 @@ struct Job {
     yue2::TranscriptionOptions transcription;
     bool keep_models = false;
     bool float_wav = false;
+    std::string encoding = "auto";
     std::atomic<bool> cancel{false};
 
     // Progress and result, guarded by ServerState::jobs_mutex_.
@@ -532,6 +537,7 @@ public:
             const auto & path = request.path;
             const bool get = request.method == "GET";
             const bool post = request.method == "POST";
+            if (path == "/" || path == "/index.html") return get ? ui() : not_allowed();
             if (path == "/health") return get ? health() : not_allowed();
             if (path == "/props") return get ? props() : not_allowed();
             if (path == "/loras") return get ? loras() : not_allowed();
@@ -557,6 +563,16 @@ private:
     static HttpResponse not_allowed() { return failure(405, "method is not allowed for this route"); }
 
     // --- HTTP handlers ------------------------------------------------------
+
+    HttpResponse ui() {
+        HttpResponse response;
+        response.content_type = "text/html; charset=utf-8";
+        response.body.assign(
+            reinterpret_cast<const char *>(yue2::ui::index_html), yue2::ui::index_html_size);
+        response.headers.emplace("Cache-Control", "no-cache");
+        response.headers.emplace("X-Content-Type-Options", "nosniff");
+        return response;
+    }
 
     HttpResponse health() {
         std::string generation;
@@ -722,6 +738,15 @@ private:
 
     void parse_song(const json::Value & root, Job & job) {
         auto & song = job.song;
+        job.encoding = upper(json::string(root, "encoding", configuration_.encoding));
+        if (job.encoding.empty()) job.encoding = "auto";
+        if (job.encoding != "AUTO" &&
+            std::find(kEncodingPreference.begin(), kEncodingPreference.end(), job.encoding) ==
+                kEncodingPreference.end()) {
+            throw std::invalid_argument(
+                "encoding must be auto, BF16, F16, F32, Q8_0, Q5_K_M, or Q4_K_M");
+        }
+        if (job.encoding == "AUTO") job.encoding = "auto";
         song.style = first_string(root, {"style", "caption", "prompt", "tags"});
         song.lyrics = json::string(root, "lyrics");
         const auto abc = json::string(root, "abc");
@@ -846,7 +871,10 @@ private:
             ",\"status\":" + json::quote(job.status) +
             ",\"stage\":" + json::quote(job.stage) +
             ",\"queue_status\":" + queue_status_locked(job);
-        if (job.kind != JobKind::transcribe) body += ",\"seed\":" + std::to_string(job.song.seed);
+        if (job.kind != JobKind::transcribe) {
+            body += ",\"seed\":" + std::to_string(job.song.seed) +
+                ",\"encoding\":" + json::quote(job.encoding);
+        }
         if (job.status == "completed") {
             if (job.kind == JobKind::transcribe) {
                 body += ",\"abc\":" + json::quote(job.abc) + ",\"midi_data\":\"" + job.midi_data +
@@ -865,6 +893,7 @@ private:
                     ",\"duration\":" + real(job.duration_seconds) +
                     ",\"sample_rate\":48000,\"channels\":2" +
                     ",\"semantic_frames\":" + std::to_string(job.semantic_frames) +
+                    ",\"encoding\":" + json::quote(job.encoding) +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) +
                     ",\"semantic_truncated\":" + json_bool(job.semantic_truncated) + "}";
             }
@@ -1013,7 +1042,7 @@ private:
     void generate(Job & job) {
         const int base = job.kind == JobKind::cover ? 15 : 0;
         update(job, "generating", "load", base, 0, 0);
-        load_generator(job.loras);
+        load_generator(job.loras, job.encoding);
 
         yue2::GenerationControl control;
         control.should_cancel = [&job]() { return job.cancel.load(); };
@@ -1059,8 +1088,11 @@ private:
         complete_locked(job);
     }
 
-    void load_generator(const std::vector<yue2::LoraAdapterSpec> & loras) {
+    void load_generator(
+        const std::vector<yue2::LoraAdapterSpec> & loras,
+        const std::string & encoding) {
         const auto same = generator_ && loras.size() == generator_loras_.size() &&
+            encoding == generator_encoding_ &&
             std::equal(loras.begin(), loras.end(), generator_loras_.begin(),
                 [](const yue2::LoraAdapterSpec & a, const yue2::LoraAdapterSpec & b) {
                     return a.path == b.path && a.strength == b.strength;
@@ -1069,7 +1101,7 @@ private:
         // Adapters are bound at construction, so a different set reloads.
         generator_.reset();
         generator_loaded_.store(false);
-        const auto paths = resolve_generation(configuration_);
+        const auto paths = resolve_generation(configuration_, encoding);
         yue2::GenerationPipelineOptions options;
         options.autoregressive.device = configuration_.device;
         options.autoregressive.threads = configuration_.threads;
@@ -1077,12 +1109,14 @@ private:
         generator_ = std::make_unique<yue2::GenerationPipeline>(
             paths.model.string(), paths.vae.string(), paths.tokenizer.string(), options);
         generator_loras_ = loras;
+        generator_encoding_ = encoding;
         generator_loaded_.store(true);
     }
 
     void release_models() {
         generator_.reset();
         generator_loaded_.store(false);
+        generator_encoding_.clear();
         transcriber_.reset();
         transcriber_loaded_.store(false);
     }
@@ -1129,6 +1163,7 @@ private:
     std::unique_ptr<yue2::Transcriber> transcriber_;
     std::unique_ptr<yue2::GenerationPipeline> generator_;
     std::vector<yue2::LoraAdapterSpec> generator_loras_;
+    std::string generator_encoding_;
     std::atomic<bool> transcriber_loaded_{false};
     std::atomic<bool> generator_loaded_{false};
 

@@ -295,8 +295,11 @@ transcription-window boundaries. See [docs/embedding.md](docs/embedding.md).
 
 `yue2-server` exposes generation, audio-to-song covers, and transcription over
 HTTP in the async session/poll shape gary4juce uses for the other gary4local
-services. It runs on port 8007 by default, resolves models by file name, and
-releases them after each job by default. See [docs/server.md](docs/server.md).
+services. It runs on port 8007 by default, resolves models by metadata, and
+releases them after each job by default. Open `http://127.0.0.1:8007/` for the
+embedded Yuey UI: create with typed BPM/key/meter controls, upload audio for
+transcription or remixing, export multi-track MIDI, edit ABC, regenerate, and
+choose an installed quantization tier per job. See [docs/server.md](docs/server.md).
 
 ## Models and licenses
 

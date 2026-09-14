@@ -116,7 +116,21 @@ if(YUE2_BUILD_TOOLS)
     add_executable(yue2-generate tools/yue2-generate.cpp)
     target_link_libraries(yue2-generate PRIVATE yue2)
 
-    add_executable(yue2-server tools/yue2-server.cpp)
+    set(YUE2_UI_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/yue2_ui_html.h")
+    add_custom_command(
+        OUTPUT "${YUE2_UI_HEADER}"
+        COMMAND "${CMAKE_COMMAND}"
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/tools/ui/index.html
+            -DOUTPUT=${YUE2_UI_HEADER}
+            -DSYMBOL=index_html
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_resource.cmake
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/ui/index.html
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_resource.cmake
+        VERBATIM
+    )
+    add_executable(yue2-server tools/yue2-server.cpp "${YUE2_UI_HEADER}")
+    target_include_directories(yue2-server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
     target_link_libraries(yue2-server PRIVATE yue2 yue2-server-support)
 endif()
 

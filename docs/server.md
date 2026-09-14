@@ -14,6 +14,12 @@ yue2-server --models-dir models --encoding Q4_K_M
 # --adapters-dir DIR  --lora PATH[=SCALE]  --threads N  --max-body-mb N
 ```
 
+Open `http://127.0.0.1:8007/` after launch. The responsive Yuey SPA is embedded
+in the executable, has no runtime web dependencies, and talks only to the local
+same-origin API. Its first slice covers creation, typed musical planning,
+upload/transcription/remix, MIDI downloads, exact ABC editing and regeneration,
+runtime/VRAM status, and installed quantization-tier selection.
+
 `YUE2_MODELS_DIR`, `YUE2_ENCODING`, `YUE2_ADAPTERS_DIR`, `YUE2_PORT`, and
 `YUE2_DEVICE` do the same as the flags, so a supervisor can stay declarative.
 Port 8007 is the next free port after the services gary4juce already addresses
@@ -45,6 +51,7 @@ loads generation, so the two models never share the GPU. Send
 
 | Method | Path | Result |
 |---|---|---|
+| `GET` | `/` | Embedded standalone Yuey UI |
 | `GET` | `/health` | `{status, service, version, device, encoding, busy, queued, generation:{available, loaded, model, vae, tokenizer}, transcription:{available, loaded, model}}` |
 | `GET` | `/props` | Local device/VRAM inventory, installed model tiers, recommendation, defaults, and UI capabilities |
 | `GET` | `/loras` | `{success, adapters_dir, loras:[{index, name, path}]}` for `*-LoRA.gguf` files |
@@ -71,9 +78,10 @@ The response includes:
 - all recognized generation, VAE, transcription, tokenizer, and adapter files;
 - installed state, file size, memory fit, and friendly label for every generation
   tier; and
-- explicit capability flags. `score_editing` and `model_downloads` remain false
-  until their server contracts exist, so an early UI cannot accidentally imply
-  a nonfunctional control.
+- explicit capability flags. Structured piano-roll editing and automatic model
+  downloads remain false until those server contracts exist. The first UI uses
+  lossless ABC source editing and clearly labels downloads as awaiting a stable
+  published manifest.
 
 GGUF classification uses `yue2.component` and
 `yue2.quantization.encoding`/`general.file_type`. A filename fallback retains
@@ -119,6 +127,7 @@ dragging even when the user does not want generated audio.
 {
   "style": "indie folk, warm female vocal, fingerpicked guitar",
   "lyrics": "[Verse]\n...\n[Chorus]\n...",
+  "encoding": "Q4_K_M",
   "planning": {"bpm": 95, "key": "C# minor", "meter_numerator": 4, "meter_denominator": 4},
   "symbolic_mode": "melody",
   "seed": -1,
@@ -134,6 +143,10 @@ dragging even when the user does not want generated audio.
 ```
 
 - **`style`** also accepts `caption`, `prompt`, or `tags`.
+- **`encoding`** selects an installed generation tier for this job (`BF16`,
+  `F16`, `Q8_0`, `Q5_K_M`, `Q4_K_M`, or `F32`). Omit it or send `auto` to use
+  the server default. Switching the tier safely reloads the generation model
+  between jobs; the transcription model is unaffected.
 - **`abc`** applies to `/generate` only. With a score the default
   `symbolic_mode` is `melody`, as the upstream cover workflow recommends.
   Without one it is `full`, and YuE2 plans the score itself.
