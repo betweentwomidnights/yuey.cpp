@@ -1,6 +1,6 @@
 # yuey.cpp
 
-Native GGML inference for the YuE2 music ecosystem.
+YuE2 in C++ for the gary eco-system
 
 This implementation of YuE2 shares a GGML submodule with
 [`betweentwomidnights/acestep.cpp`](https://github.com/betweentwomidnights/acestep.cpp),
