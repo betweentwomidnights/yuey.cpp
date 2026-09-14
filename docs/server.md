@@ -183,8 +183,9 @@ dragging even when the user does not want generated audio.
   **`ending: "outro"`**, yuey retains the score opening plus `outro_bars` from
   the planner's genuine tail, producing an exact bar-length score before audio
   generation. Omit it with **`ending: "natural"`** to keep the complete plan.
-- Semantic generation normally derives a conservative safety budget from the
-  accepted score and stops on `MUSIC_END`. `max_seconds`, legacy `duration`,
+- Semantic generation normally prevents `MUSIC_END` before the accepted
+  score's nominal final bar, derives a conservative safety budget beyond it,
+  and then stops naturally. `max_seconds`, legacy `duration`,
   and `semantic_max_tokens` are advanced hard-ceiling overrides; they may cut
   active audio and should not be used as ordinary musical-length controls.
 - **`loras`** entries name an adapter in `--adapters-dir` or give a `path`.

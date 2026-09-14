@@ -187,17 +187,19 @@ public:
             score.bars = result.score_bars;
             score.duration_seconds = result.score_duration_seconds;
             auto budget = score_aligned_semantic_budget(score);
+            const auto minimum = static_cast<std::uint32_t>(
+                std::ceil(score.duration_seconds * 25.0));
             const auto positive_capacity = positive.size() < 24576
                 ? 24576 - positive.size()
                 : 0;
             budget = static_cast<std::uint32_t>(std::min<std::size_t>(budget, positive_capacity));
-            if (budget == 0) {
+            if (budget < minimum) {
                 throw std::invalid_argument(
-                    "YuE2 score leaves no semantic room in the model context");
+                    "YuE2 score is too long to align inside the model context");
             }
             semantic_sampling.max_tokens = budget;
-            semantic_sampling.min_tokens = std::min(
-                semantic_sampling.min_tokens, semantic_sampling.max_tokens);
+            semantic_sampling.min_tokens = std::max(
+                semantic_sampling.min_tokens, minimum);
         }
         result.semantic_budget = semantic_sampling.max_tokens;
         AutoregressiveResult semantic;
@@ -214,6 +216,10 @@ public:
             }
             if (negative.size() + semantic_sampling.max_tokens > 24576) {
                 semantic_sampling.max_tokens = static_cast<std::uint32_t>(24576 - negative.size());
+                if (semantic_sampling.max_tokens < semantic_sampling.min_tokens) {
+                    throw std::invalid_argument(
+                        "YuE2 guided score is too long to align inside the model context");
+                }
                 semantic_sampling.min_tokens = std::min(
                     semantic_sampling.min_tokens, semantic_sampling.max_tokens);
                 result.semantic_budget = semantic_sampling.max_tokens;

@@ -26,7 +26,8 @@ struct GenerationRunOptions {
     GenerationDefaults generation;
     FlowOptions flow;
     // Explicit token/seconds ceilings are advanced escape hatches. Normal
-    // score-based generation derives this budget after planning.
+    // score-based generation prevents MUSIC_END before the final score bar and
+    // derives a conservative post-score safety budget after planning.
     bool semantic_budget_explicit = false;
 };
 

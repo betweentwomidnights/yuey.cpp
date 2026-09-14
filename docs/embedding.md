@@ -76,9 +76,10 @@ request.ending_mode = yue2::EndingMode::outro;
 request.outro_bars = 4;
 ```
 
-With no explicit `semantic_max_tokens`, generation derives a conservative
-safety budget from the completed score and stops on `MUSIC_END`. This keeps
-musical length in the score; token limits remain an advanced failure ceiling.
+With no explicit `semantic_max_tokens`, generation prevents `MUSIC_END` before
+the completed score's final bar and derives a conservative safety budget beyond
+it. This keeps musical length in the score; token limits remain an advanced
+failure ceiling.
 
 The HTTP server exposes this as a typed `planning` object. A client omits that
 object for automatic planning; it never sends partially assembled header text.
