@@ -79,6 +79,21 @@
     .device:last-child { border: 0; }
     .device span { color: var(--muted); }
     .score-area { min-height: 410px; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+    .editor-toolbar { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; margin: 16px 0 10px; }
+    .editor-toolbar label { min-width: 135px; margin: 0; }
+    .editor-toolbar button { min-width: 42px; }
+    .roll-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: 11px; background: #050505; }
+    .chord-scroll, .roll-scroll { overflow-x: auto; }
+    .chord-strip { display: grid; min-width: 100%; height: 42px; border-bottom: 1px solid var(--line); }
+    .chord-cell { min-width: 0; padding: 5px; border-right: 1px solid var(--line-soft); }
+    .chord-cell input { height: 30px; padding: 0 7px; border-radius: 6px; font-size: 11px; text-align: center; }
+    .piano-roll { position: relative; min-width: 100%; min-height: 350px; user-select: none; }
+    .note-block { position: absolute; z-index: 2; min-width: 5px; height: 12px; overflow: hidden; padding: 0 3px; border: 1px solid #ff5b5b; border-radius: 3px; color: #fff; background: #b70e0e; font-size: 9px; line-height: 10px; cursor: ns-resize; }
+    .note-block.vocal { border-color: #ff9a9a; background: #711010; }
+    .note-block.selected { z-index: 3; outline: 2px solid #fff; }
+    .roll-empty { display: grid; place-items: center; min-height: 350px; color: var(--muted); }
+    details.advanced { margin-top: 14px; }
+    details.advanced summary { color: var(--muted); cursor: pointer; }
     .empty { display: grid; place-items: center; min-height: 270px; padding: 30px; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; text-align: center; }
     .result { display: none; }
     .result.on { display: block; }
@@ -130,10 +145,12 @@
             <div><label for="key">key</label><input id="key" value="C# minor" placeholder="C# minor"></div>
             <div><label for="meter">meter</label><select id="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>5/4</option><option>7/8</option></select></div>
           </div>
-          <div class="row two">
-            <div><label for="duration">length (seconds)</label><input id="duration" type="number" min="1" max="900" value="30"></div>
+          <div class="row">
+            <div><label for="bars">length (bars)</label><input id="bars" type="number" min="4" max="256" value="16"></div>
+            <div><label for="ending">ending</label><select id="ending"><option value="outro">finish within bars</option><option value="natural">full planned song</option></select></div>
             <div><label for="seed">seed</label><input id="seed" type="number" value="-1"><div class="help">−1 picks a new seed</div></div>
           </div>
+          <div class="help" id="bar-help">yuey keeps the opening and four bars from the planner's real ending, then renders until the score finishes.</div>
           <div class="actions"><button id="generate" class="primary">generate track</button><span class="help" id="create-tier"></span></div>
           <div class="status" id="create-status"><div class="status-head"><b id="create-stage">queued</b><span id="create-percent">0%</span></div><div class="bar"><i id="create-bar"></i></div><div class="help" id="create-detail"></div></div>
         </div>
@@ -166,18 +183,29 @@
     <section class="view" id="view-score">
       <div class="grid">
         <div class="card">
-          <h2>score workspace</h2><p>this first slice exposes the exact symbolic source yuey uses. a piano-roll editor will sit on this same score contract next.</p>
-          <textarea class="score-area" id="abc" spellcheck="false" placeholder="generate or transcribe a score first, or paste abc here…"></textarea>
+          <h2>score workspace</h2><p>drag notes vertically to change pitch, edit chord labels by bar, then render the exact score again.</p>
+          <div class="editor-toolbar">
+            <label>lane<select id="score-lane"><option value="Ins">instrument</option><option value="Vocal">vocal</option><option value="all">both</option></select></label>
+            <button id="note-down" class="secondary" title="one semitone down">−1</button>
+            <button id="note-up" class="secondary" title="one semitone up">+1</button>
+            <button id="octave-down" class="secondary" title="one octave down">−12</button>
+            <button id="octave-up" class="secondary" title="one octave up">+12</button>
+            <button id="delete-note" class="secondary">delete</button>
+            <button id="undo-score" class="ghost">undo</button>
+          </div>
+          <div class="help" id="score-meta">add, generate, or transcribe a score to begin.</div>
+          <div class="roll-shell" id="roll-shell"><div class="roll-empty">the editable note grid will appear here.</div></div>
+          <details class="advanced"><summary>advanced abc source</summary><textarea class="score-area" id="abc" spellcheck="false" placeholder="generate or transcribe a score first, or paste abc here…"></textarea></details>
         </div>
         <div>
           <div class="card">
             <h2>regenerate from score</h2><p>change notes or headers, then ask yuey to reinterpret the edited score with a new production prompt.</p>
             <label for="score-prompt">prompt</label><textarea id="score-prompt" placeholder="more intimate, brushed drums, darker synth textures…"></textarea>
-            <div class="row two"><div><label for="score-duration">length</label><input id="score-duration" type="number" min="1" max="900" value="30"></div><div><label for="score-seed">seed</label><input id="score-seed" type="number" value="-1"></div></div>
+            <label for="score-seed">seed</label><input id="score-seed" type="number" value="-1"><div class="help">audio length follows the edited score; there is no seconds cutoff.</div>
             <div class="actions"><button id="score-generate" class="primary">regenerate score</button><button id="export-abc" class="secondary">save abc</button></div>
             <div class="status" id="score-status"><div class="status-head"><b id="score-stage">queued</b><span id="score-percent">0%</span></div><div class="bar"><i id="score-bar"></i></div><div class="help" id="score-detail"></div></div>
           </div>
-          <div class="notice">raw abc editing is intentionally the v0 surface. the next editor layer will manipulate versioned score events while preserving this source for exact round trips.</div>
+          <div class="notice">pitch and chord edits update the exact abc source used by yuey. note timing remains unchanged in this first editor slice.</div>
         </div>
       </div>
     </section>
@@ -195,7 +223,7 @@
 </div>
 <script>
   const $ = id => document.getElementById(id);
-  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrl: null, result: null };
+  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrl: null, result: null, scoreHistory: [], selection: null };
   const titles = { create: 'create with yuey', transform: 'transcribe or remix', score: 'edit the score', models: 'local models' };
 
   function humanBytes(n) {
@@ -217,6 +245,202 @@
   }
   $('instrumental').onchange = syncInstrumental;
   syncInstrumental();
+  function syncLengthControls() {
+    const fitted = $('ending').value === 'outro';
+    $('bars').disabled = !fitted;
+    $('bar-help').textContent = fitted
+      ? "yuey keeps the opening and four bars from the planner's real ending, then renders until the score finishes."
+      : 'yuey keeps the complete plan and renders until it reaches its natural ending.';
+  }
+  $('ending').onchange = syncLengthControls;
+  syncLengthControls();
+
+  function keySignature(key) {
+    const sharpOrder = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+    const flatOrder = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+    const majorSharps = { G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, 'C#': 7 };
+    const majorFlats = { F: 1, Bb: 2, Eb: 3, Ab: 4, Db: 5, Gb: 6, Cb: 7 };
+    const minorSharps = { Em: 1, Bm: 2, 'F#m': 3, 'C#m': 4, 'G#m': 5, 'D#m': 6, 'A#m': 7 };
+    const minorFlats = { Dm: 1, Gm: 2, Cm: 3, Fm: 4, Bbm: 5, Ebm: 6, Abm: 7 };
+    const result = {};
+    const sharps = minorSharps[key] ?? majorSharps[key] ?? 0;
+    const flats = minorFlats[key] ?? majorFlats[key] ?? 0;
+    sharpOrder.slice(0, sharps).forEach(x => result[x] = 1);
+    flatOrder.slice(0, flats).forEach(x => result[x] = -1);
+    return result;
+  }
+  function durationAt(line, offset) {
+    const match = line.slice(offset).match(/^(\d+)?(?:\/(\d+)?)?/);
+    const raw = match?.[0] || '';
+    if (!raw) return { units: 1, end: offset, raw: '' };
+    const slash = raw.indexOf('/');
+    if (slash < 0) return { units: Number(raw), end: offset + raw.length, raw };
+    const numerator = slash ? Number(raw.slice(0, slash)) : 1;
+    const denominator = raw.slice(slash + 1) ? Number(raw.slice(slash + 1)) : 2;
+    return { units: numerator / denominator, end: offset + raw.length, raw };
+  }
+  function pitchFromAbc(accidental, letter, marks, signature) {
+    const natural = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+    const upper = letter.toUpperCase();
+    let pitch = (letter === upper ? 60 : 72) + natural[upper];
+    for (const mark of marks) pitch += mark === "'" ? 12 : -12;
+    let alter = signature[upper] || 0;
+    if (accidental) alter = accidental === '=' ? 0 : (accidental[0] === '^' ? accidental.length : -accidental.length);
+    return pitch + alter;
+  }
+  function abcFromPitch(pitch) {
+    const names = ['C', '^C', 'D', '^D', 'E', 'F', '^F', 'G', '^G', 'A', '^A', 'B'];
+    const pc = ((pitch % 12) + 12) % 12;
+    const octave = Math.floor(pitch / 12) - 1;
+    let name = names[pc];
+    if (octave >= 5) {
+      name = name.replace(/[A-G]/, x => x.toLowerCase()) + "'".repeat(Math.max(0, octave - 5));
+    } else if (octave < 4) {
+      name += ','.repeat(4 - octave);
+    }
+    return name;
+  }
+  function parseScore(text) {
+    let numerator = 4, denominator = 4, bpm = 120, unitDenominator = 32, key = 'C';
+    for (const line of text.split(/\r?\n/)) {
+      let match = line.trim().match(/^M:(\d+)\/(\d+)/); if (match) { numerator = Number(match[1]); denominator = Number(match[2]); }
+      match = line.trim().match(/^L:1\/(\d+)/); if (match) unitDenominator = Number(match[1]);
+      match = line.trim().match(/^Q:.*=(\d+)/); if (match) bpm = Number(match[1]);
+      match = line.trim().match(/^K:(\S+)/); if (match) key = match[1];
+    }
+    const barUnits = numerator * unitDenominator / denominator;
+    const signature = keySignature(key);
+    const notes = [], chords = [], insertions = {}, clocks = { Vocal: 0, Ins: 0 };
+    let voice = null, absolute = 0;
+    for (const raw of text.match(/[^\n]*(?:\n|$)/g) || []) {
+      if (!raw) continue;
+      const line = raw.endsWith('\n') ? raw.slice(0, -1).replace(/\r$/, '') : raw;
+      const trimmed = line.trim();
+      if (trimmed === 'V: Vocal') { voice = 'Vocal'; absolute += raw.length; continue; }
+      if (trimmed === 'V: Ins') { voice = 'Ins'; absolute += raw.length; continue; }
+      if (!voice || !trimmed || trimmed[0] === '%' || /^[A-Za-z]:/.test(trimmed)) { absolute += raw.length; continue; }
+      let i = 0;
+      while (i < line.length) {
+        if (line[i] === '"') {
+          const end = line.indexOf('"', i + 1);
+          if (end < 0) break;
+          chords.push({ label: line.slice(i + 1, end), start: absolute + i + 1, end: absolute + end, voice, time: clocks[voice], bar: Math.floor((clocks[voice] + 1e-6) / barUnits) });
+          i = end + 1; continue;
+        }
+        if (line[i] === '[') { const end = line.indexOf(']', i + 1); i = end < 0 ? line.length : end + 1; continue; }
+        if (line[i] === '|' || /\s/.test(line[i])) { ++i; continue; }
+        const tokenStart = i;
+        let accidental = '';
+        while (i < line.length && '^_='.includes(line[i])) accidental += line[i++];
+        const letter = line[i];
+        if (letter && /[A-Ga-g]/.test(letter)) {
+          ++i; let marks = ''; while (i < line.length && ",'".includes(line[i])) marks += line[i++];
+          const pitchEnd = i, duration = durationAt(line, i); i = duration.end;
+          if (line[i] === '-') ++i;
+          const time = clocks[voice], bar = Math.floor((time + 1e-6) / barUnits);
+          if (insertions[`${voice}:${bar}`] == null) insertions[`${voice}:${bar}`] = absolute + tokenStart;
+          notes.push({ voice, time, bar, duration: duration.units, durationRaw: duration.raw, pitch: pitchFromAbc(accidental, letter, marks, signature), start: absolute + tokenStart, pitchEnd: absolute + pitchEnd, tokenEnd: absolute + i });
+          clocks[voice] += duration.units; continue;
+        }
+        if (letter === 'z' || letter === 'Z') {
+          ++i; const duration = durationAt(line, i); i = duration.end;
+          const time = clocks[voice], bar = Math.floor((time + 1e-6) / barUnits);
+          if (insertions[`${voice}:${bar}`] == null) insertions[`${voice}:${bar}`] = absolute + tokenStart;
+          clocks[voice] += letter === 'Z' ? barUnits * (duration.raw ? duration.units : 1) : duration.units;
+          continue;
+        }
+        i = tokenStart + 1;
+      }
+      absolute += raw.length;
+    }
+    const bars = Math.max(0, Math.ceil(Math.max(clocks.Vocal, clocks.Ins) / barUnits - 1e-8));
+    return { notes, chords, insertions, bars, bpm, numerator, denominator, unitDenominator, barUnits, seconds: bars * numerator * 60 * 4 / (bpm * denominator) };
+  }
+  function replaceScore(start, end, replacement, selection = state.selection) {
+    const current = $('abc').value;
+    state.scoreHistory.push(current);
+    if (state.scoreHistory.length > 50) state.scoreHistory.shift();
+    $('abc').value = current.slice(0, start) + replacement + current.slice(end);
+    state.selection = selection;
+    renderScore();
+  }
+  function replaceScoreMany(edits) {
+    const current = $('abc').value;
+    state.scoreHistory.push(current);
+    if (state.scoreHistory.length > 50) state.scoreHistory.shift();
+    let updated = current;
+    for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+      updated = updated.slice(0, edit.start) + edit.value + updated.slice(edit.end);
+    }
+    $('abc').value = updated; state.selection = null; renderScore();
+  }
+  function selectedNote(score) {
+    if (!state.selection) return null;
+    return score.notes.find(n => n.voice === state.selection.voice && Math.abs(n.time - state.selection.time) < 1e-6) || null;
+  }
+  function transposeSelected(delta) {
+    const score = parseScore($('abc').value), note = selectedNote(score);
+    if (!note) return;
+    replaceScore(note.start, note.pitchEnd, abcFromPitch(Math.max(0, Math.min(127, note.pitch + delta))), state.selection);
+  }
+  function renderScore() {
+    const shell = $('roll-shell'), text = $('abc').value, previousScroll = shell.scrollLeft;
+    if (!text.trim()) { shell.innerHTML = '<div class="roll-empty">the editable note grid will appear here.</div>'; $('score-meta').textContent = 'add, generate, or transcribe a score to begin.'; return; }
+    let score;
+    try { score = parseScore(text); } catch (error) { shell.innerHTML = `<div class="roll-empty error">${escapeHtml(error.message)}</div>`; return; }
+    const lane = $('score-lane').value;
+    const notes = score.notes.filter(n => lane === 'all' || n.voice === lane);
+    $('score-meta').textContent = `${score.bars} bars · ${score.numerator}/${score.denominator} · ${score.bpm} bpm · about ${score.seconds.toFixed(1)} score seconds`;
+    if (!score.bars || !notes.length) { shell.innerHTML = '<div class="roll-empty">this lane has no editable notes.</div>'; return; }
+    const minPitch = Math.max(0, Math.min(...notes.map(n => n.pitch)) - 3), maxPitch = Math.min(127, Math.max(...notes.map(n => n.pitch)) + 3);
+    const barWidth = 180, rowHeight = 14, width = Math.max(720, score.bars * barWidth), height = Math.max(350, (maxPitch - minPitch + 1) * rowHeight);
+    const chordsByBar = {};
+    for (const chord of score.chords) (chordsByBar[chord.bar] ||= []).push(chord);
+    shell.innerHTML = `<div class="chord-strip" style="width:${width}px;grid-template-columns:repeat(${score.bars},${barWidth}px)"></div><div class="piano-roll" style="width:${width}px;height:${height}px;background-image:linear-gradient(to right,transparent ${barWidth - 1}px,#3b2020 ${barWidth - 1}px),linear-gradient(to bottom,transparent ${rowHeight - 1}px,#202020 ${rowHeight - 1}px);background-size:${barWidth}px 100%,100% ${rowHeight}px"></div>`;
+    const strip = shell.querySelector('.chord-strip'), roll = shell.querySelector('.piano-roll');
+    for (let bar = 0; bar < score.bars; ++bar) {
+      const cell = document.createElement('div'); cell.className = 'chord-cell';
+      const barChords = chordsByBar[bar] || [];
+      const input = document.createElement('input'); input.value = barChords.map(x => x.label).join(' / '); input.placeholder = String(bar + 1);
+      input.onchange = () => {
+        const values = input.value.split(/\s*(?:\/|·|,)\s*/).filter(Boolean);
+        if (barChords.length && values.length === barChords.length) {
+          replaceScoreMany(barChords.map((chord, index) => ({ start: chord.start, end: chord.end, value: values[index] })));
+        } else if (barChords.length === 1 && values.length === 1) replaceScore(barChords[0].start, barChords[0].end, values[0]);
+        else if (barChords.length) { input.value = barChords.map(x => x.label).join(' / '); input.title = 'keep the same number of chord changes in this timing-locked editor'; }
+        else if (values.length === 1) {
+          const position = score.insertions[`Vocal:${bar}`] ?? score.insertions[`Ins:${bar}`];
+          if (position != null) replaceScore(position, position, `"${values[0]}"`);
+        }
+      };
+      cell.appendChild(input); strip.appendChild(cell);
+    }
+    const active = selectedNote(score);
+    for (const note of notes) {
+      const block = document.createElement('div');
+      block.className = `note-block ${note.voice.toLowerCase()}${active === note ? ' selected' : ''}`;
+      block.textContent = abcFromPitch(note.pitch).replaceAll("'", '');
+      block.style.left = `${note.time / score.barUnits * barWidth}px`;
+      block.style.width = `${Math.max(6, note.duration / score.barUnits * barWidth - 1)}px`;
+      block.style.top = `${(maxPitch - note.pitch) * rowHeight + 1}px`;
+      block.onpointerdown = event => {
+        event.preventDefault(); state.selection = { voice: note.voice, time: note.time };
+        roll.querySelectorAll('.note-block').forEach(x => x.classList.remove('selected'));
+        block.classList.add('selected');
+        const startY = event.clientY, startPitch = note.pitch; block.setPointerCapture?.(event.pointerId);
+        block.onpointerup = up => { const delta = Math.round((startY - up.clientY) / rowHeight); if (delta) transposeSelected(Math.max(-127, Math.min(127, startPitch + delta)) - startPitch); };
+      };
+      roll.appendChild(block);
+    }
+    shell.scrollLeft = previousScroll;
+  }
+  function setScore(text) { $('abc').value = text || ''; state.scoreHistory = []; state.selection = null; renderScore(); }
+  $('score-lane').onchange = renderScore;
+  $('note-down').onclick = () => transposeSelected(-1); $('note-up').onclick = () => transposeSelected(1);
+  $('octave-down').onclick = () => transposeSelected(-12); $('octave-up').onclick = () => transposeSelected(12);
+  $('delete-note').onclick = () => { const score = parseScore($('abc').value), note = selectedNote(score); if (note) replaceScore(note.start, note.tokenEnd, 'z' + note.durationRaw, null); };
+  $('undo-score').onclick = () => { if (!state.scoreHistory.length) return; $('abc').value = state.scoreHistory.pop(); state.selection = null; renderScore(); };
+  $('abc').oninput = () => { state.selection = null; renderScore(); };
 
   async function api(path, options) {
     const response = await fetch(path, options);
@@ -288,15 +512,17 @@
     $('player').src = state.wavUrl; $('save-audio').href = state.wavUrl;
     $('audio-result').classList.add('on'); $('create-empty').style.display = 'none';
     const warning = result.warnings?.length ? ` · warning: ${result.warnings.join('; ')}` : '';
-    $('render-meta').textContent = `${Number(result.meta?.duration || 0).toFixed(1)} sec · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${warning}`;
-    if (result.abc) $('abc').value = result.abc;
+    const bars = result.meta?.score_bars ? ` · ${result.meta.score_bars} bars` : '';
+    $('render-meta').textContent = `${Number(result.meta?.duration || 0).toFixed(1)} sec${bars} · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${warning}`;
+    if (result.abc) setScore(result.abc);
     state.result = result;
   }
 
   $('generate').onclick = async () => {
     $('generate').disabled = true;
     try {
-      const result = await run('/generate', { style: $('prompt').value, lyrics: $('lyrics').value, instrumental: $('instrumental').checked, duration: Number($('duration').value), seed: seed('seed'), planning: plan(), encoding: state.encoding }, 'create');
+      const fitted = $('ending').value === 'outro';
+      const result = await run('/generate', { style: $('prompt').value, lyrics: $('lyrics').value, instrumental: $('instrumental').checked, target_bars: fitted ? Number($('bars').value) : 0, ending: $('ending').value, outro_bars: 4, seed: seed('seed'), planning: plan(), encoding: state.encoding }, 'create');
       renderAudio(result);
     } catch (error) { status('create', null, error); } finally { $('generate').disabled = false; }
   };
@@ -326,7 +552,7 @@
       const payload = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
       if (remix) Object.assign(payload, { style: $('remix-prompt').value, instrumental: $('instrumental').checked, encoding: state.encoding });
       const result = await run(remix ? '/cover' : '/transcribe', payload, 'transform');
-      if (result.abc) $('abc').value = result.abc;
+      if (result.abc) setScore(result.abc);
       if (remix) renderAudio(result); else addDownloads(result.midi_files);
       $('transcription-result').classList.add('on'); $('transform-empty').style.display = 'none';
       $('transcription-meta').textContent = `${Number(result.duration || result.meta?.duration || 0).toFixed(1)} sec · ${$('transcription-mode').selectedOptions[0].textContent}`;
@@ -338,7 +564,7 @@
     if (!$('abc').value.trim()) { status('score', null, new Error('add or transcribe a score first')); return; }
     $('score-generate').disabled = true;
     try {
-      const result = await run('/generate', { abc: $('abc').value, symbolic_mode: 'full', style: $('score-prompt').value, instrumental: $('instrumental').checked, duration: Number($('score-duration').value), seed: seed('score-seed'), encoding: state.encoding }, 'score');
+      const result = await run('/generate', { abc: $('abc').value, symbolic_mode: 'full', style: $('score-prompt').value, instrumental: $('instrumental').checked, ending: 'natural', seed: seed('score-seed'), encoding: state.encoding }, 'score');
       renderAudio(result); show('create');
     } catch (error) { status('score', null, error); } finally { $('score-generate').disabled = false; }
   };

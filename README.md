@@ -23,6 +23,8 @@ public APIs retain the `yue2` prefix to identify the underlying model.
   workflows through the native YuE2 AR, flow, and VAE pipeline.
 - Typed BPM, key, and meter controls that are applied to the planning score
   instead of being left to prompt interpretation.
+- Score-first length and ending controls that fit generated plans to musical
+  bars and let semantic generation reach the score's natural end.
 - Best-effort instrumental generation using score-aligned empty lyric sections
   and a duration-preserving rested Vocal lane.
 - BF16, Q8_0, Q5_K_M, and Q4_K_M generation models, including automatic device
@@ -72,12 +74,12 @@ yue2-server
 ```
 
 Open <http://127.0.0.1:8007/>. The UI provides generation, transcription,
-remixing, ABC editing, MIDI export, and quantization-tier selection.
+remixing, piano-roll score editing, MIDI export, and quantization-tier selection.
 
-Run a 30-second generation directly from the CLI:
+Run a 16-bar generation directly from the CLI:
 
 ```powershell
-yue2-generate --encoding q4_k_m --instrumental --prompt "dreamy synth pop" --duration 30 --bpm 95 --key "C# minor" --out song.wav
+yue2-generate --encoding q4_k_m --instrumental --prompt "dreamy synth pop" --bars 16 --ending outro --bpm 95 --key "C# minor" --out song.wav
 ```
 
 Omit `--instrumental` and use either `--lyrics "..."` or
@@ -118,7 +120,6 @@ Copy the same model directory to the Mac before testing
 - [ ] Produce useful benchmarks on hardware beyond our RTX 5070 Laptop GPU and
   DGX Spark.
 - [ ] Validate the C ABI from a standalone iPlug2 project or Ableton extension.
-- [ ] Replace raw ABC editing with the structured piano-roll score editor.
 
 ## Documentation
 
