@@ -127,7 +127,7 @@ dragging even when the user does not want generated audio.
 {
   "style": "indie folk, warm female vocal, fingerpicked guitar",
   "lyrics": "[Verse]\n...\n[Chorus]\n...",
-  "instrumental": false,
+  "experimental_vocal_rest": false,
   "encoding": "Q4_K_M",
   "planning": {"bpm": 95, "key": "C# minor", "meter_numerator": 4, "meter_denominator": 4},
   "symbolic_mode": "melody",
@@ -144,13 +144,12 @@ dragging even when the user does not want generated audio.
 ```
 
 - **`style`** also accepts `caption`, `prompt`, or `tags`.
-- **`instrumental`** is experimental and requires empty `lyrics` plus
-  `symbolic_mode: melody` or `full`. After planning or accepting an external
-  score, the server replaces Vocal notes with duration-equivalent rests while
-  retaining chord positions. When a Vocal block contains the lead, that lead
-  is routed to the Ins block before semantic generation. This guarantees the
-  symbolic Vocal lane is resting; it does not claim a hard acoustic stem mute,
-  so validate the rendered audio by listening.
+- **`experimental_vocal_rest`** is a diagnostic, not an instrumental mode. It
+  requires empty `lyrics` plus `symbolic_mode: melody` or `full`. After planning
+  or accepting an external score, it replaces Vocal notes with
+  duration-equivalent rests while retaining chord positions and preserving
+  every existing Ins block exactly. It makes no claim about acoustic vocals;
+  retain the control render and validate the result by listening.
 - **`encoding`** selects an installed generation tier for this job (`BF16`,
   `F16`, `Q8_0`, `Q5_K_M`, `Q4_K_M`, or `F32`). Omit it or send `auto` to use
   the server default. Switching the tier safely reloads the generation model

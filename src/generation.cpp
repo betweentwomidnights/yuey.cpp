@@ -256,41 +256,14 @@ std::size_t abc_quoted_end(const std::string & line, std::size_t offset, char cl
     return found == std::string::npos ? line.size() : found + 1;
 }
 
-bool abc_has_pitch(const std::vector<std::string> & lines) {
-    for (const auto & line : lines) {
-        if (abc_field_or_comment(line)) continue;
-        for (std::size_t offset = 0; offset < line.size();) {
-            if (line[offset] == '"') {
-                offset = abc_quoted_end(line, offset, '"');
-                continue;
-            }
-            if (line[offset] == '[') {
-                offset = abc_quoted_end(line, offset, ']');
-                continue;
-            }
-            auto pitch = offset;
-            while (pitch < line.size() &&
-                   (line[pitch] == '^' || line[pitch] == '_' || line[pitch] == '=')) {
-                ++pitch;
-            }
-            if (pitch < line.size() && abc_pitch(line[pitch])) return true;
-            ++offset;
-        }
-    }
-    return false;
-}
-
-std::string transform_abc_music_line(
-    const std::string & line,
-    bool rest_notes,
-    bool remove_chords) {
+std::string rest_abc_music_line(const std::string & line) {
     if (abc_field_or_comment(line)) return line;
     std::string output;
     output.reserve(line.size());
     for (std::size_t offset = 0; offset < line.size();) {
         if (line[offset] == '"') {
             const auto end = abc_quoted_end(line, offset, '"');
-            if (!remove_chords) output.append(line, offset, end - offset);
+            output.append(line, offset, end - offset);
             offset = end;
             continue;
         }
@@ -306,17 +279,15 @@ std::string transform_abc_music_line(
             ++pitch;
         }
         if (pitch < line.size() && abc_pitch(line[pitch])) {
-            if (rest_notes) {
-                output.push_back('z');
-                offset = pitch + 1;
-                while (offset < line.size() &&
-                       (line[offset] == ',' || line[offset] == '\'')) {
-                    ++offset;
-                }
-                continue;
+            output.push_back('z');
+            offset = pitch + 1;
+            while (offset < line.size() &&
+                   (line[offset] == ',' || line[offset] == '\'')) {
+                ++offset;
             }
+            continue;
         }
-        if (rest_notes && line[offset] == '-') {
+        if (line[offset] == '-') {
             ++offset;
             continue;
         }
@@ -325,14 +296,11 @@ std::string transform_abc_music_line(
     return output;
 }
 
-std::vector<std::string> transform_abc_music(
-    const std::vector<std::string> & lines,
-    bool rest_notes,
-    bool remove_chords) {
+std::vector<std::string> rest_abc_music(const std::vector<std::string> & lines) {
     std::vector<std::string> result;
     result.reserve(lines.size());
     for (const auto & line : lines) {
-        result.push_back(transform_abc_music_line(line, rest_notes, remove_chords));
+        result.push_back(rest_abc_music_line(line));
     }
     return result;
 }
@@ -405,7 +373,7 @@ std::string make_planning_abc_prefix(const PlanningHeader & header) {
         "\nK:" + key + "\n% intro\n";
 }
 
-std::string make_instrumental_abc(const std::string & abc) {
+std::string make_vocal_rest_abc(const std::string & abc) {
     const auto lines = abc_lines(abc);
     std::string output;
     output.reserve(abc.size());
@@ -425,7 +393,7 @@ std::string make_instrumental_abc(const std::string & abc) {
         }
         if (offset >= lines.size() || trim(lines[offset]) != "V: Ins") {
             throw std::invalid_argument(
-                "YuE2 instrumental mode requires paired Vocal and Ins blocks");
+                "YuE2 vocal-rest experiment requires paired Vocal and Ins blocks");
         }
         const auto ins_selector = offset++;
         const auto ins_begin = offset;
@@ -445,16 +413,14 @@ std::string make_instrumental_abc(const std::string & abc) {
             lines.begin() + static_cast<std::ptrdiff_t>(ins_begin),
             lines.begin() + static_cast<std::ptrdiff_t>(offset));
         output += lines[vocal_selector] + '\n';
-        append_lines(output, transform_abc_music(vocal, true, false));
+        append_lines(output, rest_abc_music(vocal));
         output += lines[ins_selector] + '\n';
-        append_lines(output, abc_has_pitch(vocal)
-            ? transform_abc_music(vocal, false, true)
-            : ins);
+        append_lines(output, ins);
         transformed = true;
     }
     if (!transformed) {
         throw std::invalid_argument(
-            "YuE2 instrumental mode requires native Vocal and Ins score blocks");
+            "YuE2 vocal-rest experiment requires native Vocal and Ins score blocks");
     }
     if (abc.empty() || abc.back() != '\n') output.pop_back();
     return output;

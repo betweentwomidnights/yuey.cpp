@@ -47,11 +47,11 @@ std::string normalize_abc_key(const std::string & key);
 // test, including the initial section marker expected before score notes.
 std::string make_planning_abc_prefix(const PlanningHeader & header);
 
-// Converts YuE2's bounded two-voice ABC dialect into an instrumental
-// experiment: Vocal notes become rests (retaining chord symbols and timing),
-// while the Vocal lead is routed to Ins when that section contains notes.
-// Throws when the score has no native Vocal/Ins pair.
-std::string make_instrumental_abc(const std::string & abc);
+// Converts YuE2's bounded two-voice ABC dialect into a vocal-rest experiment:
+// Vocal notes become rests (retaining chord symbols and timing), while every
+// existing Ins block is preserved exactly. Throws when the score has no native
+// Vocal/Ins pair.
+std::string make_vocal_rest_abc(const std::string & abc);
 
 struct SongRequest {
     std::string style;
@@ -65,8 +65,8 @@ struct SongRequest {
     // header. It is mutually exclusive with a complete external ABC score.
     std::optional<std::string> abc_prefix;
     // Experimental symbolic intervention. Requires melody/full mode and empty
-    // lyrics; the planned/provided ABC is rewritten before semantic inference.
-    bool instrumental = false;
+    // lyrics; Vocal is rested without changing Ins before semantic inference.
+    bool experimental_vocal_rest = false;
 };
 
 struct GenerationSampling {
