@@ -12,6 +12,7 @@
       --ok: #48d278; --bad: #ff6b6b; --radius: 15px;
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body { margin: 0; color: var(--ink); background: #000000; font: 14px/1.45 Inter, ui-sans-serif, system-ui, sans-serif; }
     button, input, textarea, select { font: inherit; }
     button { cursor: pointer; }
@@ -44,6 +45,12 @@
     .check { display: flex; align-items: center; gap: 8px; margin: 0; white-space: nowrap; }
     .check input { width: 16px; height: 16px; accent-color: var(--accent); }
     .check small { color: var(--muted); font-weight: 500; }
+    .field-title { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: 15px; }
+    .field-title label { margin: 0 0 7px; }
+    .inline-pair { display: grid; grid-template-columns: .8fr 1.2fr; gap: 6px; }
+    .scrub { cursor: ns-resize; touch-action: none; }
+    .scrub::-webkit-inner-spin-button, .scrub::-webkit-outer-spin-button { appearance: none; margin: 0; }
+    .scrub.dragging { border-color: var(--accent); box-shadow: 0 0 0 3px #e6202026; }
     input, textarea, select { width: 100%; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); outline: none; }
     input, select { height: 42px; padding: 0 12px; }
     textarea { min-height: 118px; padding: 12px; resize: vertical; }
@@ -142,7 +149,7 @@
   <main>
     <div class="topline">
       <div><div class="eyebrow">local music workspace</div><h1 id="page-title">create with yuey</h1></div>
-      <div class="top-actions"><label class="check"><input id="instrumental" type="checkbox"><span>instrumental <small>(best effort)</small></span></label><button id="refresh" class="secondary">refresh runtime</button></div>
+      <div class="top-actions"><button id="refresh" class="secondary">refresh runtime</button></div>
     </div>
 
     <section class="view active" id="view-create">
@@ -151,20 +158,20 @@
           <h2>describe the track</h2><p>musical controls are injected into the planning score. keep the prompt focused on sound, structure, and performance.</p>
           <label for="prompt">prompt</label>
           <textarea id="prompt" placeholder="dreamy analog synth pop, tight dry drums, warm bass, evolving arpeggios…"></textarea>
-          <label for="lyrics">lyrics (optional)</label>
-          <textarea id="lyrics" placeholder="write lyrics, or enable instrumental above"></textarea>
+          <div class="field-title"><label for="lyrics">lyrics (optional)</label><label class="check"><input id="instrumental" type="checkbox"><span>instrumental <small>(best effort)</small></span></label></div>
+          <div id="lyrics-field"><textarea id="lyrics" placeholder="write lyrics here…"></textarea></div>
           <div class="help" id="instrumental-warning" hidden>instrumental mode may still produce occasional vocal material.</div>
           <div class="row">
-            <div><label for="bpm">bpm</label><input id="bpm" type="number" min="20" max="400" value="95"></div>
-            <div><label for="key">key</label><input id="key" value="C# minor" placeholder="C# minor"></div>
+            <div><label for="bpm">bpm <span class="help">· drag vertically</span></label><input id="bpm" class="scrub" type="number" min="20" max="400" value="95"></div>
+            <div><label for="key-root">key / scale</label><div class="inline-pair"><select id="key-root"><option>C</option><option selected>C#</option><option>Db</option><option>D</option><option>D#</option><option>Eb</option><option>E</option><option>F</option><option>F#</option><option>Gb</option><option>G</option><option>G#</option><option>Ab</option><option>A</option><option>A#</option><option>Bb</option><option>B</option></select><select id="key-mode"><option>major</option><option selected>minor</option></select></div></div>
             <div><label for="meter">meter</label><select id="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>5/4</option><option>7/8</option></select></div>
           </div>
-          <div class="row">
-            <div><label for="bars">length (bars)</label><input id="bars" type="number" min="4" max="256" value="16"></div>
-            <div><label for="ending">ending</label><select id="ending"><option value="outro">finish within bars</option><option value="natural">full planned song</option></select></div>
+          <div class="row" id="length-row">
+            <div><label for="ending">track length</label><select id="ending"><option value="natural">let yuey choose</option><option value="outro">choose bars</option></select></div>
+            <div id="bars-field" hidden><label for="bars">bars</label><input id="bars" type="number" min="4" max="256" value="16"></div>
             <div><label for="seed">seed</label><input id="seed" type="number" value="-1"><div class="help">−1 picks a new seed</div></div>
           </div>
-          <div class="help" id="bar-help">yuey keeps the opening and four bars from the planner's real ending, then renders until the score finishes.</div>
+          <div class="help" id="bar-help">yuey follows the complete plan and lets the model choose the song length.</div>
           <div class="actions"><button id="generate" class="primary">generate track</button><span class="help" id="create-tier"></span></div>
           <div class="status" id="create-status"><div class="status-head"><b id="create-stage">queued</b><span id="create-percent">0%</span></div><div class="bar"><i id="create-bar"></i></div><div class="help" id="create-detail"></div></div>
         </div>
@@ -265,6 +272,7 @@
   function syncInstrumental() {
     const enabled = $('instrumental').checked;
     $('lyrics').disabled = enabled;
+    $('lyrics-field').hidden = enabled;
     $('instrumental-warning').hidden = !enabled;
     if (enabled) $('lyrics').value = '';
   }
@@ -273,12 +281,39 @@
   function syncLengthControls() {
     const fitted = $('ending').value === 'outro';
     $('bars').disabled = !fitted;
+    $('bars-field').hidden = !fitted;
+    $('length-row').classList.toggle('two', !fitted);
     $('bar-help').textContent = fitted
-      ? "yuey keeps the opening and four bars from the planner's real ending, then renders until the score finishes."
-      : 'yuey keeps the complete plan and renders until it reaches its natural ending.';
+      ? "yuey fits the plan to your bar count, keeps its real ending, and renders until the score finishes."
+      : 'yuey follows the complete plan and lets the model choose the song length.';
   }
   $('ending').onchange = syncLengthControls;
   syncLengthControls();
+
+  function verticalScrub(input, pixelsPerStep = 2) {
+    input.onpointerdown = event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const parsed = Number(input.value), minimum = Number(input.min), maximum = Number(input.max);
+      const startY = event.clientY, startValue = Number.isFinite(parsed) ? parsed : minimum;
+      let moved = false;
+      input.setPointerCapture?.(event.pointerId); input.classList.add('dragging');
+      input.onpointermove = move => {
+        const distance = startY - move.clientY;
+        if (Math.abs(distance) < 3) return;
+        moved = true; move.preventDefault();
+        const value = Math.round(startValue + distance / pixelsPerStep);
+        input.value = String(Math.max(minimum, Math.min(maximum, value)));
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      const finish = () => {
+        input.classList.remove('dragging'); input.onpointermove = null; input.onpointerup = null; input.onpointercancel = null;
+        input.focus(); if (!moved) input.select(); else input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      input.onpointerup = finish; input.onpointercancel = finish;
+    };
+  }
+  verticalScrub($('bpm'));
 
   function keySignature(key) {
     const sharpOrder = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
@@ -681,7 +716,7 @@
   }
   function plan() {
     const [numerator, denominator] = $('meter').value.split('/').map(Number);
-    return { bpm: Number($('bpm').value), key: $('key').value.trim(), meter_numerator: numerator, meter_denominator: denominator };
+    return { bpm: Number($('bpm').value), key: `${$('key-root').value} ${$('key-mode').value}`, meter_numerator: numerator, meter_denominator: denominator };
   }
   function seed(id) { const value = Number($(id).value); return Number.isFinite(value) && value >= 0 ? value : null; }
   function renderAudio(result) {
