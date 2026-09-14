@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -323,6 +324,187 @@ void append_lines(std::string & output, const std::vector<std::string> & lines) 
     for (const auto & line : lines) output += line + '\n';
 }
 
+struct NativeBar {
+    std::string vocal;
+    std::string instrumental;
+    std::string section;
+    std::vector<std::string> vocal_fields;
+    std::vector<std::string> instrumental_fields;
+};
+
+struct NativeScore {
+    std::vector<std::string> header;
+    std::vector<NativeBar> bars;
+    bool trailing_newline = false;
+};
+
+std::string section_name(const std::string & line) {
+    const auto value = trim(line);
+    return value.empty() || value.front() != '%' ? std::string{} : trim(value.substr(1));
+}
+
+struct VoiceMusic {
+    std::vector<std::string> fields;
+    std::vector<std::string> bars;
+};
+
+std::uint32_t parse_positive_u32(const std::string & text);
+
+void append_expanded_bar(std::vector<std::string> & bars, const std::string & input) {
+    auto body = trim(input);
+    if (body.empty() || body == "|") return;
+    if (body.back() != '|') {
+        bars.push_back(std::move(body));
+        return;
+    }
+    std::size_t offset = 0;
+    while (offset < body.size() && body[offset] == '"') {
+        offset = abc_quoted_end(body, offset, '"');
+    }
+    if (offset >= body.size() || body[offset] != 'Z') {
+        bars.push_back(std::move(body));
+        return;
+    }
+    const auto digits = offset + 1;
+    auto end = digits;
+    while (end < body.size() && std::isdigit(static_cast<unsigned char>(body[end]))) ++end;
+    if (end + 1 != body.size() || body[end] != '|' || end == digits) {
+        bars.push_back(std::move(body));
+        return;
+    }
+    const auto count = parse_positive_u32(body.substr(digits, end - digits));
+    const auto prefix = body.substr(0, offset);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        bars.push_back((index == 0 ? prefix : std::string{}) + "Z|");
+    }
+}
+
+VoiceMusic split_voice_music(const std::vector<std::string> & lines) {
+    VoiceMusic result;
+    std::string pending;
+    for (const auto & raw : lines) {
+        const auto line = trim(raw);
+        if (line.empty()) continue;
+        if (abc_field_or_comment(line)) {
+            result.fields.push_back(line);
+            continue;
+        }
+        pending += line;
+        std::size_t begin = 0;
+        bool quoted = false;
+        for (std::size_t offset = 0; offset < pending.size(); ++offset) {
+            if (pending[offset] == '"') quoted = !quoted;
+            if (!quoted && pending[offset] == '|') {
+                append_expanded_bar(
+                    result.bars, pending.substr(begin, offset - begin + 1));
+                begin = offset + 1;
+            }
+        }
+        pending.erase(0, begin);
+    }
+    if (!trim(pending).empty()) {
+        throw std::invalid_argument("YuE2 ABC score has music outside a complete bar");
+    }
+    return result;
+}
+
+NativeScore parse_native_score(const std::string & abc) {
+    const auto lines = abc_lines(abc);
+    NativeScore score;
+    score.trailing_newline = !abc.empty() && abc.back() == '\n';
+    std::size_t offset = 0;
+    std::string pending_section;
+    while (offset < lines.size() && trim(lines[offset]) != "V: Vocal") {
+        const auto section = section_name(lines[offset]);
+        if (!section.empty()) pending_section = section;
+        score.header.push_back(lines[offset++]);
+    }
+    if (offset == lines.size()) {
+        throw std::invalid_argument("YuE2 score fitting requires native Vocal and Ins lanes");
+    }
+    if (!pending_section.empty()) {
+        while (!score.header.empty() && trim(score.header.back()).empty()) score.header.pop_back();
+        if (!score.header.empty() && !section_name(score.header.back()).empty()) score.header.pop_back();
+    }
+
+    while (offset < lines.size()) {
+        while (offset < lines.size() && trim(lines[offset]) != "V: Vocal") {
+            const auto section = section_name(lines[offset]);
+            if (!section.empty()) pending_section = section;
+            else if (!trim(lines[offset]).empty()) {
+                throw std::invalid_argument("unexpected text between YuE2 score blocks");
+            }
+            ++offset;
+        }
+        if (offset == lines.size()) break;
+        ++offset;
+        std::vector<std::string> vocal_lines;
+        while (offset < lines.size() && trim(lines[offset]) != "V: Ins") {
+            if (trim(lines[offset]) == "V: Vocal" || !section_name(lines[offset]).empty()) {
+                throw std::invalid_argument("YuE2 score has an unpaired Vocal block");
+            }
+            vocal_lines.push_back(lines[offset++]);
+        }
+        if (offset == lines.size()) {
+            throw std::invalid_argument("YuE2 score has an unpaired Vocal block");
+        }
+        ++offset;
+        std::vector<std::string> instrumental_lines;
+        while (offset < lines.size() && trim(lines[offset]) != "V: Vocal" &&
+               section_name(lines[offset]).empty()) {
+            instrumental_lines.push_back(lines[offset++]);
+        }
+        const auto vocal = split_voice_music(vocal_lines);
+        const auto instrumental = split_voice_music(instrumental_lines);
+        if (vocal.bars.empty() || vocal.bars.size() != instrumental.bars.size()) {
+            throw std::invalid_argument(
+                "YuE2 score fitting requires equal nonempty Vocal and Ins bars");
+        }
+        for (std::size_t index = 0; index < vocal.bars.size(); ++index) {
+            NativeBar bar;
+            bar.vocal = vocal.bars[index];
+            bar.instrumental = instrumental.bars[index];
+            bar.section = pending_section.empty() ? "section" : pending_section;
+            if (index == 0) {
+                bar.vocal_fields = vocal.fields;
+                bar.instrumental_fields = instrumental.fields;
+            }
+            score.bars.push_back(std::move(bar));
+        }
+    }
+    if (score.bars.empty()) {
+        throw std::invalid_argument("YuE2 score contains no complete bars");
+    }
+    return score;
+}
+
+void append_bar_lines(std::string & output, const std::vector<NativeBar> & bars,
+                      std::size_t begin, std::size_t end, bool vocal) {
+    std::size_t on_line = 0;
+    for (std::size_t index = begin; index < end; ++index) {
+        const auto & fields = vocal ? bars[index].vocal_fields : bars[index].instrumental_fields;
+        if (!fields.empty() && on_line != 0) {
+            output += '\n';
+            on_line = 0;
+        }
+        for (const auto & field : fields) output += field + '\n';
+        output += vocal ? bars[index].vocal : bars[index].instrumental;
+        if (++on_line == 4 || index + 1 == end) {
+            output += '\n';
+            on_line = 0;
+        }
+    }
+}
+
+std::uint32_t parse_positive_u32(const std::string & text) {
+    std::size_t used = 0;
+    const auto value = std::stoul(text, &used);
+    if (used != text.size() || value == 0 || value > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::invalid_argument("invalid positive ABC numeric field");
+    }
+    return static_cast<std::uint32_t>(value);
+}
+
 } // namespace
 
 std::string normalize_abc_key(const std::string & input) {
@@ -461,6 +643,96 @@ std::string make_instrumental_lyrics(const std::string & abc) {
         output += '[' + section + ']';
     }
     return output;
+}
+
+AbcScoreInfo inspect_abc_score(const std::string & abc) {
+    AbcScoreInfo result;
+    for (const auto & raw_line : abc_lines(abc)) {
+        const auto line = trim(raw_line);
+        if (line.rfind("M:", 0) == 0) {
+            const auto slash = line.find('/', 2);
+            if (slash != std::string::npos) {
+                result.meter_numerator = parse_positive_u32(line.substr(2, slash - 2));
+                result.meter_denominator = parse_positive_u32(line.substr(slash + 1));
+            }
+        } else if (line.rfind("Q:", 0) == 0) {
+            const auto equals = line.rfind('=');
+            if (equals != std::string::npos && equals + 1 < line.size()) {
+                result.bpm = parse_positive_u32(line.substr(equals + 1));
+            }
+        }
+    }
+    const auto score = parse_native_score(abc);
+    if (score.bars.size() > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::invalid_argument("YuE2 ABC score contains too many bars");
+    }
+    result.bars = static_cast<std::uint32_t>(score.bars.size());
+    if (result.bpm == 0) {
+        throw std::invalid_argument("YuE2 score alignment requires a Q tempo field");
+    }
+    result.duration_seconds = static_cast<double>(result.bars) *
+        static_cast<double>(result.meter_numerator) * 60.0 * 4.0 /
+        (static_cast<double>(result.bpm) * static_cast<double>(result.meter_denominator));
+    return result;
+}
+
+std::string fit_abc_score_to_bars(
+    const std::string & abc,
+    std::uint32_t target_bars,
+    std::uint32_t outro_bars) {
+    if (target_bars == 0 || outro_bars == 0 || outro_bars > target_bars) {
+        throw std::invalid_argument(
+            "YuE2 score fitting requires target bars and outro bars within the target");
+    }
+    const auto score = parse_native_score(abc);
+    if (target_bars > score.bars.size()) {
+        throw std::invalid_argument(
+            "YuE2 target bars exceed the completed plan; generate a longer plan first");
+    }
+    if (target_bars == score.bars.size()) return abc;
+
+    const auto head_count = static_cast<std::size_t>(target_bars - outro_bars);
+    const auto tail_begin = score.bars.size() - outro_bars;
+    std::vector<NativeBar> selected;
+    selected.reserve(target_bars);
+    selected.insert(selected.end(), score.bars.begin(), score.bars.begin() + head_count);
+    selected.insert(selected.end(), score.bars.begin() + tail_begin, score.bars.end());
+    for (std::size_t index = head_count; index < selected.size(); ++index) {
+        selected[index].section = "outro";
+    }
+
+    std::string output;
+    append_lines(output, score.header);
+    for (std::size_t begin = 0; begin < selected.size();) {
+        std::size_t end = begin + 1;
+        while (end < selected.size() && selected[end].section == selected[begin].section) ++end;
+        output += "% " + selected[begin].section + '\n';
+        output += "V: Vocal\n";
+        append_bar_lines(output, selected, begin, end, true);
+        output += "V: Ins\n";
+        append_bar_lines(output, selected, begin, end, false);
+        begin = end;
+    }
+    if (!score.trailing_newline && !output.empty()) output.pop_back();
+    return output;
+}
+
+std::uint32_t score_aligned_semantic_budget(const AbcScoreInfo & score) {
+    if (score.bars == 0 || !std::isfinite(score.duration_seconds) ||
+        score.duration_seconds <= 0.0) {
+        throw std::invalid_argument("YuE2 semantic alignment requires a timed score");
+    }
+    // Short scores have proportionally more learned intro/outro overhead. This
+    // covers the observed 8-bar 1.70x case while retaining ample headroom for
+    // full arrangements. MUSIC_END normally stops generation before the cap.
+    const double seconds = std::max(
+        score.duration_seconds * 1.75,
+        score.duration_seconds + 30.0);
+    const double tokens = std::ceil(seconds * 25.0);
+    if (tokens > static_cast<double>(std::numeric_limits<std::uint32_t>::max())) {
+        throw std::invalid_argument("YuE2 score-aligned semantic budget is too large");
+    }
+    return static_cast<std::uint32_t>(tokens);
 }
 
 const char * generation_instruction(SymbolicMode mode) noexcept {

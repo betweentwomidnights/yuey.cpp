@@ -508,6 +508,9 @@ struct Job {
     std::size_t semantic_frames = 0;
     bool abc_truncated = false;
     bool semantic_truncated = false;
+    std::uint32_t score_bars = 0;
+    double score_duration_seconds = 0.0;
+    std::uint32_t semantic_budget = 0;
     double duration_seconds = 0.0;
     std::chrono::steady_clock::time_point finished;
 
@@ -635,7 +638,8 @@ private:
             ",\"capabilities\":{\"generate\":true,\"transcribe\":true,\"cover\":true,"
             "\"planning_controls\":true,\"instrumental\":true,"
             "\"instrumental_best_effort\":true,\"vocal_rest_experiment\":true,"
-            "\"score_editing\":false,\"model_downloads\":false},\"devices\":[";
+            "\"score_editing\":true,\"score_aligned_generation\":true,"
+            "\"model_downloads\":false},\"devices\":[";
         for (std::size_t index = 0; index < devices.size(); ++index) {
             const auto & device = devices[index];
             if (index) body.push_back(',');
@@ -753,6 +757,23 @@ private:
         song.lyrics = json::string(root, "lyrics");
         song.instrumental = json::boolean(root, "instrumental", false);
         song.experimental_vocal_rest = json::boolean(root, "experimental_vocal_rest", false);
+        song.target_bars = json::u32(root, "target_bars", 0);
+        song.outro_bars = json::u32(root, "outro_bars", 4);
+        const auto ending = json::string(
+            root, "ending", song.target_bars == 0 ? "natural" : "outro");
+        if (ending == "natural") song.ending_mode = yue2::EndingMode::natural;
+        else if (ending == "outro") song.ending_mode = yue2::EndingMode::outro;
+        else throw std::invalid_argument("ending must be natural or outro");
+        if (song.target_bars != 0 && song.ending_mode != yue2::EndingMode::outro) {
+            throw std::invalid_argument("target_bars requires ending outro");
+        }
+        if (song.ending_mode == yue2::EndingMode::outro && song.target_bars == 0) {
+            throw std::invalid_argument("ending outro requires target_bars");
+        }
+        if (song.target_bars != 0 &&
+            (song.outro_bars == 0 || song.outro_bars > song.target_bars)) {
+            throw std::invalid_argument("outro_bars must be within target_bars");
+        }
         if (song.instrumental && !song.lyrics.empty()) {
             throw std::invalid_argument("instrumental is mutually exclusive with lyrics");
         }
@@ -816,16 +837,22 @@ private:
         }
 
         auto & run = job.run;
-        if (present(root, "duration")) {
-            const double seconds = json::number(root, "duration", 0.0);
+        if (present(root, "duration") || present(root, "max_seconds")) {
+            const double seconds = present(root, "max_seconds")
+                ? json::number(root, "max_seconds", 0.0)
+                : json::number(root, "duration", 0.0);
             if (!(seconds > 0.0) || seconds > 900.0) {
-                throw std::invalid_argument("duration must be in (0, 900] seconds");
+                throw std::invalid_argument("max_seconds must be in (0, 900] seconds");
             }
             run.generation.semantic.max_tokens =
                 static_cast<std::uint32_t>(std::ceil(seconds * kSemanticTokensPerSecond));
+            run.semantic_budget_explicit = true;
         }
         auto & semantic = run.generation.semantic;
-        semantic.max_tokens = json::u32(root, "semantic_max_tokens", semantic.max_tokens);
+        if (present(root, "semantic_max_tokens")) {
+            semantic.max_tokens = json::u32(root, "semantic_max_tokens", semantic.max_tokens);
+            run.semantic_budget_explicit = true;
+        }
         semantic.min_tokens = std::min(json::u32(root, "semantic_min_tokens", semantic.min_tokens), semantic.max_tokens);
         semantic.temperature = static_cast<float>(json::number(root, "temperature", semantic.temperature));
         semantic.top_k = json::u32(root, "top_k", semantic.top_k);
@@ -885,9 +912,22 @@ private:
         if (job.kind != JobKind::transcribe) {
             body += ",\"seed\":" + std::to_string(job.song.seed) +
                 ",\"encoding\":" + json::quote(job.encoding);
+            std::vector<std::string> warnings;
             if (job.song.instrumental) {
-                body += ",\"warnings\":[\"instrumental mode is best-effort; occasional "
-                    "vocal material may occur\"]";
+                warnings.emplace_back(
+                    "instrumental mode is best-effort; occasional vocal material may occur");
+            }
+            if (job.status == "completed" && job.semantic_truncated) {
+                warnings.emplace_back(
+                    "semantic safety budget was exhausted before MUSIC_END");
+            }
+            if (!warnings.empty()) {
+                body += ",\"warnings\":[";
+                for (std::size_t index = 0; index < warnings.size(); ++index) {
+                    if (index) body.push_back(',');
+                    body += json::quote(warnings[index]);
+                }
+                body.push_back(']');
             }
         }
         if (job.status == "completed") {
@@ -908,6 +948,9 @@ private:
                     ",\"duration\":" + real(job.duration_seconds) +
                     ",\"sample_rate\":48000,\"channels\":2" +
                     ",\"semantic_frames\":" + std::to_string(job.semantic_frames) +
+                    ",\"semantic_budget\":" + std::to_string(job.semantic_budget) +
+                    ",\"score_bars\":" + std::to_string(job.score_bars) +
+                    ",\"score_duration\":" + real(job.score_duration_seconds) +
                     ",\"encoding\":" + json::quote(job.encoding) +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) +
                     ",\"semantic_truncated\":" + json_bool(job.semantic_truncated) + "}";
@@ -1098,6 +1141,9 @@ private:
         job.semantic_frames = song.semantic_codec_ids.size();
         job.abc_truncated = song.abc_truncated;
         job.semantic_truncated = song.semantic_truncated;
+        job.score_bars = song.score_bars;
+        job.score_duration_seconds = song.score_duration_seconds;
+        job.semantic_budget = song.semantic_budget;
         job.duration_seconds = static_cast<double>(song.audio.interleaved_samples.size()) /
             (static_cast<double>(song.audio.sample_rate) * song.audio.channels);
         complete_locked(job);

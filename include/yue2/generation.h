@@ -28,6 +28,14 @@ enum class SymbolicMode {
     full,
 };
 
+enum class EndingMode {
+    // Keep the complete score produced by planning or supplied by the host.
+    natural,
+    // Fit to target_bars by preserving the opening and the planner's final
+    // bars, exposed as an explicit outro section.
+    outro,
+};
+
 // Typed UI/host controls for the trusted planning-prefix builder. Supplying
 // this header locks musical structure before YuE2 samples any score notes.
 // A client should omit the whole object to retain automatic planning.
@@ -59,6 +67,30 @@ std::string make_vocal_rest_abc(const std::string & abc);
 // without usable markers receives the conventional default song form.
 std::string make_instrumental_lyrics(const std::string & abc);
 
+struct AbcScoreInfo {
+    std::uint32_t bars = 0;
+    std::uint32_t bpm = 0;
+    std::uint32_t meter_numerator = 4;
+    std::uint32_t meter_denominator = 4;
+    double duration_seconds = 0.0;
+};
+
+// Inspect YuE2's native ABC score without loading model weights. Bar count is
+// per musical timeline rather than the sum of the Vocal and Ins lanes.
+AbcScoreInfo inspect_abc_score(const std::string & abc);
+
+// Fit a completed native two-voice plan to an exact bar count. The beginning
+// is retained and the final outro_bars are taken from the planner's real tail,
+// so a short render includes ending material rather than cutting mid-section.
+std::string fit_abc_score_to_bars(
+    const std::string & abc,
+    std::uint32_t target_bars,
+    std::uint32_t outro_bars = 4);
+
+// Conservative semantic budget for allowing MUSIC_END after a complete score.
+// It is a safety ceiling, not a requested audio duration.
+std::uint32_t score_aligned_semantic_budget(const AbcScoreInfo & score);
+
 struct SongRequest {
     std::string style;
     std::string lyrics;
@@ -78,6 +110,11 @@ struct SongRequest {
     // explicit empty section scaffold, adds no-vocal style conditioning, and
     // rests Vocal before semantic inference.
     bool instrumental = false;
+    // Zero retains the complete planned/supplied score. With outro ending,
+    // the completed plan is fitted to this exact number of bars before audio.
+    std::uint32_t target_bars = 0;
+    EndingMode ending_mode = EndingMode::natural;
+    std::uint32_t outro_bars = 4;
 };
 
 struct GenerationSampling {

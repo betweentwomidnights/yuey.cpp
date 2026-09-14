@@ -47,6 +47,11 @@ enum {
 };
 
 enum {
+    YUE2_ENDING_NATURAL = 0,
+    YUE2_ENDING_OUTRO = 1,
+};
+
+enum {
     YUE2_TRANSCRIPTION_STANDARD = 0,
     YUE2_TRANSCRIPTION_PAPER = 1,
 };
@@ -148,6 +153,12 @@ typedef struct {
      * a rested Vocal score lane. Vocal material may still occur. Requires
      * empty lyrics and symbolic generation. */
     int32_t instrumental;
+
+    /* Score-first musical length. target_bars=0 keeps the complete plan.
+     * OUTRO retains the opening plus outro_bars from the planner's true tail. */
+    uint32_t target_bars;
+    int32_t ending_mode;       /* YUE2_ENDING_* */
+    uint32_t outro_bars;       /* zero uses the native default of four */
 } yue2_generation_request;
 
 typedef struct {

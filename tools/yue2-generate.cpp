@@ -30,7 +30,11 @@ void usage(const char * argv0) {
         << "  --model/--vae/--tokenizer PATH  Override resolved component paths\n"
         << "  --prompt, --style TEXT          Production/style description\n"
         << "  --out, --output PATH            Output WAV\n"
-        << "  --duration, --seconds N         Approximate output length in seconds\n"
+        << "  --bars N             Fit the planned score to N bars\n"
+        << "  --ending MODE        natural or outro (default outro with --bars)\n"
+        << "  --outro-bars N       Planner-tail bars retained by outro mode (default 4)\n"
+        << "  --max-seconds N      Advanced hard semantic safety ceiling\n"
+        << "  --duration/--seconds N  Deprecated aliases for --max-seconds\n"
         << "  --lyrics TEXT | --lyrics-file PATH  Optional vocal lyrics\n"
         << "  --instrumental        Best-effort instrumental; vocal material may occur\n"
         << "  --experimental-vocal-rest  Rest Vocal without changing Ins; not an instrumental mode\n"
@@ -45,7 +49,7 @@ void usage(const char * argv0) {
         << "  --abc-min-tokens N    ABC minimum before stop (default 32)\n"
         << "  --abc-max-tokens N    ABC planning limit (default 4096)\n"
         << "  --semantic-min-tokens N  Audio-code minimum before stop (default 200)\n"
-        << "  --semantic-max-tokens N  Audio-code limit (default 9000)\n"
+        << "  --semantic-max-tokens N  Advanced explicit audio-code safety ceiling\n"
         << "  --ode-steps N         Midpoint flow steps (default 32)\n"
         << "  --temperature N       Semantic sampling temperature (default 1.0)\n"
         << "  --top-k N             Semantic top-k (default 100)\n"
@@ -247,6 +251,7 @@ int main(int argc, char ** argv) {
             return 0;
         }
         yue2::GenerationPipelineOptions options;
+        bool semantic_budget_explicit = false;
         auto models_directory = value_after(argc, argv, "--models-dir", false);
         if (models_directory.empty()) models_directory = environment("YUE2_MODELS_DIR");
         if (models_directory.empty()) models_directory = "models";
@@ -276,7 +281,7 @@ int main(int argc, char ** argv) {
         }
         const auto semantic_limit = value_after(argc, argv, "--semantic-max-tokens", false);
         const auto duration = first_value_after(
-            argc, argv, {"--duration", "--seconds"}, false);
+            argc, argv, {"--max-seconds", "--duration", "--seconds"}, false);
         if (!duration.empty()) {
             std::size_t used = 0;
             const double seconds = std::stod(duration, &used);
@@ -288,8 +293,16 @@ int main(int argc, char ** argv) {
             options.generation.semantic.min_tokens = std::min(
                 options.generation.semantic.min_tokens,
                 options.generation.semantic.max_tokens);
+            semantic_budget_explicit = true;
+            if (has(argc, argv, "--duration") || has(argc, argv, "--seconds")) {
+                std::cerr << "warning: --duration/--seconds are deprecated hard ceilings; "
+                             "use --bars for musical length\n";
+            }
         }
-        if (!semantic_limit.empty()) options.generation.semantic.max_tokens = std::stoul(semantic_limit);
+        if (!semantic_limit.empty()) {
+            options.generation.semantic.max_tokens = std::stoul(semantic_limit);
+            semantic_budget_explicit = true;
+        }
         const auto steps = value_after(argc, argv, "--ode-steps", false);
         if (!steps.empty()) options.flow.ode_steps = std::stoul(steps);
         const auto temperature = value_after(argc, argv, "--temperature", false);
@@ -310,6 +323,34 @@ int main(int argc, char ** argv) {
             throw std::runtime_error("--lyrics and --lyrics-file are mutually exclusive");
         }
         request.instrumental = has(argc, argv, "--instrumental");
+        const auto bars = value_after(argc, argv, "--bars", false);
+        if (!bars.empty()) request.target_bars = parse_u32(bars, "--bars");
+        const auto ending = value_after(argc, argv, "--ending", false);
+        if (ending.empty()) {
+            request.ending_mode = request.target_bars == 0
+                ? yue2::EndingMode::natural
+                : yue2::EndingMode::outro;
+        } else if (ending == "natural") {
+            request.ending_mode = yue2::EndingMode::natural;
+        } else if (ending == "outro") {
+            request.ending_mode = yue2::EndingMode::outro;
+        } else {
+            throw std::runtime_error("--ending must be natural or outro");
+        }
+        const auto outro_bars = value_after(argc, argv, "--outro-bars", false);
+        if (!outro_bars.empty()) {
+            request.outro_bars = parse_u32(outro_bars, "--outro-bars");
+        }
+        if (request.target_bars != 0 && request.ending_mode != yue2::EndingMode::outro) {
+            throw std::runtime_error("--bars requires --ending outro");
+        }
+        if (request.ending_mode == yue2::EndingMode::outro && request.target_bars == 0) {
+            throw std::runtime_error("--ending outro requires --bars");
+        }
+        if (request.target_bars != 0 &&
+            (request.outro_bars == 0 || request.outro_bars > request.target_bars)) {
+            throw std::runtime_error("--outro-bars must be within --bars");
+        }
         if (request.instrumental && (has_lyrics || has_lyrics_file)) {
             throw std::runtime_error("--instrumental is mutually exclusive with lyrics");
         }
@@ -360,7 +401,9 @@ int main(int argc, char ** argv) {
                   << models_directory << '\n';
         yue2::GenerationPipeline pipeline(
             model_paths.model, model_paths.vae, model_paths.tokenizer, options);
-        const auto result = pipeline.generate(request);
+        yue2::GenerationRunOptions run{options.generation, options.flow};
+        run.semantic_budget_explicit = semantic_budget_explicit;
+        const auto result = pipeline.generate(request, run);
         yue2::audio::write_wav_float(
             output, result.audio.interleaved_samples,
             result.audio.sample_rate, result.audio.channels);
@@ -369,7 +412,7 @@ int main(int argc, char ** argv) {
         std::cout << "wrote " << output << " (" << result.semantic_codec_ids.size()
                   << " semantic frames, "
                   << result.audio.interleaved_samples.size() / result.audio.channels
-                  << " audio frames)\n";
+                  << " audio frames, " << result.score_bars << " score bars)\n";
         if (result.abc_truncated) std::cerr << "warning: ABC generation reached its token limit\n";
         if (result.semantic_truncated) {
             std::cerr << "warning: semantic generation reached its token limit\n";

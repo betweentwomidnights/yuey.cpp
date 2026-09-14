@@ -19,6 +19,23 @@ VaeRuntimeOptions resolve_vae_options(const GenerationPipelineOptions & options)
 }
 
 void validate_request(const SongRequest & request) {
+    if (request.target_bars != 0 && request.ending_mode != EndingMode::outro) {
+        throw std::invalid_argument(
+            "YuE2 target bars require ending mode outro");
+    }
+    if (request.ending_mode == EndingMode::outro && request.target_bars == 0) {
+        throw std::invalid_argument(
+            "YuE2 outro ending requires a target bar count");
+    }
+    if (request.target_bars != 0 && request.symbolic_mode == SymbolicMode::off) {
+        throw std::invalid_argument(
+            "YuE2 target bars require melody or full symbolic planning");
+    }
+    if (request.target_bars != 0 &&
+        (request.outro_bars == 0 || request.outro_bars > request.target_bars)) {
+        throw std::invalid_argument(
+            "YuE2 outro bars must be within the target bar count");
+    }
     if (request.instrumental && request.symbolic_mode == SymbolicMode::off) {
         throw std::invalid_argument(
             "YuE2 instrumental mode requires melody or full symbolic planning");
@@ -141,6 +158,11 @@ public:
             if (effective.abc && control.on_progress) {
                 control.on_progress(GenerationStage::abc, 1, 1);
             }
+            if (effective.target_bars != 0) {
+                result.abc = fit_abc_score_to_bars(
+                    result.abc, effective.target_bars, effective.outro_bars);
+                result.abc_token_ids = tokenizer.encode(result.abc);
+            }
             if (effective.experimental_vocal_rest || effective.instrumental) {
                 result.abc = make_vocal_rest_abc(result.abc);
                 result.abc_token_ids = tokenizer.encode(result.abc);
@@ -148,6 +170,9 @@ public:
             if (effective.instrumental) {
                 effective.lyrics = make_instrumental_lyrics(result.abc);
             }
+            const auto score = inspect_abc_score(result.abc);
+            result.score_bars = score.bars;
+            result.score_duration_seconds = score.duration_seconds;
         }
 
         const std::optional<std::vector<std::int32_t>> abc_ids =
@@ -156,16 +181,45 @@ public:
             : std::optional<std::vector<std::int32_t>>(result.abc_token_ids);
         const auto positive = make_positive_prefix(effective, tokenizer, abc_ids);
         const auto guidance = generation_guidance(effective);
+        auto semantic_sampling = run_options.generation.semantic;
+        if (!run_options.semantic_budget_explicit && result.score_bars != 0) {
+            AbcScoreInfo score;
+            score.bars = result.score_bars;
+            score.duration_seconds = result.score_duration_seconds;
+            auto budget = score_aligned_semantic_budget(score);
+            const auto positive_capacity = positive.size() < 24576
+                ? 24576 - positive.size()
+                : 0;
+            budget = static_cast<std::uint32_t>(std::min<std::size_t>(budget, positive_capacity));
+            if (budget == 0) {
+                throw std::invalid_argument(
+                    "YuE2 score leaves no semantic room in the model context");
+            }
+            semantic_sampling.max_tokens = budget;
+            semantic_sampling.min_tokens = std::min(
+                semantic_sampling.min_tokens, semantic_sampling.max_tokens);
+        }
+        result.semantic_budget = semantic_sampling.max_tokens;
         AutoregressiveResult semantic;
         if (guidance == 1.0F) {
             semantic = autoregressive.generate(
-                positive, run_options.generation.semantic,
+                positive, semantic_sampling,
                 AutoregressivePhase::semantic, effective.seed,
                 ar_control(control, GenerationStage::semantic));
         } else {
             const auto negative = make_negative_prefix(effective, tokenizer, abc_ids);
+            if (negative.size() >= 24576) {
+                throw std::invalid_argument(
+                    "YuE2 negative score prefix leaves no semantic room in the model context");
+            }
+            if (negative.size() + semantic_sampling.max_tokens > 24576) {
+                semantic_sampling.max_tokens = static_cast<std::uint32_t>(24576 - negative.size());
+                semantic_sampling.min_tokens = std::min(
+                    semantic_sampling.min_tokens, semantic_sampling.max_tokens);
+                result.semantic_budget = semantic_sampling.max_tokens;
+            }
             semantic = autoregressive.generate_cfg(
-                positive, negative, run_options.generation.semantic,
+                positive, negative, semantic_sampling,
                 AutoregressivePhase::semantic, guidance, effective.seed,
                 ar_control(control, GenerationStage::semantic));
         }
@@ -221,7 +275,10 @@ GenerationPipeline & GenerationPipeline::operator=(GenerationPipeline &&) noexce
 
 GeneratedSong GenerationPipeline::generate(const SongRequest & request) {
     return impl_->generate(
-        request, {impl_->options.generation, impl_->options.flow}, {});
+        request,
+        {impl_->options.generation, impl_->options.flow,
+         impl_->options.semantic_budget_explicit},
+        {});
 }
 
 GeneratedSong GenerationPipeline::generate(

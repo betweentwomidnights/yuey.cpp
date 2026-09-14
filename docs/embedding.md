@@ -63,7 +63,7 @@ header before the model composes any notes. Token budgets, sampling, guidance,
 and flow steps can vary per call without reloading the model. Results contain
 interleaved 48 kHz stereo PCM plus ABC, raw semantic codec IDs, and
 `[frames,64]` latents. Older request structs remain ABI-compatible because the
-new pointer is a size-gated tail field.
+new controls are size-gated tail fields.
 
 Native C++ callers can construct the same validated prefix without formatting
 ABC themselves:
@@ -71,7 +71,14 @@ ABC themselves:
 ```cpp
 yue2::PlanningHeader planning{95, 4, 4, "C# minor"};
 request.abc_prefix = yue2::make_planning_abc_prefix(planning);
+request.target_bars = 16;
+request.ending_mode = yue2::EndingMode::outro;
+request.outro_bars = 4;
 ```
+
+With no explicit `semantic_max_tokens`, generation derives a conservative
+safety budget from the completed score and stops on `MUSIC_END`. This keeps
+musical length in the score; token limits remain an advanced failure ceiling.
 
 The HTTP server exposes this as a typed `planning` object. A client omits that
 object for automatic planning; it never sends partially assembled header text.

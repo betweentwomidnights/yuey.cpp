@@ -17,6 +17,7 @@ struct GenerationPipelineOptions {
     VaeRuntimeOptions vae;
     GenerationDefaults generation;
     FlowOptions flow;
+    bool semantic_budget_explicit = false;
 };
 
 // Per-call controls that do not affect model residency or backend allocation.
@@ -24,6 +25,9 @@ struct GenerationPipelineOptions {
 struct GenerationRunOptions {
     GenerationDefaults generation;
     FlowOptions flow;
+    // Explicit token/seconds ceilings are advanced escape hatches. Normal
+    // score-based generation derives this budget after planning.
+    bool semantic_budget_explicit = false;
 };
 
 enum class GenerationStage {
@@ -48,6 +52,9 @@ struct GeneratedSong {
     bool abc_truncated = false;
     std::vector<std::int32_t> semantic_codec_ids;
     bool semantic_truncated = false;
+    std::uint32_t score_bars = 0;
+    double score_duration_seconds = 0.0;
+    std::uint32_t semantic_budget = 0;
     std::vector<float> latents;
     DecodedAudio audio;
 };

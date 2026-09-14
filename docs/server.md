@@ -133,7 +133,9 @@ dragging even when the user does not want generated audio.
   "planning": {"bpm": 95, "key": "C# minor", "meter_numerator": 4, "meter_denominator": 4},
   "symbolic_mode": "melody",
   "seed": -1,
-  "duration": 60,
+  "target_bars": 16,
+  "ending": "outro",
+  "outro_bars": 4,
   "guidance_scale": 1.5,
   "temperature": 1.0, "top_k": 100, "top_p": 0.95, "repetition_penalty": 1.2,
   "semantic_max_tokens": 9000, "semantic_min_tokens": 200,
@@ -177,8 +179,14 @@ dragging even when the user does not want generated audio.
   prefix before sampling. It is mutually exclusive with `abc` and
   `abc_prefix`. Omit the object entirely for automatic musical planning.
 - **`seed`**: absent or negative picks a random seed, reported back.
-- **`duration`** caps the song at 25 semantic frames per second.
-  `semantic_max_tokens` overrides it.
+- **`target_bars`** is the preferred musical-length control. With
+  **`ending: "outro"`**, yuey retains the score opening plus `outro_bars` from
+  the planner's genuine tail, producing an exact bar-length score before audio
+  generation. Omit it with **`ending: "natural"`** to keep the complete plan.
+- Semantic generation normally derives a conservative safety budget from the
+  accepted score and stops on `MUSIC_END`. `max_seconds`, legacy `duration`,
+  and `semantic_max_tokens` are advanced hard-ceiling overrides; they may cut
+  active audio and should not be used as ordinary musical-length controls.
 - **`loras`** entries name an adapter in `--adapters-dir` or give a `path`.
   Adapters are bound when the model loads, so a different set reloads it.
   Omitting `loras` uses the `--lora` defaults.
@@ -230,9 +238,9 @@ It also returns `midi_files`, whose base64 values are keyed by
 - **`progress`** (0–100) is weighted across stages. Transcription takes the
   first 15 of a cover; for semantic generation, `total_steps` is the token
   budget, and generation normally stops before it.
-- **A completed generation** adds `audio_data`, `abc` (the score used or
-  planned), and `meta:{seed, duration, sample_rate, channels, semantic_frames,
-  abc_truncated, semantic_truncated}`.
+- **A completed generation** adds `audio_data`, `abc` (the exact score used),
+  and `meta:{seed, duration, score_bars, score_duration, sample_rate, channels,
+  semantic_frames, semantic_budget, abc_truncated, semantic_truncated}`.
 - **A completed transcription** adds `abc`, `midi_data` (the combined base64
   Standard MIDI), `midi_files` (combined and component MIDIs), `duration`, and
   `events` (the lossless events document).
@@ -245,7 +253,7 @@ result and free it at once; a song's base64 WAV is tens of megabytes.
 
 ```bash
 sid=$(curl -s -X POST localhost:8007/generate -H 'Content-Type: application/json' \
-  -d '{"style":"lo-fi soul","lyrics":"[Verse]\nslow morning","duration":30}' | jq -r .session_id)
+  -d '{"style":"lo-fi soul","lyrics":"[Verse]\nslow morning","target_bars":16,"ending":"outro"}' | jq -r .session_id)
 until [ "$(curl -s localhost:8007/poll_status/$sid | jq -r .status)" = completed ]; do sleep 2; done
 curl -s "localhost:8007/poll_status/$sid?consume=1" | jq -r .audio_data | base64 -d > song.wav
 ```

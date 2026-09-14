@@ -19,6 +19,7 @@ int main(int argc, char ** argv) {
     options.generation.semantic.temperature = 0.0F;
     options.generation.semantic.min_tokens = 2;
     options.generation.semantic.max_tokens = 2;
+    options.semantic_budget_explicit = true;
     options.flow.ode_steps = 1;
     yue2::GenerationPipeline pipeline(argv[1], argv[2], argv[3], options);
 

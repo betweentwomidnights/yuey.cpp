@@ -70,4 +70,4 @@ set "BIN=%CD%\%DIR%\bin\Release"
 echo [yuey] done -^> %BIN%
 echo [yuey] activate this PowerShell:  . .\env.ps1
 echo [yuey] then launch the UI:       yue2-server
-echo [yuey] or generate:              yue2-generate --encoding q4_k_m --prompt "..." --duration 30 --out song.wav
+echo [yuey] or generate:              yue2-generate --encoding q4_k_m --prompt "..." --bars 16 --ending outro --out song.wav

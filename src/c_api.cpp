@@ -320,6 +320,25 @@ YUE2_API int32_t yue2_generate(
         if (request->size >= instrumental_size) {
             song.instrumental = request->instrumental != 0;
         }
+        const auto target_bars_size = offsetof(yue2_generation_request, target_bars) +
+            sizeof(request->target_bars);
+        if (request->size >= target_bars_size) song.target_bars = request->target_bars;
+        const auto ending_mode_size = offsetof(yue2_generation_request, ending_mode) +
+            sizeof(request->ending_mode);
+        if (request->size >= ending_mode_size) {
+            if (request->ending_mode == YUE2_ENDING_NATURAL) {
+                song.ending_mode = yue2::EndingMode::natural;
+            } else if (request->ending_mode == YUE2_ENDING_OUTRO) {
+                song.ending_mode = yue2::EndingMode::outro;
+            } else {
+                throw std::invalid_argument("invalid ending mode");
+            }
+        }
+        const auto outro_bars_size = offsetof(yue2_generation_request, outro_bars) +
+            sizeof(request->outro_bars);
+        if (request->size >= outro_bars_size && request->outro_bars != 0) {
+            song.outro_bars = request->outro_bars;
+        }
         if (request->seed_set) song.seed = request->seed;
         if (request->guidance_set) song.guidance_scale = request->guidance_scale;
 
@@ -331,6 +350,7 @@ YUE2_API int32_t yue2_generate(
         }
         if (request->semantic_max_tokens) {
             options.generation.semantic.max_tokens = request->semantic_max_tokens;
+            options.semantic_budget_explicit = true;
         }
         if (request->ode_steps) options.flow.ode_steps = request->ode_steps;
         if (request->temperature_set) {
