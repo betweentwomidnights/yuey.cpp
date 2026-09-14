@@ -12,95 +12,36 @@ It is mainly designed for downstream usage in
 [`betweentwomidnights/gary4juce`](https://github.com/betweentwomidnights/gary4juce),
 while remaining usable as a standalone C++ library, CLI, and local web app.
 
-## TODO
+The repository is named **Yuey**, our nickname for the project. Binaries and
+public APIs retain the `yue2` prefix to identify the underlying model.
 
-- [ ] Fully validate the Vulkan and Metal backends.
-- [ ] Produce useful benchmarks on hardware beyond our RTX 5070 Laptop GPU and
-  DGX Spark.
-- [ ] Validate the C ABI from a standalone iPlug2 project or Ableton extension.
+## What works
 
-The first product milestone is audio-to-score transcription:
+- Audio transcription to full or melody-only ABC, multi-track MIDI, and timed
+  events using native MERT2 + SheetSage2 inference.
+- Text-to-music, score-conditioned generation, covers, and cover-then-continue
+  workflows through the native YuE2 AR, flow, and VAE pipeline.
+- Typed BPM, key, and meter controls that are applied to the planning score
+  instead of being left to prompt interpretation.
+- BF16, Q8_0, Q5_K_M, and Q4_K_M generation models, including automatic device
+  memory recommendations.
+- A local asynchronous HTTP server and embedded Yuey web UI.
+- Native C++ and stable C APIs for future DAW and plugin integration.
 
-```text
-audio -> 24 kHz mono -> MERT-v2-FullSong -> SheetSage2 -> ABC/MIDI/events
-```
+The complete path is validated on an RTX 5070 Laptop GPU and a DGX Spark using
+CUDA. Other backends remain works in progress.
 
-The resulting melody-only or full ABC can be passed directly to the native
-YuE2 score-conditioned generation pipeline.
-
-## Status
-
-The first native end-to-end path is working. It includes WAV decoding,
-downmixing and resampling; the MERT2 log-mel front end, ConvNeXt subsampler and
-24 Conformer blocks; SheetSage2's learned layer mixture and encoder projection;
-the six-layer BART decoder; grammar-constrained greedy generation; and
-ABC/MIDI/event export. Encoder memory and decoder logits have been checked
-numerically against the pinned Python reference, and a real-weight API/CLI
-smoke test runs with no Python process in the inference path.
-
-The generation-side model boundary is also in place. A native converter emits
-the released YuE2-3B checkpoint as BF16 GGUF and the YuE2-VAE as F16 GGUF,
-folding all Oobleck weight-normalization pairs and packaging the tokenizer and
-JSON sidecars. A metadata-only C++ inspector validates the exact architecture,
-key tensor shapes, storage types, checkpoint hashes, and VAE geometry without
-allocating model payloads. The native six-stage Oobleck decoder is working on
-CPU and CUDA, including bounded 1024-frame tiles with the released 16-frame
-halo. The checkpoint-native Qwen tokenizer and prompt protocol now match the
-official implementation token-for-token, and the native AR transformer matches
-the released model's full 184,704-logit output. Request-local F16 KV caches,
-off/ABC/semantic vocabulary masks, windowed repetition penalty, top-k/top-p
-sampling, and paired classifier-free guidance are implemented. NAR/flow
-execution now runs the released 28-layer flow branch with midpoint ODE solving
-and feeds its 64-channel latents into the VAE. `GenerationPipeline` exposes the
-complete text/score-to-waveform path while retaining loaded models across
-requests, and `yue2-generate` provides the corresponding CLI. PEFT-style YuE2
-LoRAs can be converted to a dedicated GGUF and applied functionally across the
-AR and NAR projections without modifying or requantizing the base weights.
-
-The server also exposes an acestep.cpp-shaped `GET /props` bootstrap for local
-clients. It discovers GGML devices and free/total memory through the shared
-backend API, classifies installed GGUFs by metadata, and reports friendly
-BF16/Q8/Q5/Q4 tiers with conservative fit and recommendation fields. This is
-the foundation for the standalone Yuey model picker. The embedded UI already
-supports exact ABC source editing; structured piano-roll editing and automatic
-model downloads remain unavailable until their contracts are implemented.
-
-Structured `planning` fields on `/generate` provide the first UI-facing musical
-control: BPM, key, and meter are validated server-side and converted into the
-same two-voice `abc_prefix` proven by the locked-header listening test. Omitting
-the object retains automatic planning; clients never need to concatenate ABC.
-
-Decoder generation uses a persistent self-attention KV cache and precomputed
-encoder-attention keys and values. Whole-song input uses the released
-right-lookahead/overlap plan, re-encodes accepted overlap events as the next
-window's decoder prefix, and retains per-window token provenance. Input is
-currently WAV-only at the CLI boundary. ABC export follows YuE2's native
-two-voice dialect, completes every measure, splits long durations with ties,
-mirrors decoded key changes across voices, and places chords in Vocal only.
-Full mode reconstructs downbeat-bounded measures and meter changes from the
-decoded meter/eighth-position stream, including pickup and final partial-bar
-padding. Melody-only mode necessarily falls back to a 4/4, C-major grid because
-those fields are not requested from the model.
-
-## Build
-
-Clone the repository with the pinned shared GGML fork:
+## Quickstart
 
 ```bash
 git clone --recurse-submodules https://github.com/betweentwomidnights/yuey.cpp.git
 cd yuey.cpp
 ```
 
-If the repository was cloned without `--recurse-submodules`, run:
-
-```bash
-git submodule update --init --recursive
-```
-
 ### Windows + CUDA
 
-Run these commands from a PowerShell or Visual Studio developer terminal with
-CMake, Visual Studio 2022 C++ tools, and the CUDA toolkit available:
+Use a PowerShell or Visual Studio developer terminal with CMake, Visual Studio
+2022 C++ tools, and the CUDA toolkit available:
 
 ```powershell
 cmake -S . -B build-cuda -DYUE2_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=native
@@ -108,17 +49,28 @@ cmake --build build-cuda --config Release --parallel
 ctest --test-dir build-cuda -C Release --output-on-failure
 ```
 
-Start the standalone server and leave that terminal open:
+Until the public GGUF download is available, place a complete tier under
+`models/`. The Q4_K_M laptop layout is:
+
+```text
+models/
+  YuE2-3B-GGUF/
+    yue2-3.6B-v1.0-Q4_K_M.gguf
+    yue2-vae-v1.0-F16.gguf
+    sidecars/yue2-qwen.tiktoken
+  sheetsage2-mert2-0.7B-v1.0-F16.gguf  # needed for transcription/covers
+```
+
+Start the local app:
 
 ```powershell
 .\build-cuda\bin\Release\yue2-server.exe --models-dir .\models --device cuda
 ```
 
-Open <http://127.0.0.1:8007/> for the embedded Yuey UI. From another terminal,
-`curl.exe http://127.0.0.1:8007/health` confirms that the local service and model
-paths resolve.
+Open <http://127.0.0.1:8007/>. The UI provides generation, transcription,
+remixing, ABC editing, MIDI export, and quantization-tier selection.
 
-To exercise the CUDA CLI directly with an instrumental 30-second generation:
+Run a 30-second instrumental directly from the CLI:
 
 ```powershell
 New-Item -ItemType Directory -Force .\outputs | Out-Null
@@ -126,28 +78,26 @@ New-Item -ItemType Directory -Force .\outputs | Out-Null
   --model .\models\YuE2-3B-GGUF\yue2-3.6B-v1.0-Q4_K_M.gguf `
   --vae .\models\YuE2-3B-GGUF\yue2-vae-v1.0-F16.gguf `
   --tokenizer .\models\YuE2-3B-GGUF\sidecars\yue2-qwen.tiktoken `
-  --style "dreamy analog synth pop, tight dry drums, warm bass, evolving arpeggios" `
+  --style "dreamy analog synth pop, tight dry drums, warm bass" `
   --bpm 95 --key "C# minor" --meter 4/4 `
   --semantic-min-tokens 200 --semantic-max-tokens 750 `
   --score-output .\outputs\cuda-smoke.abc `
-  --output .\outputs\cuda-smoke.wav `
-  --device cuda
+  --output .\outputs\cuda-smoke.wav --device cuda
 ```
 
-Lyrics are optional. Supply either `--lyrics "..."` or
+Lyrics are optional. Use either `--lyrics "..."` or
 `--lyrics-file .\lyrics.txt` for a vocal generation.
 
 ### Linux + CUDA
 
 ```bash
-cmake -S . -B build -DYUE2_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=native
-cmake --build build --config Release -j
-ctest --test-dir build -C Release --output-on-failure
+cmake -S . -B build-cuda -DYUE2_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=native \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cuda --parallel
+ctest --test-dir build-cuda --output-on-failure
 ```
 
 ### Apple silicon + Metal
-
-On the M4, install CMake and a current Xcode command-line toolchain, then run:
 
 ```bash
 cmake -S . -B build-metal -DYUE2_METAL=ON -DCMAKE_BUILD_TYPE=Release
@@ -155,243 +105,36 @@ cmake --build build-metal --parallel
 ctest --test-dir build-metal --output-on-failure
 ```
 
-The executable is `build-metal/bin/yue2-server`. Model files are intentionally
-not stored in Git; copy the same GGUF model directory used for CUDA before the
-Metal generation check.
+Copy the same model directory to the Mac before testing
+`build-metal/bin/yue2-server`. Backend options are `YUE2_CUDA`, `YUE2_VULKAN`,
+`YUE2_METAL`, and `YUE2_HIP`.
 
-Backend options are `YUE2_CUDA`, `YUE2_VULKAN`, `YUE2_METAL`, and `YUE2_HIP`.
-They forward to the pinned GGML submodule instead of selecting a second GGML
-distribution.
+## TODO
 
-Convert the official transcription checkpoints after downloading their actual
-Git-LFS payloads:
+- [ ] Publish the GGUFs using the same convention as sa3.cpp: one Hugging Face
+  repository per model family containing all required components and quant
+  tiers, with model cards, source provenance, checksums, and a clear “download
+  one complete tier” table.
+- [ ] Add `models.sh`, `models.cmd`, and a cross-platform downloader so a fresh
+  checkout can install a complete tier directly into `models/`.
+- [ ] Fully validate the Vulkan and Metal backends.
+- [ ] Produce useful benchmarks on hardware beyond our RTX 5070 Laptop GPU and
+  DGX Spark.
+- [ ] Validate the C ABI from a standalone iPlug2 project or Ableton extension.
+- [ ] Replace raw ABC editing with the structured piano-roll score editor.
 
-```bash
-python -m pip install numpy safetensors gguf
-python tools/convert_sheetsage2_gguf.py \
-  --sheetsage models/SheetSage2 \
-  --mert models/MERT-v2-FullSong \
-  --out models
-```
+## Documentation
 
-Given a directory, converters write the GGUF naming convention shared with
-`sa3.cpp` and `audiocraft.cpp`, here `sheetsage2-mert2-0.7B-v1.0-F16.gguf`; an
-explicit `.gguf` path is used as given. See
-[docs/distribution.md](docs/distribution.md).
-
-The converter validates the released architecture, tokenizer fingerprint,
-pinned MERT revision and MERT SHA-256, then merges all 96 attention LoRA
-projections in float32 before emitting the model.
-
-The converter has also been exercised against the pinned real checkpoints. It
-emits 1,039 tensors (96 merged projections) as a roughly 1.26 GiB f16/f32 GGUF.
-
-Package the released generation checkpoints without routing them through a
-second framework or GGML distribution:
-
-```bash
-python -m pip install numpy torch safetensors gguf
-python tools/convert_yue2_gguf.py \
-  --model models/YuE2-3B \
-  --vae models/YuE2-VAE \
-  --out models/YuE2-3B-GGUF
-
-build/bin/yue2-inspect-generation \
-  models/YuE2-3B-GGUF/yue2-3.6B-v1.0-BF16.gguf \
-  models/YuE2-3B-GGUF/yue2-vae-v1.0-F16.gguf
-```
-
-The defaults preserve the main model's released BF16 weights, cast the VAE to
-F16 after folding its 88 weight-normalization pairs, copy the Qwen tiktoken and
-configuration sidecars, and embed SHA-256 fingerprints of both source
-checkpoints. `--model-type` and `--vae-type` also accept `f32`, `f16`, or
-`bf16`. Existing outputs require an explicit `--overwrite`. `--model-revision`
-and `--vae-revision` record the downloaded Hugging Face revisions in the
-standard `general.base_model.*` fields.
-
-## Quantization
-
-`yue2-quantize` re-encodes the generation GGUF with the same mixes as
-`sa3-quantize`. It streams one tensor at a time, so host memory stays bounded by
-the largest tensor rather than the 7 GB model:
-
-```bash
-build/bin/yue2-quantize \
-  --in models/YuE2-3B-GGUF/yue2-3.6B-v1.0-BF16.gguf \
-  --mix q4_k_m
-build/bin/yue2-quant-check \
-  --ref models/YuE2-3B-GGUF/yue2-3.6B-v1.0-BF16.gguf \
-  --quant models/YuE2-3B-GGUF/yue2-3.6B-v1.0-Q4_K_M.gguf
-```
-
-`--mix` accepts `q4_k_m`, `q5_k_m`, `q8_0`, `f16`, and `f32`; without `--out`
-the Encoding field of the input name is replaced. The K-quant mixes store
-attention values, MLP down projections, the embedding, and the LM head as
-Q6_K. Norms, biases, and the flow branch's latent bridges, timestep MLP, and
-latent position table keep their source storage. Metadata, including the
-checkpoint fingerprint LoRA adapters bind to, is preserved.
-`yue2-quant-check` dequantizes every converted tensor and exits nonzero if any
-falls below the cosine threshold. `yue2-quant-eval` compares generation behavior
-against the reference one stage at a time:
-- teacher-forced AR codec logits, with KL divergence and top-k agreement;
-- fixed-noise flow latents and decoded audio, with waveform and log-spectral
-  distance;
-- official fixtures, when supplied;
-- optional seeded renders for listening.
-
-The VAE and the transcription model are refused: both stay F16/F32. The
-1.26 GiB F16 transcription model already runs on an 8 GB laptop GPU. Q8_0,
-Q5_K_M and Q4_K_M generation tiers have now passed real-weight tensor checks
-and a CUDA numerical evaluation against BF16 and the official AR/flow fixtures;
-listening approval and per-stage 8 GB peak-VRAM measurements remain open. See
-[docs/validation.md](docs/validation.md) for the recorded metrics.
-
-Convert a PEFT-style generation adapter and optionally bind it to the exact
-source-checkpoint fingerprint embedded in the base GGUF:
-
-```bash
-python tools/convert_yue2_lora.py \
-  --input adapters/my-style/adapter_model.safetensors \
-  --config adapters/my-style/adapter_config.json \
-  --base-sha256 <sha256-of-model.safetensors> \
-  --type f16 \
-  --output models/my-style-v1.0-F16-LoRA.gguf
-```
-
-The converter accepts YuE2 AR/NAR attention and MLP projections, `lm_head`,
-both latent bridges, and the timestep MLP. It rejects unknown targets,
-incomplete pairs, mixed ranks, and inconsistent PEFT metadata. At runtime the
-adapter stays as a small resident buffer on the base model's backend and is
-evaluated as `W*x + (alpha/rank)*strength*B*(A*x)`. This also works with a
-quantized base because `W` is never merged or rewritten.
-
-Library clients can construct `yue2::VaeDecoder` from the VAE GGUF and pass a
-row-major `[latent_frames,64]` float buffer to `decode()`. The result is
-interleaved 48 kHz stereo PCM. Long inputs are tiled automatically to bound
-activation memory without crossfades or seam smoothing; `VaeRuntimeOptions`
-controls the device, CPU thread count, core/halo sizes, and the diagnostic
-full-graph opt-out. Calls on one instance are safe and serialize its mutable
-GGML scheduler.
-
-Generation clients can construct `yue2::TextTokenizer` from the packaged
-`qwen.tiktoken`, build checkpoint-native positive/negative prefixes with
-`make_positive_prefix()` and `make_negative_prefix()`, and generate symbolic or
-semantic tokens with `yue2::AutoregressiveModel::generate()` or
-`generate_cfg()`. Streaming/server code can retain an
-`AutoregressiveSession`, append prompt or sampled tokens to its bounded KV
-cache, and read next-token logits without replaying the prefix. Text is
-NFC-normalized and always uses ordinary-token encoding: literal strings such
-as `<abc>` are not silently promoted to protocol controls. `logits()` remains
-available as a cache-free parity/debug primitive. Generated results exclude
-the phase end token and report whether it was reached.
-
-For the complete path, construct `yue2::GenerationPipeline` once from the main
-GGUF, VAE GGUF, and packaged `qwen.tiktoken`, then call `generate()` with a
-`SongRequest`. The result contains the used/generated ABC, raw semantic codec
-IDs, time-major 64-channel latents, and interleaved 48 kHz stereo PCM. The
-pipeline keeps both models loaded for repeated server or plugin requests.
-Seeded flow noise uses the standard C++ generator used by the native runtime;
-the explicit-noise `synthesize_latents()` overload is the bit-reproducible
-boundary for upstream parity fixtures.
-
-Generate a WAV with an existing full ABC score:
-
-```bash
-build/bin/yue2-generate \
-  --model models/YuE2-3B-GGUF/yue2-3.6B-v1.0-BF16.gguf \
-  --vae models/YuE2-3B-GGUF/yue2-vae-v1.0-F16.gguf \
-  --tokenizer models/YuE2-3B-GGUF/qwen.tiktoken \
-  --style "acoustic, intimate" \
-  --lyrics-file lyrics.txt \
-  --symbolic full \
-  --abc score.abc \
-  --lora models/my-style-v1.0-F16-LoRA.gguf=0.8 \
-  --output song.wav \
-  --device cuda
-```
-
-Omit `--abc` to let the AR branch plan a score, or pass `--abc-prefix header.abc`
-to seed planning with an exact validated header after `ABC_START`. This is the
-low-level lock point for host-provided meter, tempo, voices, and key; YuE2
-generates the score body under it. A prefix and complete `--abc` are mutually
-exclusive. The typed equivalent is `--bpm 95 --key "C# minor" --meter 4/4`;
-the CLI validates those fields and builds the same trusted prefix as the
-server. Use `--symbolic off` for text-only generation. The CLI also exposes
-seed, guidance, ABC/semantic token limits, semantic sampling, ODE steps, and CPU
-thread controls. Repeat `--lora PATH[=SCALE]` to stack additive adapters.
-
-Run a single-window transcription:
-
-```bash
-build/bin/yue2-transcribe \
-  --model models/sheetsage2-mert2-0.7B-v1.0-F16.gguf \
-  --audio input.wav \
-  --output score.abc \
-  --midi score.mid \
-  --midi-dir midi \
-  --events events.json \
-  --device cuda \
-  --overlap-seconds 200 \
-  --lookahead-seconds 100
-```
-
-`--midi` writes a DAW-oriented format-1 file with a conductor track and each
-active melody lane on a named track. With `--full`, it also contains a voiced
-chord track derived from SheetSage2's chord labels; `--midi-dir` writes the
-combined `transcription.mid` plus separate `melody.mid`, `melody_vocal.mid`,
-`melody_instrumental.mid`, and `chords.mid` files. Tempo, meter, key, section
-markers, pickups, and meter changes remain aligned to the same musical grid as
-the ABC. Both modes retain the vocal and instrumental melody lanes. Use
-`--full` to also decode meter, structure, key, and chords; the default
-melody-only prompt omits those annotations for YuE2 melody conditioning. Backend selection
-uses `YUE2_DEVICE=cpu` to force CPU, `YUE2_DEVICE=cuda` to require CUDA, or
-`YUE2_GPU=<index-or-name>` to select a registered accelerator. Explicit
-accelerator requests fail if the device cannot be found or initialized; they
-never silently fall back to CPU. The JSON output retains raw generated token IDs plus
-typed timestamps, meter positions, structure, key, chord, note track, duration,
-and interpolated note-end times for integration without reparsing ABC.
-
-The converter's default F16 GGUF is the interactive CUDA choice. Use
-`--keep-f32` when building a reference-quality GGUF and `YUE2_DEVICE=cpu` when
-exact symbolic agreement with the official FP32 implementation matters more
-than latency. On the 60-second oracle fixture, that path produces an exactly
-matching ABC score; CUDA/F16 remains numerically close but can choose different
-greedy tokens on long material.
-
-Library clients can call `Transcriber::transcribe_mono()` with an existing mono
-float PCM buffer and its sample rate. This bypasses file I/O and is the intended
-gary4juce/server boundary; the runtime performs the same amplitude-preserving
-24 kHz resampling and returns the same tokens, events, ABC, and MIDI set. The
-combined compatibility field is `result.midi`; C++ clients can also use
-`result.midi_exports` for the component files. Pass
-`TranscriberRuntimeOptions` at construction to select a device and CPU thread
-count per model instance without changing process-global environment state.
-Concurrent calls on one instance are safe and serialize its mutable GGML
-scheduler; use separate instances only when the host intentionally wants
-parallel model execution and can afford the duplicated weights.
-
-Hosts that need a stable module boundary can instead link `yue2.dll` or
-`libyue2.so` through the pure-C API in `include/yue2/c_api.h`. It exposes
-separate resident transcription and generation contexts, accepts interleaved or
-JUCE-style planar input PCM, and returns library-owned ABC/MIDI/events or
-waveform/intermediate buffers with matching free functions. Progress and
-cooperative cancellation are available at AR-token, flow-step, VAE-tile, and
-transcription-window boundaries. See [docs/embedding.md](docs/embedding.md).
-
-`yue2-server` exposes generation, audio-to-song covers, and transcription over
-HTTP in the async session/poll shape gary4juce uses for the other gary4local
-services. It runs on port 8007 by default, resolves models by metadata, and
-releases them after each job by default. Open `http://127.0.0.1:8007/` for the
-embedded Yuey UI: create with typed BPM/key/meter controls, upload audio for
-transcription or remixing, export multi-track MIDI, edit ABC, regenerate, and
-choose an installed quantization tier per job. See [docs/server.md](docs/server.md).
+- [Architecture](docs/architecture.md)
+- [Server and web API](docs/server.md)
+- [C/C++ embedding](docs/embedding.md)
+- [GGUF naming, conversion, and quantization](docs/distribution.md)
+- [Numerical and listening validation](docs/validation.md)
+- [Pinned upstream references](docs/reference-lock.md)
 
 ## Models and licenses
 
-This repository contains engine code only. It does not redistribute model
-weights. The released YuE2, SheetSage2, and MERT2 checkpoints are licensed
-under CC BY-NC 4.0; users must obtain them from their upstream publishers and
-comply with their terms. See [docs/reference-lock.md](docs/reference-lock.md).
-
-Engine code in this repository is MIT licensed. Upstream code consulted as a
-reference retains its own license.
+This repository contains engine code only and does not redistribute model
+weights. The released YuE2, SheetSage2, and MERT2 checkpoints are licensed under
+CC BY-NC 4.0; users must obtain them from their upstream publishers and comply
+with their terms. Engine code in this repository is MIT licensed.
