@@ -28,9 +28,11 @@
     .backend strong { display: block; font-size: 12px; }
     .backend span { color: var(--muted); font-size: 11px; }
     .dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--ok); }
+    .dot.connecting { background: var(--faint); }
+    .dot.busy { background: var(--accent); box-shadow: 0 0 0 4px #e6202026; }
+    .dot.offline { background: var(--bad); }
     main { padding: 35px clamp(24px, 5vw, 72px) 70px; overflow: hidden; }
     .topline { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 30px; }
-    .top-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     h1 { margin: 0; font-size: clamp(28px, 4vw, 45px); line-height: 1; letter-spacing: -1.8px; }
     h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.4px; }
     h3 { margin: 0; font-size: 14px; }
@@ -144,12 +146,11 @@
       <button class="nav" data-view="score">score</button>
       <button class="nav" data-view="models">models</button>
     </nav>
-    <div class="backend"><strong><i class="dot"></i><span id="connection">connecting…</span></strong><span id="device-mini">local backend</span></div>
+    <div class="backend"><strong><i class="dot connecting"></i><span id="connection">connecting…</span></strong><span id="device-mini">local backend</span></div>
   </aside>
   <main>
     <div class="topline">
       <div><div class="eyebrow">local music workspace</div><h1 id="page-title">create with yuey</h1></div>
-      <div class="top-actions"><button id="refresh" class="secondary">refresh runtime</button></div>
     </div>
 
     <section class="view active" id="view-create">
@@ -248,7 +249,7 @@
 <div class="roll-menu" id="roll-menu"><button id="menu-duplicate">duplicate selected bars</button><button id="menu-delete">delete selected notes</button></div>
 <script>
   const $ = id => document.getElementById(id);
-  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrl: null, result: null, scoreHistory: [], selection: [] };
+  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrl: null, result: null, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
   const titles = { create: 'create with yuey', transform: 'transcribe or remix', score: 'edit the score', models: 'local models' };
   const chordRoots = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
   const chordQualities = [
@@ -667,8 +668,7 @@
   function renderProps() {
     const p = state.props;
     const accelerator = p.devices.find(d => d.type === 'gpu' || d.type === 'integrated_gpu');
-    $('connection').textContent = 'local backend ready';
-    $('device-mini').textContent = accelerator ? `${accelerator.description} · ${humanBytes(accelerator.memory_total_bytes)}` : 'cpu mode';
+    state.deviceLabel = accelerator ? `${accelerator.description} · ${humanBytes(accelerator.memory_total_bytes)}` : 'cpu mode';
     $('model-folder').textContent = `model folder: ${p.models.directory}`;
     $('devices').innerHTML = p.devices.map(d => `<div class="device"><div><b>${escapeHtml(d.description)}</b><br><span>${escapeHtml(d.backend)} · ${escapeHtml(d.type.replaceAll('_', ' '))}</span></div><span>${humanBytes(d.memory_free_bytes)} free / ${humanBytes(d.memory_total_bytes)}</span></div>`).join('');
     const installed = p.models.tiers.filter(t => t.installed);
@@ -683,14 +683,42 @@
   function updateTierText() { $('create-tier').textContent = state.encoding === 'auto' ? 'automatic model selection' : `${state.encoding} model`; }
   function escapeHtml(text) { const node = document.createElement('span'); node.textContent = text ?? ''; return node.innerHTML; }
 
-  async function refresh() {
-    try {
-      [state.props, state.health] = await Promise.all([api('/props'), api('/health')]);
-      renderProps();
-    } catch (error) {
-      $('connection').textContent = 'backend unavailable'; $('device-mini').textContent = error.message;
-      const dot = document.querySelector('.dot'); if (dot) dot.style.background = 'var(--bad)';
+  function renderConnection(error = null) {
+    const dot = document.querySelector('.dot');
+    if (error) {
+      $('connection').textContent = 'backend unavailable';
+      $('device-mini').textContent = 'reconnecting automatically…';
+      dot.className = 'dot offline';
+      return;
     }
+    const busy = !!state.health?.busy, queued = Number(state.health?.queued || 0);
+    $('connection').textContent = busy ? 'local backend working' : 'local backend ready';
+    $('device-mini').textContent = `${queued ? `${queued} queued · ` : ''}${state.deviceLabel}`;
+    dot.className = `dot${busy ? ' busy' : ''}`;
+  }
+
+  async function refreshRuntime(full = false) {
+    if (state.runtimeChecking) return;
+    state.runtimeChecking = true;
+    try {
+      const wasOnline = state.runtimeOnline;
+      state.health = await api('/health');
+      state.runtimeOnline = true;
+      if (full || !wasOnline || !state.props) {
+        state.props = await api('/props');
+        renderProps();
+      }
+      renderConnection();
+    } catch (error) {
+      state.runtimeOnline = false;
+      renderConnection(error);
+    } finally { state.runtimeChecking = false; }
+  }
+
+  async function monitorRuntime() {
+    await refreshRuntime(false);
+    clearTimeout(state.runtimeTimer);
+    state.runtimeTimer = setTimeout(monitorRuntime, document.hidden ? 10000 : 2500);
   }
 
   function status(prefix, data, error) {
@@ -783,8 +811,11 @@
     } catch (error) { status('score', null, error); } finally { $('score-generate').disabled = false; }
   };
   $('export-abc').onclick = () => { const url = URL.createObjectURL(new Blob([$('abc').value], { type: 'text/plain' })); const a = document.createElement('a'); a.href = url; a.download = 'yuey-score.abc'; a.click(); URL.revokeObjectURL(url); };
-  $('refresh').onclick = $('refresh-models').onclick = refresh;
-  refresh();
+  $('refresh-models').onclick = () => refreshRuntime(true);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { clearTimeout(state.runtimeTimer); state.runtimeTimer = setTimeout(monitorRuntime, 0); }
+  });
+  monitorRuntime();
 </script>
 </body>
 </html>
