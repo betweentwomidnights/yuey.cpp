@@ -84,17 +84,27 @@
     .editor-toolbar button { min-width: 42px; }
     .roll-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: 11px; background: #050505; }
     .chord-scroll, .roll-scroll { overflow-x: auto; }
-    .chord-strip { display: grid; min-width: 100%; min-height: 66px; border-bottom: 1px solid var(--line); }
+    .chord-row, .roll-row { display: flex; width: max-content; min-width: 100%; }
+    .chord-strip { display: grid; min-height: 66px; border-bottom: 1px solid var(--line); }
+    .gutter-head { position: sticky; left: 0; z-index: 6; flex: 0 0 52px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #090909; }
     .chord-cell { min-width: 0; padding: 5px; border-right: 1px solid var(--line-soft); }
     .chord-head { margin-bottom: 4px; color: var(--muted); font-size: 9px; }
     .chord-event { display: grid; grid-template-columns: 58px minmax(82px, 1fr); gap: 4px; margin-top: 3px; }
     .chord-event select { height: 27px; padding: 0 5px; border-radius: 5px; font-size: 10px; }
     .chord-add { width: 100%; height: 27px; padding: 0 7px; border-style: dashed; color: var(--muted); font-size: 10px; }
-    .piano-roll { position: relative; min-width: 100%; min-height: 350px; user-select: none; }
+    .piano-keys { position: sticky; left: 0; z-index: 5; flex: 0 0 52px; border-right: 1px solid var(--line); background: #090909; }
+    .piano-key { position: absolute; right: 0; width: 100%; padding-right: 4px; border-bottom: 1px solid #5a5a5a; color: #111; background: #ddd; font-size: 8px; line-height: 13px; text-align: right; }
+    .piano-key.black { width: 68%; color: #ddd; background: #292929; }
+    .piano-key.c { color: var(--accent); font-weight: 750; }
+    .piano-roll { position: relative; flex: 0 0 auto; min-height: 350px; user-select: none; }
     .note-block { position: absolute; z-index: 2; min-width: 5px; height: 12px; overflow: hidden; padding: 0 3px; border: 1px solid #ff5b5b; border-radius: 3px; color: #fff; background: #b70e0e; font-size: 9px; line-height: 10px; cursor: ns-resize; }
     .note-block.vocal { border-color: #ff9a9a; background: #711010; }
     .note-block.selected { z-index: 3; outline: 2px solid #fff; }
     .selection-box { position: absolute; z-index: 4; border: 1px solid #fff; background: #ffffff1a; pointer-events: none; }
+    .roll-menu { position: fixed; z-index: 100; display: none; min-width: 170px; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: #111; box-shadow: 0 10px 30px #000a; }
+    .roll-menu.on { display: grid; gap: 3px; }
+    .roll-menu button { padding: 8px 10px; border: 0; color: var(--ink); background: transparent; font-size: 11px; text-align: left; }
+    .roll-menu button:hover { background: var(--line-soft); }
     .roll-empty { display: grid; place-items: center; min-height: 350px; color: var(--muted); }
     details.advanced { margin-top: 14px; }
     details.advanced summary { color: var(--muted); cursor: pointer; }
@@ -196,6 +206,7 @@
             <button id="note-up" class="secondary" title="one semitone up">+1</button>
             <button id="octave-down" class="secondary" title="one octave down">−12</button>
             <button id="octave-up" class="secondary" title="one octave up">+12</button>
+            <button id="duplicate-notes" class="secondary" title="duplicate the selected bar range (ctrl/cmd+d)">duplicate</button>
             <button id="delete-note" class="secondary">delete</button>
             <button id="undo-score" class="ghost">undo</button>
           </div>
@@ -211,7 +222,7 @@
             <div class="actions"><button id="score-generate" class="primary">regenerate score</button><button id="export-abc" class="secondary">save abc</button></div>
             <div class="status" id="score-status"><div class="status-head"><b id="score-stage">queued</b><span id="score-percent">0%</span></div><div class="bar"><i id="score-bar"></i></div><div class="help" id="score-detail"></div></div>
           </div>
-          <div class="notice">the key guides the score but does not restrict chord choices. chord roots and qualities may freely leave the key. note timing remains unchanged in this editor slice.</div>
+          <div class="notice">the key guides the score but does not restrict chord choices. ctrl/cmd+d duplicates the complete selected bar range, including rhythm and chords. note timing remains otherwise unchanged.</div>
         </div>
       </div>
     </section>
@@ -227,6 +238,7 @@
     </section>
   </main>
 </div>
+<div class="roll-menu" id="roll-menu"><button id="menu-duplicate">duplicate selected bars</button><button id="menu-delete">delete selected notes</button></div>
 <script>
   const $ = id => document.getElementById(id);
   const state = { props: null, health: null, encoding: 'auto', file: null, wavUrl: null, result: null, scoreHistory: [], selection: [] };
@@ -313,6 +325,10 @@
     }
     return name;
   }
+  function pitchLabel(pitch) {
+    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    return names[((pitch % 12) + 12) % 12] + (Math.floor(pitch / 12) - 1);
+  }
   function parseScore(text) {
     let numerator = 4, denominator = 4, bpm = 120, unitDenominator = 32, key = 'C';
     for (const line of text.split(/\r?\n/)) {
@@ -324,6 +340,7 @@
     const barUnits = numerator * unitDenominator / denominator;
     const signature = keySignature(key);
     const notes = [], chords = [], insertions = {}, clocks = { Vocal: 0, Ins: 0 };
+    const barRanges = { Vocal: [], Ins: [] }, barStarts = { Vocal: null, Ins: null };
     let voice = null, absolute = 0;
     for (const raw of text.match(/[^\n]*(?:\n|$)/g) || []) {
       if (!raw) continue;
@@ -334,6 +351,15 @@
       if (!voice || !trimmed || trimmed[0] === '%' || /^[A-Za-z]:/.test(trimmed)) { absolute += raw.length; continue; }
       let i = 0;
       while (i < line.length) {
+        if (line[i] === '|') {
+          if (barStarts[voice] != null) {
+            barRanges[voice].push({ bar: barRanges[voice].length, start: barStarts[voice], end: absolute + i + 1 });
+            barStarts[voice] = null;
+          }
+          ++i; continue;
+        }
+        if (/\s/.test(line[i])) { ++i; continue; }
+        if (barStarts[voice] == null) barStarts[voice] = absolute + i;
         if (line[i] === '"') {
           const end = line.indexOf('"', i + 1);
           if (end < 0) break;
@@ -341,7 +367,6 @@
           i = end + 1; continue;
         }
         if (line[i] === '[') { const end = line.indexOf(']', i + 1); i = end < 0 ? line.length : end + 1; continue; }
-        if (line[i] === '|' || /\s/.test(line[i])) { ++i; continue; }
         const tokenStart = i;
         let accidental = '';
         while (i < line.length && '^_='.includes(line[i])) accidental += line[i++];
@@ -367,7 +392,7 @@
       absolute += raw.length;
     }
     const bars = Math.max(0, Math.ceil(Math.max(clocks.Vocal, clocks.Ins) / barUnits - 1e-8));
-    return { notes, chords, insertions, bars, bpm, key, numerator, denominator, unitDenominator, barUnits, seconds: bars * numerator * 60 * 4 / (bpm * denominator) };
+    return { notes, chords, insertions, barRanges, bars, bpm, key, numerator, denominator, unitDenominator, barUnits, seconds: bars * numerator * 60 * 4 / (bpm * denominator) };
   }
   function replaceScore(start, end, replacement, selection = state.selection) {
     const current = $('abc').value;
@@ -402,6 +427,29 @@
       notes.map((note, index) => ({ start: note.start, end: note.pitchEnd, value: abcFromPitch(moved[index]) })),
       notes.map((note, index) => noteId(note, moved[index]))
     );
+  }
+  function duplicateSelectedBars() {
+    const text = $('abc').value, score = parseScore(text), notes = selectedNotes(score);
+    if (!notes.length) return;
+    const firstBar = Math.min(...notes.map(note => note.bar));
+    const lastBar = Math.max(...notes.map(note => note.bar));
+    const barCount = lastBar - firstBar + 1, edits = [];
+    for (const voice of ['Vocal', 'Ins']) {
+      const ranges = score.barRanges[voice].slice(firstBar, lastBar + 1);
+      if (ranges.length !== barCount) continue;
+      edits.push({
+        start: ranges[ranges.length - 1].end,
+        end: ranges[ranges.length - 1].end,
+        value: ranges.map(range => text.slice(range.start, range.end)).join('')
+      });
+    }
+    if (!edits.length) return;
+    const offset = barCount * score.barUnits;
+    replaceScoreMany(edits, notes.map(note => noteId({ ...note, time: note.time + offset })));
+  }
+  function deleteSelectedNotes() {
+    const score = parseScore($('abc').value), notes = selectedNotes(score);
+    if (notes.length) replaceScoreMany(notes.map(note => ({ start: note.start, end: note.tokenEnd, value: 'z' + note.durationRaw })), []);
   }
   function parseChordLabel(label) {
     const match = label.match(/^([A-G](?:#|b)?)(.*)$/);
@@ -455,8 +503,13 @@
     const barWidth = 180, rowHeight = 14, width = Math.max(720, score.bars * barWidth), height = Math.max(350, (maxPitch - minPitch + 1) * rowHeight);
     const chordsByBar = {};
     for (const chord of score.chords) (chordsByBar[chord.bar] ||= []).push(chord);
-    shell.innerHTML = `<div class="chord-strip" style="width:${width}px;grid-template-columns:repeat(${score.bars},${barWidth}px)"></div><div class="piano-roll" style="width:${width}px;height:${height}px;background-image:linear-gradient(to right,transparent ${barWidth - 1}px,#3b2020 ${barWidth - 1}px),linear-gradient(to bottom,transparent ${rowHeight - 1}px,#202020 ${rowHeight - 1}px);background-size:${barWidth}px 100%,100% ${rowHeight}px"></div>`;
-    const strip = shell.querySelector('.chord-strip'), roll = shell.querySelector('.piano-roll');
+    shell.innerHTML = `<div class="chord-row" style="width:${width + 52}px"><div class="gutter-head"></div><div class="chord-strip" style="width:${width}px;grid-template-columns:repeat(${score.bars},${barWidth}px)"></div></div><div class="roll-row" style="width:${width + 52}px"><div class="piano-keys" style="height:${height}px"></div><div class="piano-roll" style="width:${width}px;height:${height}px;background-image:linear-gradient(to right,transparent ${barWidth - 1}px,#3b2020 ${barWidth - 1}px),linear-gradient(to bottom,transparent ${rowHeight - 1}px,#202020 ${rowHeight - 1}px);background-size:${barWidth}px 100%,100% ${rowHeight}px"></div></div>`;
+    const strip = shell.querySelector('.chord-strip'), roll = shell.querySelector('.piano-roll'), keys = shell.querySelector('.piano-keys');
+    for (let pitch = maxPitch; pitch >= minPitch; --pitch) {
+      const key = document.createElement('div'), pitchClass = ((pitch % 12) + 12) % 12;
+      key.className = `piano-key${[1, 3, 6, 8, 10].includes(pitchClass) ? ' black' : ''}${pitchClass === 0 ? ' c' : ''}`;
+      key.style.top = `${(maxPitch - pitch) * rowHeight}px`; key.style.height = `${rowHeight}px`; key.textContent = pitchLabel(pitch); keys.appendChild(key);
+    }
     for (let bar = 0; bar < score.bars; ++bar) {
       const cell = document.createElement('div'); cell.className = 'chord-cell';
       const barChords = chordsByBar[bar] || [];
@@ -484,8 +537,8 @@
       const block = document.createElement('div');
       const id = noteId(note);
       block.className = `note-block ${note.voice.toLowerCase()}${state.selection.includes(id) ? ' selected' : ''}`;
-      block.dataset.noteId = id;
-      block.textContent = abcFromPitch(note.pitch).replaceAll("'", '');
+      block.dataset.noteId = id; block.dataset.pitch = String(note.pitch);
+      block.textContent = pitchLabel(note.pitch);
       block.style.left = `${note.time / score.barUnits * barWidth}px`;
       block.style.width = `${Math.max(6, note.duration / score.barUnits * barWidth - 1)}px`;
       block.style.top = `${(maxPitch - note.pitch) * rowHeight + 1}px`;
@@ -499,11 +552,15 @@
         const startY = event.clientY; block.setPointerCapture?.(event.pointerId);
         block.onpointermove = move => {
           const delta = Math.round((startY - move.clientY) / rowHeight);
-          roll.querySelectorAll('.note-block.selected').forEach(item => item.style.transform = `translateY(${-delta * rowHeight}px)`);
+          roll.querySelectorAll('.note-block.selected').forEach(item => {
+            const moved = Math.max(0, Math.min(127, Number(item.dataset.pitch) + delta));
+            item.style.transform = `translateY(${-(moved - Number(item.dataset.pitch)) * rowHeight}px)`;
+            item.textContent = pitchLabel(moved);
+          });
         };
         const finish = up => {
           const delta = Math.round((startY - up.clientY) / rowHeight);
-          roll.querySelectorAll('.note-block.selected').forEach(item => item.style.transform = '');
+          roll.querySelectorAll('.note-block.selected').forEach(item => { item.style.transform = ''; item.textContent = pitchLabel(Number(item.dataset.pitch)); });
           block.onpointermove = null; block.onpointerup = null; block.onpointercancel = null;
           if (delta) transposeSelected(delta);
         };
@@ -535,6 +592,13 @@
       };
       roll.onpointermove = draw; roll.onpointerup = finish; roll.onpointercancel = finish;
     };
+    roll.oncontextmenu = event => {
+      event.preventDefault();
+      const block = event.target.closest('.note-block');
+      if (block && !state.selection.includes(block.dataset.noteId)) setSelection([block.dataset.noteId], score);
+      if (!state.selection.length) return;
+      const menu = $('roll-menu'); menu.style.left = `${Math.max(6, Math.min(event.clientX, innerWidth - 190))}px`; menu.style.top = `${Math.max(6, Math.min(event.clientY, innerHeight - 90))}px`; menu.classList.add('on');
+    };
     shell.scrollLeft = previousScroll;
   }
   function setScore(text) { $('abc').value = text || ''; state.scoreHistory = []; state.selection = []; renderScore(); }
@@ -542,12 +606,20 @@
   $('score-key-root').onchange = updateScoreKey; $('score-key-mode').onchange = updateScoreKey;
   $('note-down').onclick = () => transposeSelected(-1); $('note-up').onclick = () => transposeSelected(1);
   $('octave-down').onclick = () => transposeSelected(-12); $('octave-up').onclick = () => transposeSelected(12);
-  $('delete-note').onclick = () => {
-    const score = parseScore($('abc').value), notes = selectedNotes(score);
-    if (notes.length) replaceScoreMany(notes.map(note => ({ start: note.start, end: note.tokenEnd, value: 'z' + note.durationRaw })), []);
-  };
+  $('duplicate-notes').onclick = duplicateSelectedBars;
+  $('delete-note').onclick = deleteSelectedNotes;
+  $('menu-duplicate').onclick = () => { $('roll-menu').classList.remove('on'); duplicateSelectedBars(); };
+  $('menu-delete').onclick = () => { $('roll-menu').classList.remove('on'); deleteSelectedNotes(); };
   $('undo-score').onclick = () => { if (!state.scoreHistory.length) return; $('abc').value = state.scoreHistory.pop(); state.selection = []; renderScore(); };
   $('abc').oninput = () => { state.selection = []; renderScore(); };
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') $('roll-menu').classList.remove('on');
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'd' || !$('view-score').classList.contains('active')) return;
+    const target = event.target;
+    if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+    event.preventDefault(); duplicateSelectedBars();
+  });
+  document.addEventListener('pointerdown', event => { if (!event.target.closest('#roll-menu')) $('roll-menu').classList.remove('on'); });
 
   async function api(path, options) {
     const response = await fetch(path, options);
