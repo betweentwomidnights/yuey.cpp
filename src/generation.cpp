@@ -426,6 +426,43 @@ std::string make_vocal_rest_abc(const std::string & abc) {
     return output;
 }
 
+std::string make_instrumental_lyrics(const std::string & abc) {
+    std::vector<std::string> sections;
+    for (const auto & raw_line : abc_lines(abc)) {
+        const auto line = trim(raw_line);
+        if (line.empty() || line.front() != '%') continue;
+        auto section = trim(line.substr(1));
+        if (section.empty() || section.size() > 48) continue;
+
+        bool valid = true;
+        bool capitalize = true;
+        for (auto & c : section) {
+            const auto value = static_cast<unsigned char>(c);
+            if (std::isalnum(value)) {
+                c = static_cast<char>(capitalize ? std::toupper(value) : std::tolower(value));
+                capitalize = false;
+            } else if (c == ' ' || c == '-' || c == '_') {
+                if (c == '_') c = ' ';
+                capitalize = true;
+            } else {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) sections.push_back(std::move(section));
+    }
+
+    if (sections.empty()) {
+        sections = {"Intro", "Verse", "Chorus", "Verse", "Chorus", "Outro"};
+    }
+    std::string output;
+    for (const auto & section : sections) {
+        if (!output.empty()) output += "\n\n";
+        output += '[' + section + ']';
+    }
+    return output;
+}
+
 const char * generation_instruction(SymbolicMode mode) noexcept {
     switch (mode) {
         case SymbolicMode::off:

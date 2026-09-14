@@ -53,6 +53,12 @@ std::string make_planning_abc_prefix(const PlanningHeader & header);
 // Vocal/Ins pair.
 std::string make_vocal_rest_abc(const std::string & abc);
 
+// Builds the empty lyric-section sequence used by YuE2 for intentional
+// instrumental rendering. Section markers are read from native ABC comments
+// such as "% intro" and "% chorus" and retained in score order. A score
+// without usable markers receives the conventional default song form.
+std::string make_instrumental_lyrics(const std::string & abc);
+
 struct SongRequest {
     std::string style;
     std::string lyrics;
@@ -67,6 +73,10 @@ struct SongRequest {
     // Experimental symbolic intervention. Requires melody/full mode and empty
     // lyrics; Vocal is rested without changing Ins before semantic inference.
     bool experimental_vocal_rest = false;
+    // Product-level instrumental control. Requires melody/full mode and empty
+    // lyrics. The pipeline supplies an explicit empty section scaffold, adds
+    // no-vocal style conditioning, and rests Vocal before semantic inference.
+    bool instrumental = false;
 };
 
 struct GenerationSampling {

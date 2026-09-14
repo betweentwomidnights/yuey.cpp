@@ -315,6 +315,11 @@ YUE2_API int32_t yue2_generate(
         if (request->size >= vocal_rest_size) {
             song.experimental_vocal_rest = request->experimental_vocal_rest != 0;
         }
+        const auto instrumental_size = offsetof(yue2_generation_request, instrumental) +
+            sizeof(request->instrumental);
+        if (request->size >= instrumental_size) {
+            song.instrumental = request->instrumental != 0;
+        }
         if (request->seed_set) song.seed = request->seed;
         if (request->guidance_set) song.guidance_scale = request->guidance_scale;
 

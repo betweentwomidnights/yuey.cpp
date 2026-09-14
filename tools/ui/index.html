@@ -113,7 +113,7 @@
   <main>
     <div class="topline">
       <div><div class="eyebrow">local music workspace</div><h1 id="page-title">create with yuey</h1></div>
-      <div class="top-actions"><label class="check"><input id="vocal-rest" type="checkbox"><span>vocal-rest test <small>(experimental)</small></span></label><button id="refresh" class="secondary">refresh runtime</button></div>
+      <div class="top-actions"><label class="check"><input id="instrumental" type="checkbox"><span>instrumental</span></label><button id="refresh" class="secondary">refresh runtime</button></div>
     </div>
 
     <section class="view active" id="view-create">
@@ -123,7 +123,7 @@
           <label for="prompt">prompt</label>
           <textarea id="prompt" placeholder="dreamy analog synth pop, tight dry drums, warm bass, evolving arpeggios…"></textarea>
           <label for="lyrics">lyrics (optional)</label>
-          <textarea id="lyrics" placeholder="leave empty for an instrumental"></textarea>
+          <textarea id="lyrics" placeholder="write lyrics, or enable instrumental above"></textarea>
           <div class="row">
             <div><label for="bpm">bpm</label><input id="bpm" type="number" min="20" max="400" value="95"></div>
             <div><label for="key">key</label><input id="key" value="C# minor" placeholder="C# minor"></div>
@@ -208,13 +208,13 @@
     $('page-title').textContent = titles[view];
   }
   document.querySelectorAll('.nav').forEach(x => x.onclick = () => show(x.dataset.view));
-  function syncVocalRest() {
-    const enabled = $('vocal-rest').checked;
+  function syncInstrumental() {
+    const enabled = $('instrumental').checked;
     $('lyrics').disabled = enabled;
     if (enabled) $('lyrics').value = '';
   }
-  $('vocal-rest').onchange = syncVocalRest;
-  syncVocalRest();
+  $('instrumental').onchange = syncInstrumental;
+  syncInstrumental();
 
   async function api(path, options) {
     const response = await fetch(path, options);
@@ -293,7 +293,7 @@
   $('generate').onclick = async () => {
     $('generate').disabled = true;
     try {
-      const result = await run('/generate', { style: $('prompt').value, lyrics: $('lyrics').value, experimental_vocal_rest: $('vocal-rest').checked, duration: Number($('duration').value), seed: seed('seed'), planning: plan(), encoding: state.encoding }, 'create');
+      const result = await run('/generate', { style: $('prompt').value, lyrics: $('lyrics').value, instrumental: $('instrumental').checked, duration: Number($('duration').value), seed: seed('seed'), planning: plan(), encoding: state.encoding }, 'create');
       renderAudio(result);
     } catch (error) { status('create', null, error); } finally { $('generate').disabled = false; }
   };
@@ -321,7 +321,7 @@
     $('transcribe').disabled = $('remix').disabled = true;
     try {
       const payload = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
-      if (remix) Object.assign(payload, { style: $('remix-prompt').value, experimental_vocal_rest: $('vocal-rest').checked, encoding: state.encoding });
+      if (remix) Object.assign(payload, { style: $('remix-prompt').value, instrumental: $('instrumental').checked, encoding: state.encoding });
       const result = await run(remix ? '/cover' : '/transcribe', payload, 'transform');
       if (result.abc) $('abc').value = result.abc;
       if (remix) renderAudio(result); else addDownloads(result.midi_files);
@@ -335,7 +335,7 @@
     if (!$('abc').value.trim()) { status('score', null, new Error('add or transcribe a score first')); return; }
     $('score-generate').disabled = true;
     try {
-      const result = await run('/generate', { abc: $('abc').value, symbolic_mode: 'full', style: $('score-prompt').value, experimental_vocal_rest: $('vocal-rest').checked, duration: Number($('score-duration').value), seed: seed('score-seed'), encoding: state.encoding }, 'score');
+      const result = await run('/generate', { abc: $('abc').value, symbolic_mode: 'full', style: $('score-prompt').value, instrumental: $('instrumental').checked, duration: Number($('score-duration').value), seed: seed('score-seed'), encoding: state.encoding }, 'score');
       renderAudio(result); show('create');
     } catch (error) { status('score', null, error); } finally { $('score-generate').disabled = false; }
   };

@@ -633,7 +633,7 @@ private:
             "{\"success\":true,\"service\":\"yue2\",\"api_version\":1,\"version\":" +
             json::quote(yue2::version()) +
             ",\"capabilities\":{\"generate\":true,\"transcribe\":true,\"cover\":true,"
-            "\"planning_controls\":true,\"vocal_rest_experiment\":true,"
+            "\"planning_controls\":true,\"instrumental\":true,\"vocal_rest_experiment\":true,"
             "\"score_editing\":false,\"model_downloads\":false},\"devices\":[";
         for (std::size_t index = 0; index < devices.size(); ++index) {
             const auto & device = devices[index];
@@ -750,7 +750,15 @@ private:
         if (job.encoding == "AUTO") job.encoding = "auto";
         song.style = first_string(root, {"style", "caption", "prompt", "tags"});
         song.lyrics = json::string(root, "lyrics");
+        song.instrumental = json::boolean(root, "instrumental", false);
         song.experimental_vocal_rest = json::boolean(root, "experimental_vocal_rest", false);
+        if (song.instrumental && !song.lyrics.empty()) {
+            throw std::invalid_argument("instrumental is mutually exclusive with lyrics");
+        }
+        if (song.instrumental && song.experimental_vocal_rest) {
+            throw std::invalid_argument(
+                "instrumental already includes the vocal-rest intervention");
+        }
         const auto abc = json::string(root, "abc");
         if (job.kind == JobKind::cover && !abc.empty()) {
             throw std::invalid_argument("/cover scores audio_data itself; use /generate to supply abc");

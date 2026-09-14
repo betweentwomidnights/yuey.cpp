@@ -54,6 +54,12 @@ int main() {
         "V: Ins\nc8B8A16|G32|\n";
     assert(yue2::make_vocal_rest_abc(score) == instrumental);
     assert(yue2::make_vocal_rest_abc(instrumental) == instrumental);
+    assert(yue2::make_instrumental_lyrics(score) == "[Verse]\n\n[Bridge]");
+    assert(yue2::make_instrumental_lyrics("X:1\nM:4/4\nK:C\nC4|\n") ==
+        "[Intro]\n\n[Verse]\n\n[Chorus]\n\n[Verse]\n\n[Chorus]\n\n[Outro]");
+    assert(yue2::make_instrumental_lyrics(
+        "X:1\n% pre_chorus\n% VERSE 2\n% ignored!\n") ==
+        "[Pre Chorus]\n\n[Verse 2]");
 
     bool bad_instrumental = false;
     try {

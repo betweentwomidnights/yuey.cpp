@@ -32,6 +32,7 @@ void usage(const char * argv0) {
         << "  --out, --output PATH            Output WAV\n"
         << "  --duration, --seconds N         Approximate output length in seconds\n"
         << "  --lyrics TEXT | --lyrics-file PATH  Optional vocal lyrics\n"
+        << "  --instrumental        Generate without vocals using score-aligned sections\n"
         << "  --experimental-vocal-rest  Rest Vocal without changing Ins; not an instrumental mode\n"
         << "  --symbolic MODE       off, melody, or full (default full)\n"
         << "  --abc PATH            Use an external ABC score instead of planning one\n"
@@ -308,9 +309,17 @@ int main(int argc, char ** argv) {
         if (has_lyrics && has_lyrics_file) {
             throw std::runtime_error("--lyrics and --lyrics-file are mutually exclusive");
         }
+        request.instrumental = has(argc, argv, "--instrumental");
+        if (request.instrumental && (has_lyrics || has_lyrics_file)) {
+            throw std::runtime_error("--instrumental is mutually exclusive with lyrics");
+        }
         if (has_lyrics) request.lyrics = value_after(argc, argv, "--lyrics");
         if (has_lyrics_file) request.lyrics = read_text(value_after(argc, argv, "--lyrics-file"));
         request.experimental_vocal_rest = has(argc, argv, "--experimental-vocal-rest");
+        if (request.instrumental && request.experimental_vocal_rest) {
+            throw std::runtime_error(
+                "--instrumental already includes the vocal-rest intervention");
+        }
         const auto symbolic = value_after(argc, argv, "--symbolic", false);
         if (!symbolic.empty()) request.symbolic_mode = parse_symbolic(symbolic);
         const auto abc_path = value_after(argc, argv, "--abc", false);

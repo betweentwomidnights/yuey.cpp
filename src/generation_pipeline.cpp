@@ -19,6 +19,18 @@ VaeRuntimeOptions resolve_vae_options(const GenerationPipelineOptions & options)
 }
 
 void validate_request(const SongRequest & request) {
+    if (request.instrumental && request.symbolic_mode == SymbolicMode::off) {
+        throw std::invalid_argument(
+            "YuE2 instrumental mode requires melody or full symbolic planning");
+    }
+    if (request.instrumental && !request.lyrics.empty()) {
+        throw std::invalid_argument(
+            "YuE2 instrumental mode is mutually exclusive with lyrics");
+    }
+    if (request.instrumental && request.experimental_vocal_rest) {
+        throw std::invalid_argument(
+            "YuE2 instrumental mode already includes the vocal-rest intervention");
+    }
     if (request.experimental_vocal_rest && request.symbolic_mode == SymbolicMode::off) {
         throw std::invalid_argument(
             "YuE2 vocal-rest experiment requires melody or full symbolic planning");
@@ -90,21 +102,29 @@ public:
         const GenerationControl & control) {
         validate_request(request);
         check_cancelled(control);
+        auto effective = request;
+        if (effective.instrumental) {
+            effective.style = "Instrumental, no vocals, no singing, no humming. " +
+                effective.style;
+            effective.lyrics = effective.abc
+                ? make_instrumental_lyrics(*effective.abc)
+                : make_instrumental_lyrics({});
+        }
         GeneratedSong result;
-        if (request.symbolic_mode != SymbolicMode::off) {
-            if (request.abc) {
-                result.abc = *request.abc;
+        if (effective.symbolic_mode != SymbolicMode::off) {
+            if (effective.abc) {
+                result.abc = *effective.abc;
                 result.abc_token_ids = tokenizer.encode(result.abc);
             } else {
-                auto initial = make_positive_prefix(request, tokenizer);
+                auto initial = make_positive_prefix(effective, tokenizer);
                 std::vector<std::int32_t> seeded_abc_ids;
-                if (request.abc_prefix) {
-                    seeded_abc_ids = tokenizer.encode(*request.abc_prefix);
+                if (effective.abc_prefix) {
+                    seeded_abc_ids = tokenizer.encode(*effective.abc_prefix);
                     initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
                 }
                 const auto planned = autoregressive.generate(
                     initial, run_options.generation.abc,
-                    AutoregressivePhase::abc, request.seed,
+                    AutoregressivePhase::abc, effective.seed,
                     ar_control(control, GenerationStage::abc));
                 result.abc_token_ids = std::move(seeded_abc_ids);
                 result.abc_token_ids.insert(
@@ -118,32 +138,35 @@ public:
                         GenerationStage::abc, completed, std::max(1U, completed));
                 }
             }
-            if (request.abc && control.on_progress) {
+            if (effective.abc && control.on_progress) {
                 control.on_progress(GenerationStage::abc, 1, 1);
             }
-            if (request.experimental_vocal_rest) {
+            if (effective.experimental_vocal_rest || effective.instrumental) {
                 result.abc = make_vocal_rest_abc(result.abc);
                 result.abc_token_ids = tokenizer.encode(result.abc);
+            }
+            if (effective.instrumental) {
+                effective.lyrics = make_instrumental_lyrics(result.abc);
             }
         }
 
         const std::optional<std::vector<std::int32_t>> abc_ids =
-            request.symbolic_mode == SymbolicMode::off
+            effective.symbolic_mode == SymbolicMode::off
             ? std::nullopt
             : std::optional<std::vector<std::int32_t>>(result.abc_token_ids);
-        const auto positive = make_positive_prefix(request, tokenizer, abc_ids);
-        const auto guidance = generation_guidance(request);
+        const auto positive = make_positive_prefix(effective, tokenizer, abc_ids);
+        const auto guidance = generation_guidance(effective);
         AutoregressiveResult semantic;
         if (guidance == 1.0F) {
             semantic = autoregressive.generate(
                 positive, run_options.generation.semantic,
-                AutoregressivePhase::semantic, request.seed,
+                AutoregressivePhase::semantic, effective.seed,
                 ar_control(control, GenerationStage::semantic));
         } else {
-            const auto negative = make_negative_prefix(request, tokenizer, abc_ids);
+            const auto negative = make_negative_prefix(effective, tokenizer, abc_ids);
             semantic = autoregressive.generate_cfg(
                 positive, negative, run_options.generation.semantic,
-                AutoregressivePhase::semantic, guidance, request.seed,
+                AutoregressivePhase::semantic, guidance, effective.seed,
                 ar_control(control, GenerationStage::semantic));
         }
         result.semantic_truncated = !semantic.reached_end;
@@ -164,7 +187,7 @@ public:
             throw std::runtime_error("YuE2 semantic generation produced no audio codes");
         }
         result.latents = autoregressive.synthesize_latents(
-            positive, result.semantic_codec_ids, request.seed, run_options.flow,
+            positive, result.semantic_codec_ids, effective.seed, run_options.flow,
             ar_control(control, GenerationStage::flow));
         VaeDecodeControl decode_control;
         decode_control.should_cancel = control.should_cancel;

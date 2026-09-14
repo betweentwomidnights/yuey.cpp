@@ -127,6 +127,7 @@ dragging even when the user does not want generated audio.
 {
   "style": "indie folk, warm female vocal, fingerpicked guitar",
   "lyrics": "[Verse]\n...\n[Chorus]\n...",
+  "instrumental": false,
   "experimental_vocal_rest": false,
   "encoding": "Q4_K_M",
   "planning": {"bpm": 95, "key": "C# minor", "meter_numerator": 4, "meter_denominator": 4},
@@ -144,6 +145,12 @@ dragging even when the user does not want generated audio.
 ```
 
 - **`style`** also accepts `caption`, `prompt`, or `tags`.
+- **`instrumental`** requires empty `lyrics` and symbolic mode `melody` or
+  `full`. It adds explicit no-vocal style conditioning, builds empty lyric
+  sections in the score's section order, and replaces Vocal notes with
+  duration-equivalent rests before semantic generation. For a newly planned
+  song it seeds a conventional intro/verse/chorus form, then rebuilds the
+  sections from the completed score.
 - **`experimental_vocal_rest`** is a diagnostic, not an instrumental mode. It
   requires empty `lyrics` plus `symbolic_mode: melody` or `full`. After planning
   or accepting an external score, it replaces Vocal notes with
