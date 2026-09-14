@@ -145,8 +145,10 @@ dragging even when the user does not want generated audio.
 ```
 
 - **`style`** also accepts `caption`, `prompt`, or `tags`.
-- **`instrumental`** requires empty `lyrics` and symbolic mode `melody` or
-  `full`. It adds explicit no-vocal style conditioning, builds empty lyric
+- **`instrumental`** is best-effort: occasional sung material or vocal samples
+  may still occur, and completed responses include a machine-readable warning.
+  It requires empty `lyrics` and symbolic mode `melody` or `full`. It adds
+  explicit no-vocal style conditioning, builds empty lyric
   sections in the score's section order, and replaces Vocal notes with
   duration-equivalent rests before semantic generation. For a newly planned
   song it seeds a conventional intro/verse/chorus form, then rebuilds the

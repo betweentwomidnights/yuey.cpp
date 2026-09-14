@@ -633,7 +633,8 @@ private:
             "{\"success\":true,\"service\":\"yue2\",\"api_version\":1,\"version\":" +
             json::quote(yue2::version()) +
             ",\"capabilities\":{\"generate\":true,\"transcribe\":true,\"cover\":true,"
-            "\"planning_controls\":true,\"instrumental\":true,\"vocal_rest_experiment\":true,"
+            "\"planning_controls\":true,\"instrumental\":true,"
+            "\"instrumental_best_effort\":true,\"vocal_rest_experiment\":true,"
             "\"score_editing\":false,\"model_downloads\":false},\"devices\":[";
         for (std::size_t index = 0; index < devices.size(); ++index) {
             const auto & device = devices[index];
@@ -884,6 +885,10 @@ private:
         if (job.kind != JobKind::transcribe) {
             body += ",\"seed\":" + std::to_string(job.song.seed) +
                 ",\"encoding\":" + json::quote(job.encoding);
+            if (job.song.instrumental) {
+                body += ",\"warnings\":[\"instrumental mode is best-effort; occasional "
+                    "vocal material may occur\"]";
+            }
         }
         if (job.status == "completed") {
             if (job.kind == JobKind::transcribe) {

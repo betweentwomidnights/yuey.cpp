@@ -144,8 +144,9 @@ typedef struct {
      * generation. Requires empty lyrics and a symbolic score. */
     int32_t experimental_vocal_rest;
 
-    /* Generate without vocals using an empty section scaffold and a rested
-     * Vocal score lane. Requires empty lyrics and symbolic generation. */
+    /* Best-effort instrumental generation using an empty section scaffold and
+     * a rested Vocal score lane. Vocal material may still occur. Requires
+     * empty lyrics and symbolic generation. */
     int32_t instrumental;
 } yue2_generation_request;
 

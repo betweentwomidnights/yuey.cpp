@@ -73,9 +73,10 @@ struct SongRequest {
     // Experimental symbolic intervention. Requires melody/full mode and empty
     // lyrics; Vocal is rested without changing Ins before semantic inference.
     bool experimental_vocal_rest = false;
-    // Product-level instrumental control. Requires melody/full mode and empty
-    // lyrics. The pipeline supplies an explicit empty section scaffold, adds
-    // no-vocal style conditioning, and rests Vocal before semantic inference.
+    // Best-effort instrumental control; vocal material may still occur.
+    // Requires melody/full mode and empty lyrics. The pipeline supplies an
+    // explicit empty section scaffold, adds no-vocal style conditioning, and
+    // rests Vocal before semantic inference.
     bool instrumental = false;
 };
 

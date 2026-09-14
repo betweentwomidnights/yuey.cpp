@@ -113,7 +113,7 @@
   <main>
     <div class="topline">
       <div><div class="eyebrow">local music workspace</div><h1 id="page-title">create with yuey</h1></div>
-      <div class="top-actions"><label class="check"><input id="instrumental" type="checkbox"><span>instrumental</span></label><button id="refresh" class="secondary">refresh runtime</button></div>
+      <div class="top-actions"><label class="check"><input id="instrumental" type="checkbox"><span>instrumental <small>(best effort)</small></span></label><button id="refresh" class="secondary">refresh runtime</button></div>
     </div>
 
     <section class="view active" id="view-create">
@@ -124,6 +124,7 @@
           <textarea id="prompt" placeholder="dreamy analog synth pop, tight dry drums, warm bass, evolving arpeggios…"></textarea>
           <label for="lyrics">lyrics (optional)</label>
           <textarea id="lyrics" placeholder="write lyrics, or enable instrumental above"></textarea>
+          <div class="help" id="instrumental-warning" hidden>instrumental mode may still produce occasional vocal material.</div>
           <div class="row">
             <div><label for="bpm">bpm</label><input id="bpm" type="number" min="20" max="400" value="95"></div>
             <div><label for="key">key</label><input id="key" value="C# minor" placeholder="C# minor"></div>
@@ -211,6 +212,7 @@
   function syncInstrumental() {
     const enabled = $('instrumental').checked;
     $('lyrics').disabled = enabled;
+    $('instrumental-warning').hidden = !enabled;
     if (enabled) $('lyrics').value = '';
   }
   $('instrumental').onchange = syncInstrumental;
@@ -285,7 +287,8 @@
     state.wavUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
     $('player').src = state.wavUrl; $('save-audio').href = state.wavUrl;
     $('audio-result').classList.add('on'); $('create-empty').style.display = 'none';
-    $('render-meta').textContent = `${Number(result.meta?.duration || 0).toFixed(1)} sec · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}`;
+    const warning = result.warnings?.length ? ` · warning: ${result.warnings.join('; ')}` : '';
+    $('render-meta').textContent = `${Number(result.meta?.duration || 0).toFixed(1)} sec · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${warning}`;
     if (result.abc) $('abc').value = result.abc;
     state.result = result;
   }

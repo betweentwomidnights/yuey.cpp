@@ -23,8 +23,8 @@ public APIs retain the `yue2` prefix to identify the underlying model.
   workflows through the native YuE2 AR, flow, and VAE pipeline.
 - Typed BPM, key, and meter controls that are applied to the planning score
   instead of being left to prompt interpretation.
-- Instrumental generation using score-aligned empty lyric sections and a
-  duration-preserving rested Vocal lane.
+- Best-effort instrumental generation using score-aligned empty lyric sections
+  and a duration-preserving rested Vocal lane.
 - BF16, Q8_0, Q5_K_M, and Q4_K_M generation models, including automatic device
   memory recommendations.
 - A local asynchronous HTTP server and embedded Yuey web UI.
@@ -82,6 +82,8 @@ yue2-generate --encoding q4_k_m --instrumental --prompt "dreamy synth pop" --dur
 
 Omit `--instrumental` and use either `--lyrics "..."` or
 `--lyrics-file .\lyrics.txt` for a vocal generation.
+Instrumental mode can still produce occasional sung material or vocal samples;
+review its output before downstream use.
 
 ### Linux + CUDA
 

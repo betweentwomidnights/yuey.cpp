@@ -32,7 +32,7 @@ void usage(const char * argv0) {
         << "  --out, --output PATH            Output WAV\n"
         << "  --duration, --seconds N         Approximate output length in seconds\n"
         << "  --lyrics TEXT | --lyrics-file PATH  Optional vocal lyrics\n"
-        << "  --instrumental        Generate without vocals using score-aligned sections\n"
+        << "  --instrumental        Best-effort instrumental; vocal material may occur\n"
         << "  --experimental-vocal-rest  Rest Vocal without changing Ins; not an instrumental mode\n"
         << "  --symbolic MODE       off, melody, or full (default full)\n"
         << "  --abc PATH            Use an external ABC score instead of planning one\n"
@@ -350,6 +350,11 @@ int main(int argc, char ** argv) {
         if (!seed.empty()) request.seed = std::stoull(seed);
         const auto guidance = value_after(argc, argv, "--guidance", false);
         if (!guidance.empty()) request.guidance_scale = std::stof(guidance);
+
+        if (request.instrumental) {
+            std::cerr << "warning: instrumental mode is best-effort; occasional vocal "
+                         "material may occur\n";
+        }
 
         std::cerr << "[yue2] model: " << model_paths.encoding << " from "
                   << models_directory << '\n';
