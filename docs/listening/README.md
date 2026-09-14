@@ -1,5 +1,7 @@
 # Generation listening tests
 
+- [Score-aligned bar length, natural endings, and chord causal pair](score-aligned-generation.md)
+
 Listening fixtures complement numerical parity tests. They are intentionally
 long enough to establish a phrase and exercise both the planning and synthesis
 branches.
