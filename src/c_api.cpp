@@ -305,8 +305,15 @@ YUE2_API int32_t yue2_generate(
         if (request->lyrics) song.lyrics = request->lyrics;
         song.symbolic_mode = symbolic_mode(request->symbolic_mode);
         if (request->abc) song.abc = request->abc;
-        if (request->size >= sizeof(*request) && request->abc_prefix) {
+        const auto abc_prefix_size = offsetof(yue2_generation_request, abc_prefix) +
+            sizeof(request->abc_prefix);
+        if (request->size >= abc_prefix_size && request->abc_prefix) {
             song.abc_prefix = request->abc_prefix;
+        }
+        const auto instrumental_size = offsetof(yue2_generation_request, instrumental) +
+            sizeof(request->instrumental);
+        if (request->size >= instrumental_size) {
+            song.instrumental = request->instrumental != 0;
         }
         if (request->seed_set) song.seed = request->seed;
         if (request->guidance_set) song.guidance_scale = request->guidance_scale;

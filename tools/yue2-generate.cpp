@@ -32,6 +32,7 @@ void usage(const char * argv0) {
         << "  --out, --output PATH            Output WAV\n"
         << "  --duration, --seconds N         Approximate output length in seconds\n"
         << "  --lyrics TEXT | --lyrics-file PATH  Optional vocal lyrics\n"
+        << "  --instrumental        Rest Vocal and route its planned lead to Ins (experimental)\n"
         << "  --symbolic MODE       off, melody, or full (default full)\n"
         << "  --abc PATH            Use an external ABC score instead of planning one\n"
         << "  --abc-prefix PATH     Seed symbolic planning with an exact ABC text prefix\n"
@@ -309,6 +310,7 @@ int main(int argc, char ** argv) {
         }
         if (has_lyrics) request.lyrics = value_after(argc, argv, "--lyrics");
         if (has_lyrics_file) request.lyrics = read_text(value_after(argc, argv, "--lyrics-file"));
+        request.instrumental = has(argc, argv, "--instrumental");
         const auto symbolic = value_after(argc, argv, "--symbolic", false);
         if (!symbolic.empty()) request.symbolic_mode = parse_symbolic(symbolic);
         const auto abc_path = value_after(argc, argv, "--abc", false);

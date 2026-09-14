@@ -139,6 +139,10 @@ typedef struct {
      * mutually exclusive with abc and must end with a newline. Added at the
      * tail so callers compiled against the original request remain valid. */
     const char * abc_prefix;
+
+    /* Experimental: route the symbolic lead to Ins and rest Vocal before
+     * semantic generation. Requires empty lyrics and a symbolic score. */
+    int32_t instrumental;
 } yue2_generation_request;
 
 typedef struct {

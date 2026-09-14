@@ -19,6 +19,14 @@ VaeRuntimeOptions resolve_vae_options(const GenerationPipelineOptions & options)
 }
 
 void validate_request(const SongRequest & request) {
+    if (request.instrumental && request.symbolic_mode == SymbolicMode::off) {
+        throw std::invalid_argument(
+            "YuE2 instrumental mode requires melody or full symbolic planning");
+    }
+    if (request.instrumental && !request.lyrics.empty()) {
+        throw std::invalid_argument(
+            "YuE2 instrumental mode requires empty lyrics");
+    }
     if (request.abc &&
         (request.symbolic_mode == SymbolicMode::off || request.abc->empty())) {
         throw std::invalid_argument(
@@ -112,6 +120,10 @@ public:
             }
             if (request.abc && control.on_progress) {
                 control.on_progress(GenerationStage::abc, 1, 1);
+            }
+            if (request.instrumental) {
+                result.abc = make_instrumental_abc(result.abc);
+                result.abc_token_ids = tokenizer.encode(result.abc);
             }
         }
 

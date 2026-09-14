@@ -75,11 +75,13 @@ remixing, ABC editing, MIDI export, and quantization-tier selection.
 Run a 30-second instrumental directly from the CLI:
 
 ```powershell
-yue2-generate --encoding q4_k_m --prompt "dreamy synth pop" --duration 30 --bpm 95 --key "C# minor" --out song.wav
+yue2-generate --instrumental --encoding q4_k_m --prompt "dreamy synth pop" --duration 30 --bpm 95 --key "C# minor" --out song.wav
 ```
 
 Lyrics are optional. Use either `--lyrics "..."` or
-`--lyrics-file .\lyrics.txt` for a vocal generation.
+`--lyrics-file .\lyrics.txt` for a vocal generation. Instrumental mode is an
+experimental symbolic intervention: inspect its returned score and validate
+the absence of vocals by listening.
 
 ### Linux + CUDA
 

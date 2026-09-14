@@ -29,6 +29,7 @@
     .dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--ok); }
     main { padding: 35px clamp(24px, 5vw, 72px) 70px; overflow: hidden; }
     .topline { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 30px; }
+    .top-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     h1 { margin: 0; font-size: clamp(28px, 4vw, 45px); line-height: 1; letter-spacing: -1.8px; }
     h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.4px; }
     h3 { margin: 0; font-size: 14px; }
@@ -40,6 +41,9 @@
     .card { min-width: 0; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
     .card + .card { margin-top: 18px; }
     label { display: block; margin: 15px 0 7px; color: #d0d0d0; font-size: 12px; font-weight: 650; }
+    .check { display: flex; align-items: center; gap: 8px; margin: 0; white-space: nowrap; }
+    .check input { width: 16px; height: 16px; accent-color: var(--accent); }
+    .check small { color: var(--muted); font-weight: 500; }
     input, textarea, select { width: 100%; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); outline: none; }
     input, select { height: 42px; padding: 0 12px; }
     textarea { min-height: 118px; padding: 12px; resize: vertical; }
@@ -109,7 +113,7 @@
   <main>
     <div class="topline">
       <div><div class="eyebrow">local music workspace</div><h1 id="page-title">create with yuey</h1></div>
-      <button id="refresh" class="secondary">refresh runtime</button>
+      <div class="top-actions"><label class="check"><input id="instrumental" type="checkbox" checked><span>instrumental <small>(experimental)</small></span></label><button id="refresh" class="secondary">refresh runtime</button></div>
     </div>
 
     <section class="view active" id="view-create">
@@ -204,6 +208,13 @@
     $('page-title').textContent = titles[view];
   }
   document.querySelectorAll('.nav').forEach(x => x.onclick = () => show(x.dataset.view));
+  function syncInstrumental() {
+    const enabled = $('instrumental').checked;
+    $('lyrics').disabled = enabled;
+    if (enabled) $('lyrics').value = '';
+  }
+  $('instrumental').onchange = syncInstrumental;
+  syncInstrumental();
 
   async function api(path, options) {
     const response = await fetch(path, options);
@@ -282,7 +293,7 @@
   $('generate').onclick = async () => {
     $('generate').disabled = true;
     try {
-      const result = await run('/generate', { style: $('prompt').value, lyrics: $('lyrics').value, duration: Number($('duration').value), seed: seed('seed'), planning: plan(), encoding: state.encoding }, 'create');
+      const result = await run('/generate', { style: $('prompt').value, lyrics: $('lyrics').value, instrumental: $('instrumental').checked, duration: Number($('duration').value), seed: seed('seed'), planning: plan(), encoding: state.encoding }, 'create');
       renderAudio(result);
     } catch (error) { status('create', null, error); } finally { $('generate').disabled = false; }
   };
@@ -310,7 +321,7 @@
     $('transcribe').disabled = $('remix').disabled = true;
     try {
       const payload = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
-      if (remix) Object.assign(payload, { style: $('remix-prompt').value, encoding: state.encoding });
+      if (remix) Object.assign(payload, { style: $('remix-prompt').value, instrumental: $('instrumental').checked, encoding: state.encoding });
       const result = await run(remix ? '/cover' : '/transcribe', payload, 'transform');
       if (result.abc) $('abc').value = result.abc;
       if (remix) renderAudio(result); else addDownloads(result.midi_files);
@@ -324,7 +335,7 @@
     if (!$('abc').value.trim()) { status('score', null, new Error('add or transcribe a score first')); return; }
     $('score-generate').disabled = true;
     try {
-      const result = await run('/generate', { abc: $('abc').value, symbolic_mode: 'full', style: $('score-prompt').value, duration: Number($('score-duration').value), seed: seed('score-seed'), encoding: state.encoding }, 'score');
+      const result = await run('/generate', { abc: $('abc').value, symbolic_mode: 'full', style: $('score-prompt').value, instrumental: $('instrumental').checked, duration: Number($('score-duration').value), seed: seed('score-seed'), encoding: state.encoding }, 'score');
       renderAudio(result); show('create');
     } catch (error) { status('score', null, error); } finally { $('score-generate').disabled = false; }
   };

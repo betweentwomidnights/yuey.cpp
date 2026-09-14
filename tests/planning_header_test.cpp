@@ -32,6 +32,37 @@ int main() {
         "K:C#m\n% intro\n");
     assert(prefix.back() == '\n');
 
+    const std::string score =
+        "X:1\nM:4/4\nL:1/32\nQ:1/4=95\n"
+        "V: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\"\n"
+        "V: Ins clef=treble name=\"Ins Melody\" snm=\"Inst.\"\n"
+        "K:C#m\n% verse\n"
+        "V: Vocal\nM:4/4\n\"C#m\"^F8-^F8G16|\n"
+        "V: Ins\nM:4/4\nZ|\n"
+        "% bridge\n"
+        "V: Vocal\nZ2|\n"
+        "V: Ins\nc8B8A16|G32|\n";
+    const std::string instrumental =
+        "X:1\nM:4/4\nL:1/32\nQ:1/4=95\n"
+        "V: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\"\n"
+        "V: Ins clef=treble name=\"Ins Melody\" snm=\"Inst.\"\n"
+        "K:C#m\n% verse\n"
+        "V: Vocal\nM:4/4\n\"C#m\"z8z8z16|\n"
+        "V: Ins\nM:4/4\n^F8-^F8G16|\n"
+        "% bridge\n"
+        "V: Vocal\nZ2|\n"
+        "V: Ins\nc8B8A16|G32|\n";
+    assert(yue2::make_instrumental_abc(score) == instrumental);
+    assert(yue2::make_instrumental_abc(instrumental) == instrumental);
+
+    bool bad_instrumental = false;
+    try {
+        (void)yue2::make_instrumental_abc("X:1\nM:4/4\nK:C\nC4|\n");
+    } catch (const std::invalid_argument &) {
+        bad_instrumental = true;
+    }
+    assert(bad_instrumental);
+
     assert(rejected({0, 4, 4, "C"}));
     assert(rejected({401, 4, 4, "C"}));
     assert(rejected({95, 0, 4, "C"}));
