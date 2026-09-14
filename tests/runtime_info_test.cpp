@@ -2,6 +2,7 @@
 
 #include "gguf.h"
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <filesystem>
@@ -53,6 +54,8 @@ int main() {
   write_gguf(root / "yue2-vae-v1.0-F16.gguf", "vae", "", 1);
   write_gguf(root / "sheetsage2-mert2-0.7B-v1.0-F16.gguf", "transcription", "",
              1);
+  write_gguf(root / "yue2-failed-conversion.invalid.gguf", "generation",
+             "BF16", 32);
   {
     std::ofstream tokenizer(root / "package" / "sidecars" /
                             "yue2-qwen.tiktoken");
@@ -66,6 +69,9 @@ int main() {
   const auto transcription =
       yue2::find_model_file(files, "transcription", {"F16"});
   const auto tokenizer = yue2::find_model_file(files, "tokenizer");
+  assert(std::none_of(files.begin(), files.end(), [](const auto &file) {
+    return file.name == "yue2-failed-conversion.invalid.gguf";
+  }));
   assert(q5 && q5->metadata_classified &&
          q5->name == "renamed-generation.gguf");
   assert(q4 && !q4->metadata_classified);

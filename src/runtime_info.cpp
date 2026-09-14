@@ -116,7 +116,12 @@ std::vector<fs::path> candidate_ggufs(const fs::path &directory) {
     return result;
   const auto collect = [&](const fs::path &folder) {
     for (const auto &entry : fs::directory_iterator(folder, error)) {
-      if (entry.is_regular_file(error) && entry.path().extension() == ".gguf") {
+      const auto name = entry.path().filename().string();
+      // Failed or deliberately retained converter outputs use this suffix.
+      // Do not pass them to GGML during model discovery: gguf_init reports
+      // malformed tensor tables directly to stderr before returning nullptr.
+      if (entry.is_regular_file(error) && entry.path().extension() == ".gguf" &&
+          !ends_with(name, ".invalid.gguf")) {
         result.push_back(entry.path());
       }
     }
