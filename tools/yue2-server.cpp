@@ -5,6 +5,7 @@
 // services expose to gary4juce. See docs/server.md.
 #include "yue2/audio.h"
 #include "yue2/generation_pipeline.h"
+#include "yue2/runtime_info.h"
 #include "yue2/transcription.h"
 
 #include "server/base64.h"
@@ -189,7 +190,7 @@ void usage(const char * executable) {
         << "  --host IPV4                  Bind address (default 127.0.0.1)\n"
         << "  --port N                     Port (default 8007, YUE2_PORT)\n"
         << "  --max-body-mb N              Upload limit (default 512)\n\n"
-        << "Routes: GET /health, GET /loras, POST /generate, POST /cover, POST /transcribe,\n"
+        << "Routes: GET /health, GET /props, GET /loras, POST /generate, POST /cover, POST /transcribe,\n"
         << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload\n";
 }
 
@@ -257,21 +258,11 @@ std::vector<fs::path> gguf_files(const fs::path & directory) {
 
 std::optional<fs::path> find_component(
     const fs::path & directory,
-    std::string_view prefix,
-    std::string_view excluded_prefix,
+    const std::string & component,
     const std::vector<std::string> & encodings) {
-    const auto files = gguf_files(directory);
-    for (const auto & encoding : encodings) {
-        const std::string suffix = "-" + encoding + ".gguf";
-        for (const auto & file : files) {
-            const auto name = file.filename().string();
-            if (starts_with(name, prefix) && ends_with(name, suffix) &&
-                (excluded_prefix.empty() || !starts_with(name, excluded_prefix))) {
-                return file;
-            }
-        }
-    }
-    return std::nullopt;
+    const auto found = yue2::find_model_file(
+        yue2::inspect_model_files(directory.string()), component, encodings);
+    return found ? std::optional<fs::path>(found->path) : std::nullopt;
 }
 
 struct GenerationPaths {
@@ -288,7 +279,7 @@ GenerationPaths resolve_generation(const Configuration & configuration) {
         const auto encodings = configuration.encoding == "auto"
             ? kEncodingPreference
             : std::vector<std::string>{configuration.encoding};
-        const auto found = find_component(configuration.models_dir, "yue2-", "yue2-vae-", encodings);
+        const auto found = find_component(configuration.models_dir, "generation", encodings);
         if (!found) {
             throw std::runtime_error(
                 "no YuE2 generation GGUF (" +
@@ -299,7 +290,7 @@ GenerationPaths resolve_generation(const Configuration & configuration) {
     }
     if (!configuration.vae.empty()) {
         paths.vae = configuration.vae;
-    } else if (const auto found = find_component(configuration.models_dir, "yue2-vae-", "", {"F16", "F32"})) {
+    } else if (const auto found = find_component(configuration.models_dir, "vae", {"F16", "F32"})) {
         paths.vae = *found;
     } else {
         throw std::runtime_error("no yue2-vae GGUF under " + configuration.models_dir.string());
@@ -327,7 +318,7 @@ GenerationPaths resolve_generation(const Configuration & configuration) {
 
 fs::path resolve_transcription(const Configuration & configuration) {
     if (!configuration.transcription_model.empty()) return configuration.transcription_model;
-    if (const auto found = find_component(configuration.models_dir, "sheetsage2-mert2-", "", {"F16", "F32"})) {
+    if (const auto found = find_component(configuration.models_dir, "transcription", {"F16", "F32"})) {
         return *found;
     }
     throw std::runtime_error("no sheetsage2-mert2 GGUF under " + configuration.models_dir.string());
@@ -542,6 +533,7 @@ public:
             const bool get = request.method == "GET";
             const bool post = request.method == "POST";
             if (path == "/health") return get ? health() : not_allowed();
+            if (path == "/props") return get ? props() : not_allowed();
             if (path == "/loras") return get ? loras() : not_allowed();
             if (path == "/generate") return post ? submit(request, JobKind::generate) : not_allowed();
             if (path == "/cover") return post ? submit(request, JobKind::cover) : not_allowed();
@@ -592,13 +584,87 @@ private:
         }
         const auto device = configuration_.device.empty() ? environment("YUE2_DEVICE") : configuration_.device;
         return yue2::server::json_response(
-            "{\"status\":\"ok\",\"service\":\"yue2\",\"version\":" + json::quote(yue2::version()) +
+            "{\"status\":\"ok\",\"service\":\"yue2\",\"api_version\":1,\"version\":" + json::quote(yue2::version()) +
             ",\"device\":" + json::quote(device.empty() ? "auto" : device) +
             ",\"encoding\":" + json::quote(configuration_.encoding) +
             ",\"models_dir\":" + json_path(configuration_.models_dir) +
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
             ",\"generation\":" + generation + ",\"transcription\":" + transcription + "}");
+    }
+
+    HttpResponse props() {
+        const auto devices = yue2::available_devices();
+        std::uint64_t accelerator_total = 0;
+        std::uint64_t accelerator_free = 0;
+        bool have_accelerator = false;
+        bool have_discrete = false;
+        for (const auto & device : devices) {
+            const bool discrete = device.type == yue2::DeviceType::gpu;
+            const bool integrated = device.type == yue2::DeviceType::integrated_gpu;
+            if (!discrete && (!integrated || have_discrete)) continue;
+            have_accelerator = true;
+            if ((discrete && !have_discrete) || device.memory_total_bytes > accelerator_total) {
+                have_discrete = discrete;
+                accelerator_total = device.memory_total_bytes;
+                accelerator_free = device.memory_free_bytes;
+            }
+        }
+
+        const auto files = yue2::inspect_model_files(configuration_.models_dir.string());
+        const auto tiers = yue2::quantization_tiers(files, accelerator_total, accelerator_free);
+        std::string body =
+            "{\"success\":true,\"service\":\"yue2\",\"api_version\":1,\"version\":" +
+            json::quote(yue2::version()) +
+            ",\"capabilities\":{\"generate\":true,\"transcribe\":true,\"cover\":true,"
+            "\"score_editing\":false,\"model_downloads\":false},\"devices\":[";
+        for (std::size_t index = 0; index < devices.size(); ++index) {
+            const auto & device = devices[index];
+            if (index) body.push_back(',');
+            body += "{\"index\":" + std::to_string(device.index) +
+                ",\"name\":" + json::quote(device.name) +
+                ",\"description\":" + json::quote(device.description) +
+                ",\"backend\":" + json::quote(device.backend) +
+                ",\"id\":" + json::quote(device.id) +
+                ",\"type\":" + json::quote(yue2::device_type_name(device.type)) +
+                ",\"memory_free_bytes\":" + std::to_string(device.memory_free_bytes) +
+                ",\"memory_total_bytes\":" + std::to_string(device.memory_total_bytes) + "}";
+        }
+        body += "],\"hardware\":{\"accelerator_available\":" + json_bool(have_accelerator) +
+            ",\"memory_free_bytes\":" + std::to_string(accelerator_free) +
+            ",\"memory_total_bytes\":" + std::to_string(accelerator_total) +
+            ",\"recommended_encoding\":" +
+            json::quote(yue2::recommended_quantization(accelerator_total)) + "},\"models\":{\"directory\":" +
+            json_path(configuration_.models_dir) + ",\"tiers\":[";
+        for (std::size_t index = 0; index < tiers.size(); ++index) {
+            const auto & tier = tiers[index];
+            if (index) body.push_back(',');
+            body += "{\"encoding\":" + json::quote(tier.encoding) +
+                ",\"label\":" + json::quote(tier.label) +
+                ",\"estimated_model_bytes\":" + std::to_string(tier.estimated_model_bytes) +
+                ",\"recommended_vram_bytes\":" + std::to_string(tier.recommended_vram_bytes) +
+                ",\"installed\":" + json_bool(tier.installed) +
+                ",\"model\":" + (tier.model_path.empty() ? std::string("null") : json::quote(tier.model_path)) +
+                ",\"installed_bytes\":" + std::to_string(tier.installed_bytes) +
+                ",\"fits_total_memory\":" + json_bool(tier.fits_total_memory) +
+                ",\"fits_free_memory\":" + json_bool(tier.fits_free_memory) +
+                ",\"recommended\":" + json_bool(tier.recommended) + "}";
+        }
+        body += "],\"files\":[";
+        for (std::size_t index = 0; index < files.size(); ++index) {
+            const auto & file = files[index];
+            if (index) body.push_back(',');
+            body += "{\"name\":" + json::quote(file.name) +
+                ",\"path\":" + json::quote(file.path) +
+                ",\"component\":" + json::quote(file.component) +
+                ",\"encoding\":" + json::quote(file.encoding) +
+                ",\"size_bytes\":" + std::to_string(file.size_bytes) +
+                ",\"metadata_classified\":" + json_bool(file.metadata_classified) + "}";
+        }
+        body += "]},\"defaults\":{\"encoding\":" + json::quote(configuration_.encoding) +
+            ",\"device\":" + json::quote(configuration_.device.empty() ? "auto" : configuration_.device) +
+            ",\"keep_models\":" + json_bool(configuration_.keep_models) + "}}";
+        return yue2::server::json_response(std::move(body));
     }
 
     HttpResponse loras() {

@@ -144,8 +144,11 @@ The engine must not vendor or link a second GGML copy.
    The stable pure-C shared-library ABI, resident split contexts, in-memory
    planar/interleaved transcription, result ownership, progress, and cooperative
    cancellation are complete. `yue2-server` provides the gary4local-style
-   async HTTP job transport for generation, covers, and transcription; wiring
-   it into gary4local and a gary4juce panel remains.
+   async HTTP job transport for generation, covers, and transcription. Its
+   acestep.cpp-shaped `/props` bootstrap now reports GGML device/VRAM inventory,
+   metadata-classified local model files, installed quantization tiers, and a
+   conservative tier recommendation. The standalone UI, model downloads,
+   versioned editable score document, and gary4juce panel remain.
 9. Adapter support. PEFT-to-GGUF conversion and functional AR/NAR LoRA
    inference are complete. Native training and DoRA remain, using the shared
    GGML optimizer path after training-target and gradient parity validation.

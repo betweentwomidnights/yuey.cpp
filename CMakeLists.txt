@@ -68,6 +68,7 @@ add_library(yue2 STATIC
     src/mert2_encoder.cpp
     src/mert2_frontend.cpp
     src/quantize.cpp
+    src/runtime_info.cpp
     src/sheetsage2_tokens.cpp
     src/tokenizer.cpp
     src/transcription.cpp
@@ -194,6 +195,11 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-server-support-test PRIVATE yue2-server-support)
     yue2_enable_test_assertions(yue2-server-support-test)
     add_test(NAME yue2-server-support-test COMMAND yue2-server-support-test)
+
+    add_executable(yue2-runtime-info-test tests/runtime_info_test.cpp)
+    target_link_libraries(yue2-runtime-info-test PRIVATE yue2)
+    yue2_enable_test_assertions(yue2-runtime-info-test)
+    add_test(NAME yue2-runtime-info-test COMMAND yue2-runtime-info-test)
 
     # Manual exact parity test against vectors emitted by the official Python
     # tokenizer: yue2-text-tokenizer-test QWEN.TIKTOKEN FIXTURE

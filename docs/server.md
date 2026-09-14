@@ -46,6 +46,7 @@ loads generation, so the two models never share the GPU. Send
 | Method | Path | Result |
 |---|---|---|
 | `GET` | `/health` | `{status, service, version, device, encoding, busy, queued, generation:{available, loaded, model, vae, tokenizer}, transcription:{available, loaded, model}}` |
+| `GET` | `/props` | Local device/VRAM inventory, installed model tiers, recommendation, defaults, and UI capabilities |
 | `GET` | `/loras` | `{success, adapters_dir, loras:[{index, name, path}]}` for `*-LoRA.gguf` files |
 | `POST` | `/generate` | text, or text plus ABC, to a song → `{success, session_id, seed, status}` |
 | `POST` | `/cover` | `audio_data` → transcription → song → `{success, session_id, seed, status}` |
@@ -56,6 +57,31 @@ loads generation, so the two models never share the GPU. Send
 
 Errors are `{success:false, error}` with an HTTP status. Unknown sessions
 return `404`, as in sa3-server.
+
+### Local runtime properties
+
+`GET /props` is the metadata-only bootstrap contract for the standalone UI. It
+follows acestep.cpp's server-owned properties pattern: clients discover what is
+actually present instead of duplicating model filenames or backend assumptions.
+The response includes:
+
+- every GGML device with backend, device type, stable device ID when available,
+  and current free/total memory;
+- a conservative local recommendation across BF16, Q8_0, Q5_K_M, and Q4_K_M;
+- all recognized generation, VAE, transcription, tokenizer, and adapter files;
+- installed state, file size, memory fit, and friendly label for every generation
+  tier; and
+- explicit capability flags. `score_editing` and `model_downloads` remain false
+  until their server contracts exist, so an early UI cannot accidentally imply
+  a nonfunctional control.
+
+GGUF classification uses `yue2.component` and
+`yue2.quantization.encoding`/`general.file_type`. A filename fallback retains
+pre-v1.0 local conversions. Device memory comes from GGML's common backend API,
+not CUDA-specific calls, so the same UI contract covers CUDA, Vulkan, Metal,
+HIP, and future shared backends. The recommendation thresholds are deliberately
+conservative working-set budgets and are separate from the displayed model-file
+sizes.
 
 ## User-facing modes
 

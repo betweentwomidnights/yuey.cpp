@@ -41,6 +41,13 @@ requests, and `yue2-generate` provides the corresponding CLI. PEFT-style YuE2
 LoRAs can be converted to a dedicated GGUF and applied functionally across the
 AR and NAR projections without modifying or requantizing the base weights.
 
+The server also exposes an acestep.cpp-shaped `GET /props` bootstrap for local
+clients. It discovers GGML devices and free/total memory through the shared
+backend API, classifies installed GGUFs by metadata, and reports friendly
+BF16/Q8/Q5/Q4 tiers with conservative fit and recommendation fields. This is
+the foundation for the standalone Yuey model picker; model downloads and score
+editing advertise as unavailable until their contracts are implemented.
+
 Decoder generation uses a persistent self-attention KV cache and precomputed
 encoder-attention keys and values. Whole-song input uses the released
 right-lookahead/overlap plan, re-encodes accepted overlap events as the next
