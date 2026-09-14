@@ -4,26 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Yuey</title>
+  <title>yuey</title>
   <style>
     :root {
-      --ink: #f5f0e8; --muted: #a9a39c; --panel: #171717; --panel-2: #1e1e1d;
-      --line: #343230; --accent: #e7ff60; --accent-ink: #11120a; --warm: #ff8f6b;
-      --ok: #90e5ab; --bad: #ff8e8e; --radius: 15px;
+      --ink: #ffffff; --muted: #a5a5a5; --faint: #696969; --panel: #121212; --panel-2: #080808;
+      --line: #444444; --line-soft: #262626; --accent: #e62020; --accent-ink: #000000;
+      --ok: #48d278; --bad: #ff6b6b; --radius: 15px;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; color: var(--ink); background: #0c0c0c; font: 14px/1.45 Inter, ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; color: var(--ink); background: #000000; font: 14px/1.45 Inter, ui-sans-serif, system-ui, sans-serif; }
     button, input, textarea, select { font: inherit; }
     button { cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .45; }
     .shell { min-height: 100vh; display: grid; grid-template-columns: 230px minmax(0, 1fr); }
-    aside { position: sticky; top: 0; height: 100vh; padding: 28px 20px; border-right: 1px solid var(--line); background: #111; }
+    aside { position: sticky; top: 0; height: 100vh; padding: 28px 20px; border-right: 1px solid var(--line); background: var(--panel-2); }
     .brand { display: flex; align-items: center; gap: 10px; margin: 0 5px 34px; font-size: 22px; font-weight: 760; letter-spacing: -.5px; }
-    .mark { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 10px; color: #111; background: var(--accent); font-size: 18px; }
+    .mark { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 10px; color: var(--accent-ink); background: var(--accent); font-size: 18px; }
     nav { display: grid; gap: 6px; }
     .nav { border: 0; border-radius: 10px; padding: 10px 12px; color: var(--muted); background: transparent; text-align: left; }
-    .nav:hover, .nav.active { color: var(--ink); background: #242422; }
-    .backend { position: absolute; left: 20px; right: 20px; bottom: 22px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: #181817; }
+    .nav:hover, .nav.active { color: var(--accent); background: #e620201f; }
+    .backend { position: absolute; left: 20px; right: 20px; bottom: 22px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
     .backend strong { display: block; font-size: 12px; }
     .backend span { color: var(--muted); font-size: 11px; }
     .dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--ok); }
@@ -33,54 +33,55 @@
     h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.4px; }
     h3 { margin: 0; font-size: 14px; }
     p { color: var(--muted); }
-    .eyebrow { margin-bottom: 8px; color: var(--accent); font-size: 11px; font-weight: 750; letter-spacing: 1.5px; text-transform: uppercase; }
+    .eyebrow { margin-bottom: 8px; color: var(--accent); font-size: 11px; font-weight: 750; letter-spacing: 1.5px; }
     .view { display: none; max-width: 1160px; }
     .view.active { display: block; }
     .grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(310px, .85fr); gap: 18px; }
     .card { min-width: 0; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
     .card + .card { margin-top: 18px; }
-    label { display: block; margin: 15px 0 7px; color: #cbc5be; font-size: 12px; font-weight: 650; }
-    input, textarea, select { width: 100%; color: var(--ink); border: 1px solid #3b3936; border-radius: 10px; background: #0f0f0f; outline: none; }
+    label { display: block; margin: 15px 0 7px; color: #d0d0d0; font-size: 12px; font-weight: 650; }
+    input, textarea, select { width: 100%; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); outline: none; }
     input, select { height: 42px; padding: 0 12px; }
     textarea { min-height: 118px; padding: 12px; resize: vertical; }
-    input:focus, textarea:focus, select:focus { border-color: #74716a; box-shadow: 0 0 0 3px #ffffff0b; }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #e6202026; }
     .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
     .row.two { grid-template-columns: repeat(2, 1fr); }
     .actions { display: flex; align-items: center; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
     .primary, .secondary, .ghost { min-height: 40px; padding: 0 15px; border-radius: 10px; font-weight: 720; }
-    .primary { border: 0; color: var(--accent-ink); background: var(--accent); }
-    .secondary { color: var(--ink); border: 1px solid #4a4743; background: #282725; }
+    .primary { border: 1px solid var(--accent); color: var(--accent-ink); background: var(--accent); }
+    .secondary { color: var(--ink); border: 1px solid var(--line); background: #101010; }
+    .primary:hover, .secondary:hover, .download:hover { color: var(--accent-ink); border-color: var(--accent); background: var(--accent); }
     .ghost { color: var(--muted); border: 0; background: transparent; }
     .help { color: var(--muted); font-size: 12px; }
-    .drop { display: grid; place-items: center; min-height: 155px; padding: 20px; border: 1px dashed #4f4b46; border-radius: 13px; background: #111; text-align: center; }
-    .drop.drag { border-color: var(--accent); background: #1a1b12; }
+    .drop { display: grid; place-items: center; min-height: 155px; padding: 20px; border: 1px dashed var(--line); border-radius: 13px; background: var(--panel-2); text-align: center; }
+    .drop.drag { border-color: var(--accent); background: #e6202017; }
     .drop input { display: none; }
     .drop b { display: block; margin-bottom: 5px; }
     .file-name { margin-top: 8px; color: var(--accent); font-size: 12px; }
-    .status { display: none; margin-top: 16px; padding: 13px; border-radius: 10px; background: #10100f; }
+    .status { display: none; margin-top: 16px; padding: 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel-2); }
     .status.on { display: block; }
     .status-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
-    .bar { height: 5px; overflow: hidden; border-radius: 10px; background: #333; }
+    .bar { height: 5px; overflow: hidden; border-radius: 10px; background: var(--line-soft); }
     .bar > i { display: block; width: 0; height: 100%; background: var(--accent); transition: width .25s; }
     .error { color: var(--bad); }
-    .tier { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid #2b2927; }
+    .tier { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line-soft); }
     .tier:last-child { border-bottom: 0; }
     .tier input { width: 16px; height: 16px; accent-color: var(--accent); }
     .tier small { display: block; color: var(--muted); }
-    .pill { padding: 4px 8px; border-radius: 99px; color: var(--muted); background: #292826; font-size: 10px; font-weight: 730; }
-    .pill.good { color: #0f2917; background: var(--ok); }
-    .pill.warn { color: #2e1a0e; background: #efb273; }
-    .device { display: flex; justify-content: space-between; gap: 15px; padding: 13px 0; border-bottom: 1px solid #2b2927; }
+    .pill { padding: 4px 8px; border-radius: 99px; color: var(--muted); background: var(--line-soft); font-size: 10px; font-weight: 730; }
+    .pill.good { color: #001b09; background: var(--ok); }
+    .pill.warn { color: var(--accent); background: #e620201f; }
+    .device { display: flex; justify-content: space-between; gap: 15px; padding: 13px 0; border-bottom: 1px solid var(--line-soft); }
     .device:last-child { border: 0; }
     .device span { color: var(--muted); }
     .score-area { min-height: 410px; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
-    .empty { display: grid; place-items: center; min-height: 270px; padding: 30px; color: var(--muted); border: 1px dashed #3d3a37; border-radius: 12px; text-align: center; }
+    .empty { display: grid; place-items: center; min-height: 270px; padding: 30px; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; text-align: center; }
     .result { display: none; }
     .result.on { display: block; }
     audio { width: 100%; margin-top: 14px; }
     .downloads { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-    .download { padding: 8px 10px; border: 1px solid #3f3c39; border-radius: 8px; color: var(--ink); text-decoration: none; background: #232220; font-size: 11px; }
-    .notice { padding: 13px 15px; border-left: 3px solid var(--warm); color: #d4cec6; background: #231b18; font-size: 12px; }
+    .download { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); text-decoration: none; background: #101010; font-size: 11px; }
+    .notice { padding: 13px 15px; border-left: 3px solid var(--accent); color: #d0d0d0; background: #e6202012; font-size: 12px; }
     @media (max-width: 850px) {
       .shell { grid-template-columns: 1fr; }
       aside { position: static; height: auto; padding: 16px; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -96,44 +97,44 @@
 <body>
 <div class="shell">
   <aside>
-    <div class="brand"><span class="mark">Y</span> Yuey</div>
+    <div class="brand"><span class="mark">y</span> yuey</div>
     <nav>
-      <button class="nav active" data-view="create">Create</button>
-      <button class="nav" data-view="transform">Transcribe / Remix</button>
-      <button class="nav" data-view="score">Score</button>
-      <button class="nav" data-view="models">Models</button>
+      <button class="nav active" data-view="create">create</button>
+      <button class="nav" data-view="transform">transcribe / remix</button>
+      <button class="nav" data-view="score">score</button>
+      <button class="nav" data-view="models">models</button>
     </nav>
-    <div class="backend"><strong><i class="dot"></i><span id="connection">Connecting…</span></strong><span id="device-mini">Local backend</span></div>
+    <div class="backend"><strong><i class="dot"></i><span id="connection">connecting…</span></strong><span id="device-mini">local backend</span></div>
   </aside>
   <main>
     <div class="topline">
-      <div><div class="eyebrow">Local music workspace</div><h1 id="page-title">Create with Yuey</h1></div>
-      <button id="refresh" class="secondary">Refresh runtime</button>
+      <div><div class="eyebrow">local music workspace</div><h1 id="page-title">create with yuey</h1></div>
+      <button id="refresh" class="secondary">refresh runtime</button>
     </div>
 
     <section class="view active" id="view-create">
       <div class="grid">
         <div class="card">
-          <h2>Describe the track</h2><p>Musical controls are injected into the planning score. Keep the prompt focused on sound, structure, and performance.</p>
-          <label for="prompt">Prompt</label>
-          <textarea id="prompt" placeholder="Dreamy analog synth pop, tight dry drums, warm bass, evolving arpeggios…"></textarea>
-          <label for="lyrics">Lyrics (optional)</label>
-          <textarea id="lyrics" placeholder="Leave empty for an instrumental"></textarea>
+          <h2>describe the track</h2><p>musical controls are injected into the planning score. keep the prompt focused on sound, structure, and performance.</p>
+          <label for="prompt">prompt</label>
+          <textarea id="prompt" placeholder="dreamy analog synth pop, tight dry drums, warm bass, evolving arpeggios…"></textarea>
+          <label for="lyrics">lyrics (optional)</label>
+          <textarea id="lyrics" placeholder="leave empty for an instrumental"></textarea>
           <div class="row">
-            <div><label for="bpm">BPM</label><input id="bpm" type="number" min="20" max="400" value="95"></div>
-            <div><label for="key">Key</label><input id="key" value="C# minor" placeholder="C# minor"></div>
-            <div><label for="meter">Meter</label><select id="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>5/4</option><option>7/8</option></select></div>
+            <div><label for="bpm">bpm</label><input id="bpm" type="number" min="20" max="400" value="95"></div>
+            <div><label for="key">key</label><input id="key" value="C# minor" placeholder="C# minor"></div>
+            <div><label for="meter">meter</label><select id="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>5/4</option><option>7/8</option></select></div>
           </div>
           <div class="row two">
-            <div><label for="duration">Length (seconds)</label><input id="duration" type="number" min="1" max="900" value="30"></div>
-            <div><label for="seed">Seed</label><input id="seed" type="number" value="-1"><div class="help">−1 picks a new seed</div></div>
+            <div><label for="duration">length (seconds)</label><input id="duration" type="number" min="1" max="900" value="30"></div>
+            <div><label for="seed">seed</label><input id="seed" type="number" value="-1"><div class="help">−1 picks a new seed</div></div>
           </div>
-          <div class="actions"><button id="generate" class="primary">Generate track</button><span class="help" id="create-tier"></span></div>
-          <div class="status" id="create-status"><div class="status-head"><b id="create-stage">Queued</b><span id="create-percent">0%</span></div><div class="bar"><i id="create-bar"></i></div><div class="help" id="create-detail"></div></div>
+          <div class="actions"><button id="generate" class="primary">generate track</button><span class="help" id="create-tier"></span></div>
+          <div class="status" id="create-status"><div class="status-head"><b id="create-stage">queued</b><span id="create-percent">0%</span></div><div class="bar"><i id="create-bar"></i></div><div class="help" id="create-detail"></div></div>
         </div>
         <div>
-          <div class="card result" id="audio-result"><h2>Latest render</h2><div class="help" id="render-meta"></div><audio id="player" controls></audio><div class="actions"><button class="secondary" id="open-score">Edit generated score</button><a class="download" id="save-audio" download="yuey.wav">Download WAV</a></div></div>
-          <div class="card" id="create-empty"><div class="empty">Your rendered audio and generated planning score will appear here.</div></div>
+          <div class="card result" id="audio-result"><h2>latest render</h2><div class="help" id="render-meta"></div><audio id="player" controls></audio><div class="actions"><button class="secondary" id="open-score">edit generated score</button><a class="download" id="save-audio" download="yuey.wav">download wav</a></div></div>
+          <div class="card" id="create-empty"><div class="empty">your rendered audio and generated planning score will appear here.</div></div>
         </div>
       </div>
     </section>
@@ -141,18 +142,18 @@
     <section class="view" id="view-transform">
       <div class="grid">
         <div class="card">
-          <h2>Bring in audio</h2><p>Transcribe to an editable score and multi-track MIDI, or remix immediately through the same transcription path.</p>
-          <label class="drop" id="drop"><input id="audio-file" type="file" accept="audio/wav,.wav"><span><b>Drop a WAV here or click to browse</b><span class="help">Stereo or mono; decoded locally by yue2-server</span><span class="file-name" id="file-name"></span></span></label>
+          <h2>bring in audio</h2><p>transcribe to an editable score and multi-track midi, or remix immediately through the same transcription path.</p>
+          <label class="drop" id="drop"><input id="audio-file" type="file" accept="audio/wav,.wav"><span><b>drop a wav here or click to browse</b><span class="help">stereo or mono; decoded locally by yue2-server</span><span class="file-name" id="file-name"></span></span></label>
           <div class="row two">
-            <div><label for="transcription-mode">Score detail</label><select id="transcription-mode"><option value="full">Full score + chords</option><option value="melody">Melody only</option></select></div>
-            <div><label for="remix-prompt">Remix prompt</label><input id="remix-prompt" placeholder="Optional for transcription"></div>
+            <div><label for="transcription-mode">score detail</label><select id="transcription-mode"><option value="full">full score + chords</option><option value="melody">melody only</option></select></div>
+            <div><label for="remix-prompt">remix prompt</label><input id="remix-prompt" placeholder="optional for transcription"></div>
           </div>
-          <div class="actions"><button id="transcribe" class="primary">Transcribe</button><button id="remix" class="secondary">Transcribe + remix</button></div>
-          <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">Queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
+          <div class="actions"><button id="transcribe" class="primary">transcribe</button><button id="remix" class="secondary">transcribe + remix</button></div>
+          <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
         </div>
         <div>
-          <div class="card result" id="transcription-result"><h2>Transcription</h2><div class="help" id="transcription-meta"></div><div class="downloads" id="midi-downloads"></div><div class="actions"><button id="edit-transcription" class="primary">Open score</button></div></div>
-          <div class="card" id="transform-empty"><div class="empty">The editable ABC score and separate melody/chord MIDI files will appear after transcription.</div></div>
+          <div class="card result" id="transcription-result"><h2>transcription</h2><div class="help" id="transcription-meta"></div><div class="downloads" id="midi-downloads"></div><div class="actions"><button id="edit-transcription" class="primary">open score</button></div></div>
+          <div class="card" id="transform-empty"><div class="empty">the editable abc score and separate melody/chord midi files will appear after transcription.</div></div>
         </div>
       </div>
     </section>
@@ -160,28 +161,28 @@
     <section class="view" id="view-score">
       <div class="grid">
         <div class="card">
-          <h2>Score workspace</h2><p>This first slice exposes the exact symbolic source Yuey uses. A piano-roll editor will sit on this same score contract next.</p>
-          <textarea class="score-area" id="abc" spellcheck="false" placeholder="Generate or transcribe a score first, or paste ABC here…"></textarea>
+          <h2>score workspace</h2><p>this first slice exposes the exact symbolic source yuey uses. a piano-roll editor will sit on this same score contract next.</p>
+          <textarea class="score-area" id="abc" spellcheck="false" placeholder="generate or transcribe a score first, or paste abc here…"></textarea>
         </div>
         <div>
           <div class="card">
-            <h2>Regenerate from score</h2><p>Change notes or headers, then ask Yuey to reinterpret the edited score with a new production prompt.</p>
-            <label for="score-prompt">Prompt</label><textarea id="score-prompt" placeholder="More intimate, brushed drums, darker synth textures…"></textarea>
-            <div class="row two"><div><label for="score-duration">Length</label><input id="score-duration" type="number" min="1" max="900" value="30"></div><div><label for="score-seed">Seed</label><input id="score-seed" type="number" value="-1"></div></div>
-            <div class="actions"><button id="score-generate" class="primary">Regenerate score</button><button id="export-abc" class="secondary">Save ABC</button></div>
-            <div class="status" id="score-status"><div class="status-head"><b id="score-stage">Queued</b><span id="score-percent">0%</span></div><div class="bar"><i id="score-bar"></i></div><div class="help" id="score-detail"></div></div>
+            <h2>regenerate from score</h2><p>change notes or headers, then ask yuey to reinterpret the edited score with a new production prompt.</p>
+            <label for="score-prompt">prompt</label><textarea id="score-prompt" placeholder="more intimate, brushed drums, darker synth textures…"></textarea>
+            <div class="row two"><div><label for="score-duration">length</label><input id="score-duration" type="number" min="1" max="900" value="30"></div><div><label for="score-seed">seed</label><input id="score-seed" type="number" value="-1"></div></div>
+            <div class="actions"><button id="score-generate" class="primary">regenerate score</button><button id="export-abc" class="secondary">save abc</button></div>
+            <div class="status" id="score-status"><div class="status-head"><b id="score-stage">queued</b><span id="score-percent">0%</span></div><div class="bar"><i id="score-bar"></i></div><div class="help" id="score-detail"></div></div>
           </div>
-          <div class="notice">Raw ABC editing is intentionally the v0 surface. The next editor layer will manipulate versioned score events while preserving this source for exact round trips.</div>
+          <div class="notice">raw abc editing is intentionally the v0 surface. the next editor layer will manipulate versioned score events while preserving this source for exact round trips.</div>
         </div>
       </div>
     </section>
 
     <section class="view" id="view-models">
       <div class="grid">
-        <div class="card"><h2>Generation quality</h2><p>Choose an installed tier per job. Yuey unloads and switches models between jobs when needed.</p><div id="tiers"></div></div>
+        <div class="card"><h2>generation quality</h2><p>choose an installed tier per job. yuey unloads and switches models between jobs when needed.</p><div id="tiers"></div></div>
         <div>
-          <div class="card"><h2>Runtime</h2><div id="devices"></div></div>
-          <div class="card"><h2>Model installation</h2><p id="model-folder"></p><div class="notice" id="download-note">Automatic downloads are waiting on a stable published model manifest. For now, place converted GGUF files in the model folder and refresh.</div><div class="actions"><button class="secondary" id="refresh-models">Rescan folder</button></div></div>
+          <div class="card"><h2>runtime</h2><div id="devices"></div></div>
+          <div class="card"><h2>model installation</h2><p id="model-folder"></p><div class="notice" id="download-note">automatic downloads are waiting on a stable published model manifest. for now, place converted gguf files in the model folder and refresh.</div><div class="actions"><button class="secondary" id="refresh-models">rescan folder</button></div></div>
         </div>
       </div>
     </section>
@@ -190,12 +191,12 @@
 <script>
   const $ = id => document.getElementById(id);
   const state = { props: null, health: null, encoding: 'auto', file: null, wavUrl: null, result: null };
-  const titles = { create: 'Create with Yuey', transform: 'Transcribe or remix', score: 'Edit the score', models: 'Local models' };
+  const titles = { create: 'create with yuey', transform: 'transcribe or remix', score: 'edit the score', models: 'local models' };
 
   function humanBytes(n) {
-    if (!n) return '0 MB';
-    if (n < 1073741824) return Math.max(0.1, n / 1048576).toFixed(1) + ' MB';
-    return (n / 1073741824).toFixed(n > 20e9 ? 0 : 1) + ' GB';
+    if (!n) return '0 mb';
+    if (n < 1073741824) return Math.max(0.1, n / 1048576).toFixed(1) + ' mb';
+    return (n / 1073741824).toFixed(n > 20e9 ? 0 : 1) + ' gb';
   }
   function show(view) {
     document.querySelectorAll('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + view));
@@ -207,28 +208,28 @@
   async function api(path, options) {
     const response = await fetch(path, options);
     let data;
-    try { data = await response.json(); } catch (_) { throw new Error('Backend returned an unreadable response'); }
-    if (!response.ok || data.success === false) throw new Error(data.error || `Request failed (${response.status})`);
+    try { data = await response.json(); } catch (_) { throw new Error('backend returned an unreadable response'); }
+    if (!response.ok || data.success === false) throw new Error(data.error || `request failed (${response.status})`);
     return data;
   }
 
   function renderProps() {
     const p = state.props;
     const accelerator = p.devices.find(d => d.type === 'gpu' || d.type === 'integrated_gpu');
-    $('connection').textContent = 'Local backend ready';
-    $('device-mini').textContent = accelerator ? `${accelerator.description} · ${humanBytes(accelerator.memory_total_bytes)}` : 'CPU mode';
-    $('model-folder').textContent = `Model folder: ${p.models.directory}`;
+    $('connection').textContent = 'local backend ready';
+    $('device-mini').textContent = accelerator ? `${accelerator.description} · ${humanBytes(accelerator.memory_total_bytes)}` : 'cpu mode';
+    $('model-folder').textContent = `model folder: ${p.models.directory}`;
     $('devices').innerHTML = p.devices.map(d => `<div class="device"><div><b>${escapeHtml(d.description)}</b><br><span>${escapeHtml(d.backend)} · ${escapeHtml(d.type.replaceAll('_', ' '))}</span></div><span>${humanBytes(d.memory_free_bytes)} free / ${humanBytes(d.memory_total_bytes)}</span></div>`).join('');
     const installed = p.models.tiers.filter(t => t.installed);
     if (!installed.some(t => t.encoding === state.encoding)) {
       const pick = installed.find(t => t.recommended) || installed[0];
       state.encoding = pick ? pick.encoding : 'auto';
     }
-    $('tiers').innerHTML = p.models.tiers.map(t => `<label class="tier"><input type="radio" name="tier" value="${t.encoding}" ${state.encoding === t.encoding ? 'checked' : ''} ${t.installed ? '' : 'disabled'}><span><b>${t.label} · ${t.encoding}</b><small>${t.installed ? humanBytes(t.installed_bytes) + ' installed' : 'Not installed'} · ${humanBytes(t.recommended_vram_bytes)} recommended VRAM</small></span><span class="pill ${t.recommended ? 'good' : (!t.fits_free_memory ? 'warn' : '')}">${t.recommended ? 'Recommended' : (t.installed ? (t.fits_free_memory ? 'Ready' : 'Tight fit') : 'Missing')}</span></label>`).join('');
+    $('tiers').innerHTML = p.models.tiers.map(t => `<label class="tier"><input type="radio" name="tier" value="${t.encoding}" ${state.encoding === t.encoding ? 'checked' : ''} ${t.installed ? '' : 'disabled'}><span><b>${t.label.toLowerCase()} · ${t.encoding}</b><small>${t.installed ? humanBytes(t.installed_bytes) + ' installed' : 'not installed'} · ${humanBytes(t.recommended_vram_bytes)} recommended vram</small></span><span class="pill ${t.recommended ? 'good' : (!t.fits_free_memory ? 'warn' : '')}">${t.recommended ? 'recommended' : (t.installed ? (t.fits_free_memory ? 'ready' : 'tight fit') : 'missing')}</span></label>`).join('');
     document.querySelectorAll('input[name=tier]').forEach(x => x.onchange = () => { state.encoding = x.value; updateTierText(); });
     updateTierText();
   }
-  function updateTierText() { $('create-tier').textContent = state.encoding === 'auto' ? 'Automatic model selection' : `${state.encoding} model`; }
+  function updateTierText() { $('create-tier').textContent = state.encoding === 'auto' ? 'automatic model selection' : `${state.encoding} model`; }
   function escapeHtml(text) { const node = document.createElement('span'); node.textContent = text ?? ''; return node.innerHTML; }
 
   async function refresh() {
@@ -236,7 +237,7 @@
       [state.props, state.health] = await Promise.all([api('/props'), api('/health')]);
       renderProps();
     } catch (error) {
-      $('connection').textContent = 'Backend unavailable'; $('device-mini').textContent = error.message;
+      $('connection').textContent = 'backend unavailable'; $('device-mini').textContent = error.message;
       const dot = document.querySelector('.dot'); if (dot) dot.style.background = 'var(--bad)';
     }
   }
@@ -245,8 +246,8 @@
     const box = $(prefix + '-status'); box.classList.add('on');
     const progress = error ? 0 : (data?.progress || 0);
     $(prefix + '-bar').style.width = progress + '%'; $(prefix + '-percent').textContent = progress + '%';
-    $(prefix + '-stage').textContent = error ? 'Failed' : ((data?.stage || data?.status || 'Queued').replaceAll('_', ' '));
-    $(prefix + '-detail').textContent = error ? error.message : (data?.queue_status?.message || 'Working locally');
+    $(prefix + '-stage').textContent = error ? 'failed' : ((data?.stage || data?.status || 'queued').replaceAll('_', ' ').toLowerCase());
+    $(prefix + '-detail').textContent = error ? error.message : (data?.queue_status?.message || 'working locally');
     $(prefix + '-detail').classList.toggle('error', !!error);
   }
   async function run(path, payload, prefix) {
@@ -257,7 +258,7 @@
       const result = await api('/poll_status/' + queued.session_id);
       status(prefix, result);
       if (!result.generation_in_progress) {
-        if (result.status === 'failed') throw new Error(result.error || 'Job failed');
+        if (result.status === 'failed') throw new Error(result.error || 'job failed');
         return result;
       }
     }
@@ -305,7 +306,7 @@
     }
   }
   async function transform(remix) {
-    if (!state.file) { status('transform', null, new Error('Choose a WAV file first')); return; }
+    if (!state.file) { status('transform', null, new Error('choose a wav file first')); return; }
     $('transcribe').disabled = $('remix').disabled = true;
     try {
       const payload = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
@@ -320,7 +321,7 @@
   $('transcribe').onclick = () => transform(false); $('remix').onclick = () => transform(true); $('edit-transcription').onclick = () => show('score');
 
   $('score-generate').onclick = async () => {
-    if (!$('abc').value.trim()) { status('score', null, new Error('Add or transcribe a score first')); return; }
+    if (!$('abc').value.trim()) { status('score', null, new Error('add or transcribe a score first')); return; }
     $('score-generate').disabled = true;
     try {
       const result = await run('/generate', { abc: $('abc').value, symbolic_mode: 'full', style: $('score-prompt').value, duration: Number($('score-duration').value), seed: seed('score-seed'), encoding: state.encoding }, 'score');
