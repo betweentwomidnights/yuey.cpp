@@ -1,7 +1,23 @@
-# yue2.cpp
+# yuey.cpp
 
-Native GGML inference for the YuE2 music ecosystem, built on the same shared
-GGML fork used by `sa3.cpp` and `acestep.cpp`.
+Native GGML inference for the YuE2 music ecosystem.
+
+This implementation of YuE2 shares a GGML submodule with
+[`betweentwomidnights/acestep.cpp`](https://github.com/betweentwomidnights/acestep.cpp),
+[`betweentwomidnights/sa3.cpp`](https://github.com/betweentwomidnights/sa3.cpp),
+and
+[`betweentwomidnights/audiocraft.cpp`](https://github.com/betweentwomidnights/audiocraft.cpp).
+
+It is mainly designed for downstream usage in
+[`betweentwomidnights/gary4juce`](https://github.com/betweentwomidnights/gary4juce),
+while remaining usable as a standalone C++ library, CLI, and local web app.
+
+## TODO
+
+- [ ] Fully validate the Vulkan and Metal backends.
+- [ ] Produce useful benchmarks on hardware beyond our RTX 5070 Laptop GPU and
+  DGX Spark.
+- [ ] Validate the C ABI from a standalone iPlug2 project or Ableton extension.
 
 The first product milestone is audio-to-score transcription:
 
@@ -45,8 +61,9 @@ The server also exposes an acestep.cpp-shaped `GET /props` bootstrap for local
 clients. It discovers GGML devices and free/total memory through the shared
 backend API, classifies installed GGUFs by metadata, and reports friendly
 BF16/Q8/Q5/Q4 tiers with conservative fit and recommendation fields. This is
-the foundation for the standalone Yuey model picker; model downloads and score
-editing advertise as unavailable until their contracts are implemented.
+the foundation for the standalone Yuey model picker. The embedded UI already
+supports exact ABC source editing; structured piano-roll editing and automatic
+model downloads remain unavailable until their contracts are implemented.
 
 Structured `planning` fields on `/generate` provide the first UI-facing musical
 control: BPM, key, and meter are validated server-side and converted into the
@@ -67,12 +84,80 @@ those fields are not requested from the model.
 
 ## Build
 
+Clone the repository with the pinned shared GGML fork:
+
+```bash
+git clone --recurse-submodules https://github.com/betweentwomidnights/yuey.cpp.git
+cd yuey.cpp
+```
+
+If the repository was cloned without `--recurse-submodules`, run:
+
 ```bash
 git submodule update --init --recursive
+```
+
+### Windows + CUDA
+
+Run these commands from a PowerShell or Visual Studio developer terminal with
+CMake, Visual Studio 2022 C++ tools, and the CUDA toolkit available:
+
+```powershell
+cmake -S . -B build-cuda -DYUE2_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=native
+cmake --build build-cuda --config Release --parallel
+ctest --test-dir build-cuda -C Release --output-on-failure
+```
+
+Start the standalone server and leave that terminal open:
+
+```powershell
+.\build-cuda\bin\Release\yue2-server.exe --models-dir .\models --device cuda
+```
+
+Open <http://127.0.0.1:8007/> for the embedded Yuey UI. From another terminal,
+`curl.exe http://127.0.0.1:8007/health` confirms that the local service and model
+paths resolve.
+
+To exercise the CUDA CLI directly with an instrumental 30-second generation:
+
+```powershell
+New-Item -ItemType Directory -Force .\outputs | Out-Null
+.\build-cuda\bin\Release\yue2-generate.exe `
+  --model .\models\YuE2-3B-GGUF\yue2-3.6B-v1.0-Q4_K_M.gguf `
+  --vae .\models\YuE2-3B-GGUF\yue2-vae-v1.0-F16.gguf `
+  --tokenizer .\models\YuE2-3B-GGUF\sidecars\yue2-qwen.tiktoken `
+  --style "dreamy analog synth pop, tight dry drums, warm bass, evolving arpeggios" `
+  --bpm 95 --key "C# minor" --meter 4/4 `
+  --semantic-min-tokens 200 --semantic-max-tokens 750 `
+  --score-output .\outputs\cuda-smoke.abc `
+  --output .\outputs\cuda-smoke.wav `
+  --device cuda
+```
+
+Lyrics are optional. Supply either `--lyrics "..."` or
+`--lyrics-file .\lyrics.txt` for a vocal generation.
+
+### Linux + CUDA
+
+```bash
 cmake -S . -B build -DYUE2_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=native
 cmake --build build --config Release -j
 ctest --test-dir build -C Release --output-on-failure
 ```
+
+### Apple silicon + Metal
+
+On the M4, install CMake and a current Xcode command-line toolchain, then run:
+
+```bash
+cmake -S . -B build-metal -DYUE2_METAL=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build-metal --parallel
+ctest --test-dir build-metal --output-on-failure
+```
+
+The executable is `build-metal/bin/yue2-server`. Model files are intentionally
+not stored in Git; copy the same GGUF model directory used for CUDA before the
+Metal generation check.
 
 Backend options are `YUE2_CUDA`, `YUE2_VULKAN`, `YUE2_METAL`, and `YUE2_HIP`.
 They forward to the pinned GGML submodule instead of selecting a second GGML

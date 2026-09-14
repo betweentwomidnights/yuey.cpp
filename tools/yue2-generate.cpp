@@ -17,7 +17,7 @@ namespace {
 void usage(const char * argv0) {
     std::cout
         << "Usage: " << argv0 << " --model yue2.gguf --vae vae.gguf --tokenizer qwen.tiktoken\\\n\n"
-        << "  --style TEXT (--lyrics TEXT | --lyrics-file PATH) --output song.wav [options]\n\n"
+        << "  --style TEXT [--lyrics TEXT | --lyrics-file PATH] --output song.wav [options]\n\n"
         << "Options:\n"
         << "  --symbolic MODE       off, melody, or full (default full)\n"
         << "  --abc PATH            Use an external ABC score instead of planning one\n"
@@ -183,12 +183,13 @@ int main(int argc, char ** argv) {
 
         yue2::SongRequest request;
         request.style = value_after(argc, argv, "--style");
-        const auto lyrics = value_after(argc, argv, "--lyrics", false);
-        const auto lyrics_file = value_after(argc, argv, "--lyrics-file", false);
-        if (lyrics.empty() == lyrics_file.empty()) {
-            throw std::runtime_error("provide exactly one of --lyrics or --lyrics-file");
+        const bool has_lyrics = has(argc, argv, "--lyrics");
+        const bool has_lyrics_file = has(argc, argv, "--lyrics-file");
+        if (has_lyrics && has_lyrics_file) {
+            throw std::runtime_error("--lyrics and --lyrics-file are mutually exclusive");
         }
-        request.lyrics = lyrics_file.empty() ? lyrics : read_text(lyrics_file);
+        if (has_lyrics) request.lyrics = value_after(argc, argv, "--lyrics");
+        if (has_lyrics_file) request.lyrics = read_text(value_after(argc, argv, "--lyrics-file"));
         const auto symbolic = value_after(argc, argv, "--symbolic", false);
         if (!symbolic.empty()) request.symbolic_mode = parse_symbolic(symbolic);
         const auto abc_path = value_after(argc, argv, "--abc", false);
