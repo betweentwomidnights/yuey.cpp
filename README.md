@@ -40,14 +40,16 @@ cd yuey.cpp
 
 ### Windows + CUDA
 
-Use a PowerShell or Visual Studio developer terminal with CMake, Visual Studio
-2022 C++ tools, and the CUDA toolkit available:
+With Visual Studio 2022 C++ tools and the CUDA toolkit installed:
 
 ```powershell
-cmake -S . -B build-cuda -DYUE2_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=native
-cmake --build build-cuda --config Release --parallel
-ctest --test-dir build-cuda -C Release --output-on-failure
+.\build.cmd cuda
+. .\env.ps1
 ```
+
+`build.cmd` finds CMake (including Visual Studio's bundled copy), configures,
+builds, runs the tests, and writes the environment helper. Use `cpu` or
+`vulkan` instead of `cuda` for another Windows backend.
 
 Until the public GGUF download is available, place a complete tier under
 `models/`. The Q4_K_M laptop layout is:
@@ -64,7 +66,7 @@ models/
 Start the local app:
 
 ```powershell
-.\build-cuda\bin\Release\yue2-server.exe --models-dir .\models --device cuda
+yue2-server
 ```
 
 Open <http://127.0.0.1:8007/>. The UI provides generation, transcription,
@@ -73,16 +75,7 @@ remixing, ABC editing, MIDI export, and quantization-tier selection.
 Run a 30-second instrumental directly from the CLI:
 
 ```powershell
-New-Item -ItemType Directory -Force .\outputs | Out-Null
-.\build-cuda\bin\Release\yue2-generate.exe `
-  --model .\models\YuE2-3B-GGUF\yue2-3.6B-v1.0-Q4_K_M.gguf `
-  --vae .\models\YuE2-3B-GGUF\yue2-vae-v1.0-F16.gguf `
-  --tokenizer .\models\YuE2-3B-GGUF\sidecars\yue2-qwen.tiktoken `
-  --style "dreamy analog synth pop, tight dry drums, warm bass" `
-  --bpm 95 --key "C# minor" --meter 4/4 `
-  --semantic-min-tokens 200 --semantic-max-tokens 750 `
-  --score-output .\outputs\cuda-smoke.abc `
-  --output .\outputs\cuda-smoke.wav --device cuda
+yue2-generate --encoding q4_k_m --prompt "dreamy synth pop" --duration 30 --bpm 95 --key "C# minor" --out song.wav
 ```
 
 Lyrics are optional. Use either `--lyrics "..."` or

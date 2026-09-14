@@ -2,6 +2,8 @@
 /.venv*/
 /models/
 /outputs/
+/env.cmd
+/env.ps1
 *.gguf
 *.safetensors
 *.f32

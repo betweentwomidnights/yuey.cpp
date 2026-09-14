@@ -1,8 +1,14 @@
 #include "yue2/audio.h"
 #include "yue2/generation_pipeline.h"
+#include "yue2/runtime_info.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <sstream>
@@ -16,9 +22,16 @@ namespace {
 
 void usage(const char * argv0) {
     std::cout
-        << "Usage: " << argv0 << " --model yue2.gguf --vae vae.gguf --tokenizer qwen.tiktoken\\\n\n"
-        << "  --style TEXT [--lyrics TEXT | --lyrics-file PATH] --output song.wav [options]\n\n"
+        << "Usage: " << argv0 << " --prompt TEXT --out song.wav [options]\n\n"
+        << "Models resolve from $YUE2_MODELS_DIR or ./models by default.\n\n"
         << "Options:\n"
+        << "  --models-dir DIR      Model root (default $YUE2_MODELS_DIR or ./models)\n"
+        << "  --encoding TYPE       auto, BF16, F16, Q8_0, Q5_K_M, Q4_K_M, or F32\n"
+        << "  --model/--vae/--tokenizer PATH  Override resolved component paths\n"
+        << "  --prompt, --style TEXT          Production/style description\n"
+        << "  --out, --output PATH            Output WAV\n"
+        << "  --duration, --seconds N         Approximate output length in seconds\n"
+        << "  --lyrics TEXT | --lyrics-file PATH  Optional vocal lyrics\n"
         << "  --symbolic MODE       off, melody, or full (default full)\n"
         << "  --abc PATH            Use an external ABC score instead of planning one\n"
         << "  --abc-prefix PATH     Seed symbolic planning with an exact ABC text prefix\n"
@@ -57,6 +70,86 @@ std::string value_after(int argc, char ** argv, std::string_view name, bool requ
     }
     if (required) throw std::runtime_error("missing required option " + std::string(name));
     return {};
+}
+
+std::string first_value_after(
+    int argc, char ** argv, std::initializer_list<std::string_view> names,
+    bool required = true) {
+    for (const auto name : names) {
+        const auto value = value_after(argc, argv, name, false);
+        if (!value.empty() || has(argc, argv, name)) return value;
+    }
+    if (required) {
+        std::string message = "missing required option ";
+        bool first = true;
+        for (const auto name : names) {
+            if (!first) message += " or ";
+            message += std::string(name);
+            first = false;
+        }
+        throw std::runtime_error(message);
+    }
+    return {};
+}
+
+std::string environment(const char * name) {
+    const char * value = std::getenv(name);
+    return value ? std::string(value) : std::string();
+}
+
+std::string upper(std::string value) {
+    for (auto & character : value) {
+        character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+    }
+    return value;
+}
+
+struct ModelPaths {
+    std::string model;
+    std::string vae;
+    std::string tokenizer;
+    std::string encoding;
+};
+
+ModelPaths resolve_models(
+    const std::string & models_directory,
+    const std::string & requested_encoding,
+    std::string model,
+    std::string vae,
+    std::string tokenizer) {
+    const auto files = yue2::inspect_model_files(models_directory);
+    auto encoding = upper(requested_encoding);
+    if (encoding.empty() || encoding == "AUTO") encoding = "auto";
+    static const std::vector<std::string> preference = {
+        "BF16", "F16", "Q8_0", "Q5_K_M", "Q4_K_M", "F32"};
+    if (encoding != "auto" &&
+        std::find(preference.begin(), preference.end(), encoding) == preference.end()) {
+        throw std::runtime_error(
+            "--encoding must be auto, BF16, F16, Q8_0, Q5_K_M, Q4_K_M, or F32");
+    }
+    if (model.empty()) {
+        const auto encodings = encoding == "auto"
+            ? preference
+            : std::vector<std::string>{encoding};
+        const auto found = yue2::find_model_file(files, "generation", encodings);
+        if (!found) {
+            throw std::runtime_error(
+                "no YuE2 generation GGUF for " + encoding + " under " + models_directory);
+        }
+        model = found->path;
+        encoding = found->encoding;
+    }
+    if (vae.empty()) {
+        const auto found = yue2::find_model_file(files, "vae", {"F16", "F32"});
+        if (!found) throw std::runtime_error("no YuE2 VAE GGUF under " + models_directory);
+        vae = found->path;
+    }
+    if (tokenizer.empty()) {
+        const auto found = yue2::find_model_file(files, "tokenizer");
+        if (!found) throw std::runtime_error("no yue2-qwen.tiktoken under " + models_directory);
+        tokenizer = found->path;
+    }
+    return {std::move(model), std::move(vae), std::move(tokenizer), std::move(encoding)};
 }
 
 std::vector<std::string> values_after(
@@ -152,11 +245,23 @@ int main(int argc, char ** argv) {
             return 0;
         }
         yue2::GenerationPipelineOptions options;
-        const auto model_path = value_after(argc, argv, "--model");
-        const auto vae_path = value_after(argc, argv, "--vae");
-        const auto tokenizer_path = value_after(argc, argv, "--tokenizer");
-        const auto output = std::filesystem::path(value_after(argc, argv, "--output"));
+        auto models_directory = value_after(argc, argv, "--models-dir", false);
+        if (models_directory.empty()) models_directory = environment("YUE2_MODELS_DIR");
+        if (models_directory.empty()) models_directory = "models";
+        auto encoding = value_after(argc, argv, "--encoding", false);
+        if (encoding.empty()) encoding = environment("YUE2_ENCODING");
+        if (encoding.empty()) encoding = "auto";
+        const auto model_paths = resolve_models(
+            models_directory, encoding,
+            value_after(argc, argv, "--model", false),
+            value_after(argc, argv, "--vae", false),
+            value_after(argc, argv, "--tokenizer", false));
+        const auto output = std::filesystem::path(
+            first_value_after(argc, argv, {"--out", "--output"}));
         options.autoregressive.device = value_after(argc, argv, "--device", false);
+        if (options.autoregressive.device.empty()) {
+            options.autoregressive.device = environment("YUE2_DEVICE");
+        }
         const auto threads = value_after(argc, argv, "--threads", false);
         if (!threads.empty()) options.autoregressive.threads = std::stoi(threads);
         const auto abc_minimum = value_after(argc, argv, "--abc-min-tokens", false);
@@ -168,6 +273,20 @@ int main(int argc, char ** argv) {
             options.generation.semantic.min_tokens = std::stoul(semantic_minimum);
         }
         const auto semantic_limit = value_after(argc, argv, "--semantic-max-tokens", false);
+        const auto duration = first_value_after(
+            argc, argv, {"--duration", "--seconds"}, false);
+        if (!duration.empty()) {
+            std::size_t used = 0;
+            const double seconds = std::stod(duration, &used);
+            if (used != duration.size() || !(seconds > 0.0) || seconds > 900.0) {
+                throw std::runtime_error("--duration must be in (0, 900] seconds");
+            }
+            options.generation.semantic.max_tokens =
+                static_cast<std::uint32_t>(std::ceil(seconds * 25.0));
+            options.generation.semantic.min_tokens = std::min(
+                options.generation.semantic.min_tokens,
+                options.generation.semantic.max_tokens);
+        }
         if (!semantic_limit.empty()) options.generation.semantic.max_tokens = std::stoul(semantic_limit);
         const auto steps = value_after(argc, argv, "--ode-steps", false);
         if (!steps.empty()) options.flow.ode_steps = std::stoul(steps);
@@ -182,7 +301,7 @@ int main(int argc, char ** argv) {
         }
 
         yue2::SongRequest request;
-        request.style = value_after(argc, argv, "--style");
+        request.style = first_value_after(argc, argv, {"--prompt", "--style"});
         const bool has_lyrics = has(argc, argv, "--lyrics");
         const bool has_lyrics_file = has(argc, argv, "--lyrics-file");
         if (has_lyrics && has_lyrics_file) {
@@ -221,7 +340,10 @@ int main(int argc, char ** argv) {
         const auto guidance = value_after(argc, argv, "--guidance", false);
         if (!guidance.empty()) request.guidance_scale = std::stof(guidance);
 
-        yue2::GenerationPipeline pipeline(model_path, vae_path, tokenizer_path, options);
+        std::cerr << "[yue2] model: " << model_paths.encoding << " from "
+                  << models_directory << '\n';
+        yue2::GenerationPipeline pipeline(
+            model_paths.model, model_paths.vae, model_paths.tokenizer, options);
         const auto result = pipeline.generate(request);
         yue2::audio::write_wav_float(
             output, result.audio.interleaved_samples,
