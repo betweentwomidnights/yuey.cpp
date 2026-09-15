@@ -52,8 +52,10 @@ int main() {
              "Q5_K_M", 17);
   write_gguf(root / "yue2-3.6B-v1.0-Q4_K_M.gguf", "generation", "", 15, false);
   write_gguf(root / "yue2-vae-v1.0-F16.gguf", "vae", "", 1);
-  write_gguf(root / "sheetsage2-mert2-0.7B-v1.0-F16.gguf", "transcription", "",
-             1);
+  // Existing converter artifacts used lowercase precision names and omitted
+  // general.file_type, so discovery must classify their encoding by filename.
+  write_gguf(root / "sheetsage2-mert2-f16.gguf", "transcription", "",
+             999);
   write_gguf(root / "yue2-failed-conversion.invalid.gguf", "generation",
              "BF16", 32);
   {

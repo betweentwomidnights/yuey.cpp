@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <filesystem>
 #include <memory>
 #include <string_view>
@@ -89,9 +90,19 @@ std::string encoding_from_file_type(std::uint32_t type) {
 }
 
 std::string encoding_from_filename(std::string_view name) {
+  std::string normalized(name);
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                 [](unsigned char character) {
+                   return static_cast<char>(std::toupper(character));
+                 });
   for (const auto &spec : kTierSpecs) {
     const std::string suffix = std::string("-") + spec.encoding + ".gguf";
-    if (ends_with(name, suffix))
+    std::string normalized_suffix(suffix);
+    std::transform(normalized_suffix.begin(), normalized_suffix.end(),
+                   normalized_suffix.begin(), [](unsigned char character) {
+                     return static_cast<char>(std::toupper(character));
+                   });
+    if (ends_with(normalized, normalized_suffix))
       return spec.encoding;
   }
   return {};

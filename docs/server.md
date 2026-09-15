@@ -55,6 +55,7 @@ loads generation, so the two models never share the GPU. Send
 | `GET` | `/health` | `{status, service, version, device, encoding, busy, queued, generation:{available, loaded, model, vae, tokenizer}, transcription:{available, loaded, model}}` |
 | `GET` | `/props` | Local device/VRAM inventory, installed model tiers, recommendation, defaults, and UI capabilities |
 | `GET` | `/loras` | `{success, adapters_dir, loras:[{index, name, path}]}` for `*-LoRA.gguf` files |
+| `POST` | `/plan` | text to an editable ABC plan without semantic/flow/VAE work |
 | `POST` | `/generate` | text, or text plus ABC, to a song → `{success, session_id, seed, status}` |
 | `POST` | `/cover` | `audio_data` → transcription → song → `{success, session_id, seed, status}` |
 | `POST` | `/transcribe` | `audio_data` → ABC, MIDI, events → `{success, session_id, status}` |
@@ -121,7 +122,7 @@ dragging even when the user does not want generated audio.
 
 ### Generation requests
 
-`/generate` and `/cover` take JSON:
+`/plan`, `/generate`, and `/cover` take the same song JSON:
 
 ```json
 {
@@ -165,15 +166,19 @@ dragging even when the user does not want generated audio.
   `F16`, `Q8_0`, `Q5_K_M`, `Q4_K_M`, or `F32`). Omit it or send `auto` to use
   the server default. Switching the tier safely reloads the generation model
   between jobs; the transcription model is unaffected.
+- **`/plan`** stops after validated symbolic planning and returns `abc` plus
+  score bars, nominal duration, seed, encoding, and truncation metadata. It
+  requires `symbolic_mode: melody` or `full`. Send the accepted or edited ABC
+  to `/generate` to render without sampling the plan again.
 - **`abc`** applies to `/generate` only. With a score the default
   `symbolic_mode` is `melody`, as the upstream cover workflow recommends.
   Without one it is `full`, and YuE2 plans the score itself.
-- **`abc_prefix`** applies to `/generate` only and is mutually exclusive with
+- **`abc_prefix`** applies to `/plan` and `/generate` and is mutually exclusive with
   `abc`. It seeds planning immediately after `ABC_START`; use a validated header
   ending in a newline to lock host-provided meter, tempo, voices, and key before
   the model composes the score body. UI clients should send structured musical
   fields to a trusted header builder rather than assemble arbitrary ABC.
-- **`planning`** is that trusted typed interface. It applies to `/generate`
+- **`planning`** is that trusted typed interface. It applies to `/plan` and `/generate`
   only and requires `bpm` plus a major/minor `key`; meter defaults to 4/4. The
   server validates the values and constructs the proven two-voice planning
   prefix before sampling. It is mutually exclusive with `abc` and

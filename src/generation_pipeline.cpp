@@ -107,18 +107,14 @@ public:
         : options(std::move(options)),
           tokenizer(tokenizer_path),
           autoregressive(model_path, this->options.autoregressive),
-          vae(vae_path, resolve_vae_options(this->options)) {
+          vae_path(vae_path),
+          vae_options(resolve_vae_options(this->options)) {
         if (this->options.flow.context_length > 24576) {
             throw std::invalid_argument("YuE2 flow context exceeds generation context");
         }
     }
 
-    GeneratedSong generate(
-        const SongRequest & request,
-        const GenerationRunOptions & run_options,
-        const GenerationControl & control) {
-        validate_request(request);
-        check_cancelled(control);
+    SongRequest effective_request(const SongRequest & request) const {
         auto effective = request;
         if (effective.instrumental) {
             effective.style = "Instrumental, no vocals, no singing, no humming. " +
@@ -127,52 +123,89 @@ public:
                 ? make_instrumental_lyrics(*effective.abc)
                 : make_instrumental_lyrics({});
         }
-        GeneratedSong result;
-        if (effective.symbolic_mode != SymbolicMode::off) {
-            if (effective.abc) {
-                result.abc = *effective.abc;
-                result.abc_token_ids = tokenizer.encode(result.abc);
-            } else {
-                auto initial = make_positive_prefix(effective, tokenizer);
-                std::vector<std::int32_t> seeded_abc_ids;
-                if (effective.abc_prefix) {
-                    seeded_abc_ids = tokenizer.encode(*effective.abc_prefix);
-                    initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
-                }
-                const auto planned = autoregressive.generate(
-                    initial, run_options.generation.abc,
-                    AutoregressivePhase::abc, effective.seed,
-                    ar_control(control, GenerationStage::abc));
-                result.abc_token_ids = std::move(seeded_abc_ids);
-                result.abc_token_ids.insert(
-                    result.abc_token_ids.end(), planned.tokens.begin(), planned.tokens.end());
-                result.abc = tokenizer.decode(result.abc_token_ids);
-                result.abc_truncated = !planned.reached_end;
-                if (control.on_progress) {
-                    const auto completed = static_cast<std::uint32_t>(
-                        planned.tokens.size() + (planned.reached_end ? 1 : 0));
-                    control.on_progress(
-                        GenerationStage::abc, completed, std::max(1U, completed));
-                }
-            }
-            if (effective.abc && control.on_progress) {
+        return effective;
+    }
+
+    GeneratedPlan plan_effective(
+        const SongRequest & effective,
+        const GenerationRunOptions & run_options,
+        const GenerationControl & control) {
+        if (effective.symbolic_mode == SymbolicMode::off) {
+            throw std::invalid_argument(
+                "YuE2 planner-only mode requires melody or full symbolic planning");
+        }
+        GeneratedPlan result;
+        if (effective.abc) {
+            result.abc = *effective.abc;
+            result.abc_token_ids = tokenizer.encode(result.abc);
+            if (control.on_progress) {
                 control.on_progress(GenerationStage::abc, 1, 1);
             }
-            if (effective.target_bars != 0) {
-                result.abc = fit_abc_score_to_bars(
-                    result.abc, effective.target_bars, effective.outro_bars);
-                result.abc_token_ids = tokenizer.encode(result.abc);
+        } else {
+            auto initial = make_positive_prefix(effective, tokenizer);
+            std::vector<std::int32_t> seeded_abc_ids;
+            if (effective.abc_prefix) {
+                seeded_abc_ids = tokenizer.encode(*effective.abc_prefix);
+                initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
             }
-            if (effective.experimental_vocal_rest || effective.instrumental) {
-                result.abc = make_vocal_rest_abc(result.abc);
-                result.abc_token_ids = tokenizer.encode(result.abc);
+            const auto planned = autoregressive.generate(
+                initial, run_options.generation.abc,
+                AutoregressivePhase::abc, effective.seed,
+                ar_control(control, GenerationStage::abc));
+            result.abc_token_ids = std::move(seeded_abc_ids);
+            result.abc_token_ids.insert(
+                result.abc_token_ids.end(), planned.tokens.begin(), planned.tokens.end());
+            result.abc = tokenizer.decode(result.abc_token_ids);
+            result.abc_truncated = !planned.reached_end;
+            if (control.on_progress) {
+                const auto completed = static_cast<std::uint32_t>(
+                    planned.tokens.size() + (planned.reached_end ? 1 : 0));
+                control.on_progress(
+                    GenerationStage::abc, completed, std::max(1U, completed));
             }
+        }
+        if (effective.target_bars != 0) {
+            result.abc = fit_abc_score_to_bars(
+                result.abc, effective.target_bars, effective.outro_bars);
+            result.abc_token_ids = tokenizer.encode(result.abc);
+        }
+        if (effective.experimental_vocal_rest || effective.instrumental) {
+            result.abc = make_vocal_rest_abc(result.abc);
+            result.abc_token_ids = tokenizer.encode(result.abc);
+        }
+        const auto score = inspect_abc_score(result.abc);
+        result.score_bars = score.bars;
+        result.score_duration_seconds = score.duration_seconds;
+        return result;
+    }
+
+    GeneratedPlan plan(
+        const SongRequest & request,
+        const GenerationRunOptions & run_options,
+        const GenerationControl & control) {
+        validate_request(request);
+        check_cancelled(control);
+        return plan_effective(effective_request(request), run_options, control);
+    }
+
+    GeneratedSong generate(
+        const SongRequest & request,
+        const GenerationRunOptions & run_options,
+        const GenerationControl & control) {
+        validate_request(request);
+        check_cancelled(control);
+        auto effective = effective_request(request);
+        GeneratedSong result;
+        if (effective.symbolic_mode != SymbolicMode::off) {
+            auto plan = plan_effective(effective, run_options, control);
+            result.abc = std::move(plan.abc);
+            result.abc_token_ids = std::move(plan.abc_token_ids);
+            result.abc_truncated = plan.abc_truncated;
+            result.score_bars = plan.score_bars;
+            result.score_duration_seconds = plan.score_duration_seconds;
             if (effective.instrumental) {
                 effective.lyrics = make_instrumental_lyrics(result.abc);
             }
-            const auto score = inspect_abc_score(result.abc);
-            result.score_bars = score.bars;
-            result.score_duration_seconds = score.duration_seconds;
         }
 
         const std::optional<std::vector<std::int32_t>> abc_ids =
@@ -256,7 +289,8 @@ public:
                 control.on_progress(GenerationStage::decode, current, total);
             };
         }
-        result.audio = vae.decode(result.latents, decode_control);
+        if (!vae) vae = std::make_unique<VaeDecoder>(vae_path, vae_options);
+        result.audio = vae->decode(result.latents, decode_control);
         if (control.on_progress) control.on_progress(GenerationStage::complete, 1, 1);
         return result;
     }
@@ -264,7 +298,9 @@ public:
     GenerationPipelineOptions options;
     TextTokenizer tokenizer;
     AutoregressiveModel autoregressive;
-    VaeDecoder vae;
+    std::string vae_path;
+    VaeRuntimeOptions vae_options;
+    std::unique_ptr<VaeDecoder> vae;
 };
 
 GenerationPipeline::GenerationPipeline(
@@ -278,6 +314,24 @@ GenerationPipeline::GenerationPipeline(
 GenerationPipeline::~GenerationPipeline() = default;
 GenerationPipeline::GenerationPipeline(GenerationPipeline &&) noexcept = default;
 GenerationPipeline & GenerationPipeline::operator=(GenerationPipeline &&) noexcept = default;
+
+GeneratedPlan GenerationPipeline::plan(const SongRequest & request) {
+    return impl_->plan(
+        request,
+        {impl_->options.generation, impl_->options.flow,
+         impl_->options.semantic_budget_explicit},
+        {});
+}
+
+GeneratedPlan GenerationPipeline::plan(
+    const SongRequest & request,
+    const GenerationRunOptions & options,
+    const GenerationControl & control) {
+    if (options.flow.context_length > 24576) {
+        throw std::invalid_argument("YuE2 flow context exceeds generation context");
+    }
+    return impl_->plan(request, options, control);
+}
 
 GeneratedSong GenerationPipeline::generate(const SongRequest & request) {
     return impl_->generate(

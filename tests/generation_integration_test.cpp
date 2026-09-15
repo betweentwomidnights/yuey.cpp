@@ -27,8 +27,17 @@ int main(int argc, char ** argv) {
     request.style = "acoustic, intimate";
     request.lyrics = "[Verse]\nA quiet line";
     request.symbolic_mode = yue2::SymbolicMode::full;
-    request.abc = "X:1\nM:4/4\nK:C\nC2 E2 G4|";
+    request.abc =
+        "X:1\nM:4/4\nL:1/32\nQ:1/4=120\n"
+        "V: Vocal clef=treble\nV: Ins clef=treble\nK:C\n% verse\n"
+        "V: Vocal\nC8E8G16|\nV: Ins\nC,32|\n";
     request.seed = 831001;
+    const auto plan = pipeline.plan(request);
+    if (plan.abc != *request.abc || plan.abc_token_ids.empty() ||
+        plan.score_bars != 1 || plan.score_duration_seconds <= 0.0 ||
+        plan.abc_truncated) {
+        throw std::runtime_error("YuE2 planner-only pipeline result is invalid");
+    }
     const auto first = pipeline.generate(request);
     if (first.abc != *request.abc || first.abc_token_ids.empty() ||
         first.semantic_codec_ids.size() != 2 || !first.semantic_truncated ||

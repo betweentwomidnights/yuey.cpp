@@ -47,6 +47,14 @@ struct GenerationControl {
     std::function<bool()> should_cancel;
 };
 
+struct GeneratedPlan {
+    std::string abc;
+    std::vector<std::int32_t> abc_token_ids;
+    bool abc_truncated = false;
+    std::uint32_t score_bars = 0;
+    double score_duration_seconds = 0.0;
+};
+
 struct GeneratedSong {
     std::string abc;
     std::vector<std::int32_t> abc_token_ids;
@@ -74,6 +82,14 @@ public:
     GenerationPipeline & operator=(GenerationPipeline &&) noexcept;
     GenerationPipeline(const GenerationPipeline &) = delete;
     GenerationPipeline & operator=(const GenerationPipeline &) = delete;
+
+    // Symbolic planning only. The autoregressive model remains resident for a
+    // later render, while semantic, flow, and VAE work is skipped entirely.
+    GeneratedPlan plan(const SongRequest & request);
+    GeneratedPlan plan(
+        const SongRequest & request,
+        const GenerationRunOptions & options,
+        const GenerationControl & control = {});
 
     GeneratedSong generate(const SongRequest & request);
     GeneratedSong generate(

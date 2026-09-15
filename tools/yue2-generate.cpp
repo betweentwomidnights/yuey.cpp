@@ -22,7 +22,8 @@ namespace {
 
 void usage(const char * argv0) {
     std::cout
-        << "Usage: " << argv0 << " --prompt TEXT --out song.wav [options]\n\n"
+        << "Usage: " << argv0 << " --prompt TEXT --out song.wav [options]\n"
+        << "       " << argv0 << " --prompt TEXT --plan-only [--score-output song.abc] [options]\n\n"
         << "Models resolve from $YUE2_MODELS_DIR or ./models by default.\n\n"
         << "Options:\n"
         << "  --models-dir DIR      Model root (default $YUE2_MODELS_DIR or ./models)\n"
@@ -30,6 +31,7 @@ void usage(const char * argv0) {
         << "  --model/--vae/--tokenizer PATH  Override resolved component paths\n"
         << "  --prompt, --style TEXT          Production/style description\n"
         << "  --out, --output PATH            Output WAV\n"
+        << "  --plan-only          Generate/validate the ABC plan without rendering audio\n"
         << "  --bars N             Fit the planned score to N bars\n"
         << "  --ending MODE        natural or outro (default outro with --bars)\n"
         << "  --outro-bars N       Planner-tail bars retained by outro mode (default 4)\n"
@@ -263,8 +265,11 @@ int main(int argc, char ** argv) {
             value_after(argc, argv, "--model", false),
             value_after(argc, argv, "--vae", false),
             value_after(argc, argv, "--tokenizer", false));
-        const auto output = std::filesystem::path(
-            first_value_after(argc, argv, {"--out", "--output"}));
+        const bool plan_only = has(argc, argv, "--plan-only");
+        const auto output_value = first_value_after(
+            argc, argv, {"--out", "--output"}, !plan_only);
+        const auto output = std::filesystem::path(output_value);
+        const auto score_output = value_after(argc, argv, "--score-output", false);
         options.autoregressive.device = value_after(argc, argv, "--device", false);
         if (options.autoregressive.device.empty()) {
             options.autoregressive.device = environment("YUE2_DEVICE");
@@ -403,11 +408,26 @@ int main(int argc, char ** argv) {
             model_paths.model, model_paths.vae, model_paths.tokenizer, options);
         yue2::GenerationRunOptions run{options.generation, options.flow};
         run.semantic_budget_explicit = semantic_budget_explicit;
+        if (plan_only) {
+            const auto result = pipeline.plan(request, run);
+            if (!score_output.empty()) {
+                write_text(score_output, result.abc);
+                std::cerr << "wrote " << score_output << " (" << result.score_bars
+                          << " score bars, " << result.score_duration_seconds
+                          << " seconds)\n";
+            } else {
+                std::cout << result.abc;
+                if (!result.abc.empty() && result.abc.back() != '\n') std::cout << '\n';
+            }
+            if (result.abc_truncated) {
+                std::cerr << "warning: ABC generation reached its token limit\n";
+            }
+            return 0;
+        }
         const auto result = pipeline.generate(request, run);
         yue2::audio::write_wav_float(
             output, result.audio.interleaved_samples,
             result.audio.sample_rate, result.audio.channels);
-        const auto score_output = value_after(argc, argv, "--score-output", false);
         if (!score_output.empty()) write_text(score_output, result.abc);
         std::cout << "wrote " << output << " (" << result.semantic_codec_ids.size()
                   << " semantic frames, "

@@ -191,7 +191,7 @@ void usage(const char * executable) {
         << "  --host IPV4                  Bind address (default 127.0.0.1)\n"
         << "  --port N                     Port (default 8007, YUE2_PORT)\n"
         << "  --max-body-mb N              Upload limit (default 512)\n\n"
-        << "Routes: GET /, GET /health, GET /props, GET /loras, POST /generate, POST /cover, POST /transcribe,\n"
+        << "Routes: GET /, GET /health, GET /props, GET /loras, POST /plan, POST /generate, POST /cover, POST /transcribe,\n"
         << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload\n";
 }
 
@@ -472,7 +472,7 @@ HttpResponse failure(int status, const std::string & message) {
 // ---------------------------------------------------------------------------
 // Jobs
 
-enum class JobKind { generate, cover, transcribe };
+enum class JobKind { plan, generate, cover, transcribe };
 
 struct Job {
     std::string id;
@@ -544,6 +544,7 @@ public:
             if (path == "/health") return get ? health() : not_allowed();
             if (path == "/props") return get ? props() : not_allowed();
             if (path == "/loras") return get ? loras() : not_allowed();
+            if (path == "/plan") return post ? submit(request, JobKind::plan) : not_allowed();
             if (path == "/generate") return post ? submit(request, JobKind::generate) : not_allowed();
             if (path == "/cover") return post ? submit(request, JobKind::cover) : not_allowed();
             if (path == "/transcribe") return post ? submit(request, JobKind::transcribe) : not_allowed();
@@ -635,7 +636,7 @@ private:
         std::string body =
             "{\"success\":true,\"service\":\"yue2\",\"api_version\":1,\"version\":" +
             json::quote(yue2::version()) +
-            ",\"capabilities\":{\"generate\":true,\"transcribe\":true,\"cover\":true,"
+            ",\"capabilities\":{\"plan\":true,\"generate\":true,\"transcribe\":true,\"cover\":true,"
             "\"planning_controls\":true,\"instrumental\":true,"
             "\"instrumental_best_effort\":true,\"vocal_rest_experiment\":true,"
             "\"score_editing\":true,\"score_aligned_generation\":true,"
@@ -714,7 +715,7 @@ private:
         if (kind == JobKind::cover && present(root, "abc")) {
             throw std::invalid_argument("/cover scores audio_data itself; use /generate to supply abc");
         }
-        if (kind != JobKind::generate) {
+        if (kind == JobKind::cover || kind == JobKind::transcribe) {
             const auto encoded = json::string(root, "audio_data");
             if (encoded.empty()) throw std::invalid_argument("audio_data (base64 WAV) is required");
             const auto wav = yue2::server::base64_decode(encoded);
@@ -941,6 +942,13 @@ private:
                     body += ",\"chords.mid\":\"" + job.chords_midi_data + "\"";
                 }
                 body += "},\"duration\":" + real(job.duration_seconds) + ",\"events\":" + job.events_json;
+            } else if (job.kind == JobKind::plan) {
+                body += ",\"abc\":" + json::quote(job.abc) +
+                    ",\"meta\":{\"seed\":" + std::to_string(job.song.seed) +
+                    ",\"score_bars\":" + std::to_string(job.score_bars) +
+                    ",\"score_duration\":" + real(job.score_duration_seconds) +
+                    ",\"encoding\":" + json::quote(job.encoding) +
+                    ",\"abc_truncated\":" + json_bool(job.abc_truncated) + "}";
             } else {
                 // Base64 needs no JSON escaping.
                 body += ",\"audio_data\":\"" + job.audio_data + "\",\"abc\":" + json::quote(job.abc) +
@@ -1026,8 +1034,9 @@ private:
     void execute(Job & job) {
         try {
             if (job.cancel.load()) throw std::runtime_error("cancelled");
-            if (job.kind != JobKind::generate) transcribe(job);
-            if (job.kind != JobKind::transcribe) generate(job);
+            if (job.kind == JobKind::cover || job.kind == JobKind::transcribe) transcribe(job);
+            if (job.kind == JobKind::plan) plan(job);
+            if (job.kind == JobKind::generate || job.kind == JobKind::cover) generate(job);
         } catch (const std::exception & error) {
             // Whatever failed may have been an allocation; hand the memory back.
             if (!job.keep_models) release_models();
@@ -1146,6 +1155,34 @@ private:
         job.semantic_budget = song.semantic_budget;
         job.duration_seconds = static_cast<double>(song.audio.interleaved_samples.size()) /
             (static_cast<double>(song.audio.sample_rate) * song.audio.channels);
+        complete_locked(job);
+    }
+
+    void plan(Job & job) {
+        update(job, "planning", "load", 0, 0, 0);
+        load_generator(job.loras, job.encoding);
+
+        yue2::GenerationControl control;
+        control.should_cancel = [&job]() { return job.cancel.load(); };
+        control.on_progress = [&](yue2::GenerationStage stage, std::uint32_t current,
+                                  std::uint32_t total) {
+            if (stage != yue2::GenerationStage::abc) return;
+            const auto progress = total
+                ? static_cast<int>(99ULL * current / total)
+                : 0;
+            update(job, "planning", "abc", progress, current, total);
+        };
+        auto result = generator_->plan(job.song, job.run, control);
+        if (!job.keep_models) {
+            generator_.reset();
+            generator_loaded_.store(false);
+        }
+
+        std::lock_guard<std::mutex> lock(jobs_mutex_);
+        job.abc = std::move(result.abc);
+        job.abc_truncated = result.abc_truncated;
+        job.score_bars = result.score_bars;
+        job.score_duration_seconds = result.score_duration_seconds;
         complete_locked(job);
     }
 

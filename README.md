@@ -82,6 +82,12 @@ Run a 16-bar generation directly from the CLI:
 yue2-generate --encoding q4_k_m --instrumental --prompt "dreamy synth pop" --bars 16 --ending outro --bpm 95 --key "C# minor" --out song.wav
 ```
 
+Generate only the inexpensive editable plan before committing to audio:
+
+```powershell
+yue2-generate --encoding q4_k_m --prompt "dreamy synth pop" --bpm 95 --key "C# minor" --plan-only --score-output song.abc
+```
+
 Omit `--instrumental` and use either `--lyrics "..."` or
 `--lyrics-file .\lyrics.txt` for a vocal generation.
 Instrumental mode can still produce occasional sung material or vocal samples;
