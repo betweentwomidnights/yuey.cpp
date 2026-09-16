@@ -44,6 +44,10 @@ struct FlowOptions {
 struct AutoregressiveControl {
     std::function<void(std::uint32_t current, std::uint32_t total)> on_progress;
     std::function<bool()> should_cancel;
+    // Called only when the model proposes the phase end token. Return false
+    // to suppress that token and sample the next-best allowed token instead.
+    // The history contains generated tokens, excluding the proposed end.
+    std::function<bool(const std::vector<std::int32_t> & history)> allow_stop;
 };
 
 class AutoregressiveSession {

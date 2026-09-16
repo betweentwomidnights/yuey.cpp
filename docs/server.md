@@ -192,7 +192,10 @@ dragging even when the user does not want generated audio.
 - **`target_bars`** is the preferred musical-length control. With
   **`ending: "outro"`**, yuey retains the score opening plus `outro_bars` from
   the planner's genuine tail, producing an exact bar-length score before audio
-  generation. Omit it with **`ending: "natural"`** to keep the complete plan.
+  generation. While planning, an early `ABC_END` is suppressed until this bar
+  floor is reached; the model therefore continues composing instead of failing
+  merely because its first proposed ending was too short. Omit it with
+  **`ending: "natural"`** to keep the complete plan.
 - Semantic generation normally prevents `MUSIC_END` before the accepted
   score's nominal final bar, derives a conservative safety budget beyond it,
   and then stops naturally. `max_seconds`, legacy `duration`,

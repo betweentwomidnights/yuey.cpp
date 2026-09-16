@@ -850,7 +850,8 @@ std::int32_t sample_token(
     const std::vector<std::int32_t> & history,
     std::uint32_t step,
     AutoregressivePhase phase,
-    std::mt19937_64 & random) {
+    std::mt19937_64 & random,
+    bool allow_stop = true) {
     const auto stop = phase == AutoregressivePhase::abc ? kAbcEndToken : kMusicEndToken;
     const auto begin = phase == AutoregressivePhase::abc ? 0 : kCodecOffset;
     const auto end = phase == AutoregressivePhase::abc ? kEodToken : kCodecOffset + kCodecSize;
@@ -881,7 +882,7 @@ std::int32_t sample_token(
         if (std::isfinite(score)) candidates.push_back({token, score, 0.0});
     };
     for (std::int32_t token = begin; token < end; ++token) add(token);
-    if (step >= sampling.min_tokens) add(stop);
+    if (allow_stop && step >= sampling.min_tokens) add(stop);
     if (candidates.empty()) throw ar_error("sampler has no finite allowed logits");
 
     if (sampling.temperature == 0.0F) {
@@ -1020,8 +1021,12 @@ AutoregressiveResult AutoregressiveModel::generate(
         if (control.should_cancel && control.should_cancel()) {
             throw std::runtime_error("YuE2 generation cancelled");
         }
-        const auto token = sample_token(
+        auto token = sample_token(
             logits, sampling, result.tokens, step, phase, random);
+        if (token == stop && control.allow_stop && !control.allow_stop(result.tokens)) {
+            token = sample_token(
+                logits, sampling, result.tokens, step, phase, random, false);
+        }
         if (control.on_progress) control.on_progress(step + 1, sampling.max_tokens);
         if (token == stop) {
             result.reached_end = true;
@@ -1069,8 +1074,12 @@ AutoregressiveResult AutoregressiveModel::generate_cfg(
             guided[index] = negative_logits[index] +
                 guidance_scale * (positive_logits[index] - negative_logits[index]);
         }
-        const auto token = sample_token(
+        auto token = sample_token(
             guided, sampling, result.tokens, step, phase, random);
+        if (token == stop && control.allow_stop && !control.allow_stop(result.tokens)) {
+            token = sample_token(
+                guided, sampling, result.tokens, step, phase, random, false);
+        }
         if (control.on_progress) control.on_progress(step + 1, sampling.max_tokens);
         if (token == stop) {
             result.reached_end = true;

@@ -148,10 +148,24 @@ public:
                 seeded_abc_ids = tokenizer.encode(*effective.abc_prefix);
                 initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
             }
+            auto planning_control = ar_control(control, GenerationStage::abc);
+            if (effective.target_bars != 0) {
+                planning_control.allow_stop = [this, &seeded_abc_ids, target = effective.target_bars](
+                                                  const std::vector<std::int32_t> & generated) {
+                    try {
+                        auto ids = seeded_abc_ids;
+                        ids.insert(ids.end(), generated.begin(), generated.end());
+                        return inspect_abc_score(tokenizer.decode(ids)).bars >= target;
+                    } catch (const std::exception &) {
+                        // An incomplete score cannot satisfy the requested bar floor.
+                        return false;
+                    }
+                };
+            }
             const auto planned = autoregressive.generate(
                 initial, run_options.generation.abc,
                 AutoregressivePhase::abc, effective.seed,
-                ar_control(control, GenerationStage::abc));
+                planning_control);
             result.abc_token_ids = std::move(seeded_abc_ids);
             result.abc_token_ids.insert(
                 result.abc_token_ids.end(), planned.tokens.begin(), planned.tokens.end());
