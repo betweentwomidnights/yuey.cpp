@@ -103,6 +103,7 @@ int main(int argc, char ** argv) {
            result.duration_seconds);
     api->transcription_result_free(&result);
 
+    api->transcriber_unload(context);
     cancel_now = 1;
     status = api->transcribe(context, &request, &result, &error);
     if (status != YUE2_STATUS_CANCELLED_V1 || result.abc != NULL) {

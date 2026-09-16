@@ -125,6 +125,7 @@ int main(int argc, char ** argv) {
         api->generator_destroy(context);
         return 1;
     }
+    api->generator_unload(context);
     api->generation_result_init(&second);
     status = api->generate(context, &request, &second, &error);
     pcm_bytes = (size_t)first.frame_count * (size_t)first.channels * sizeof(float);
