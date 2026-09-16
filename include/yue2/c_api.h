@@ -1,5 +1,7 @@
-/* Stable C ABI for embedding yue2.cpp in gary4local, JUCE, and other hosts.
+/* Compatibility direct exports for existing yue2.cpp embedders.
  *
+ * New integrations should use the versioned API table in c_api_v1.h, included
+ * below. These functions remain available while downstream callers migrate.
  * Contexts are intentionally split: transcription and generation have
  * independent model sets and can be loaded or released separately. Calls on
  * one context are not reentrant. No C++ exception crosses this boundary.
@@ -9,20 +11,11 @@
 #ifndef YUE2_C_API_H
 #define YUE2_C_API_H
 
-#include <stdint.h>
-
-#if defined(_WIN32) && defined(YUE2_BUILD_DLL)
-#  define YUE2_API __declspec(dllexport)
-#else
-#  define YUE2_API
-#endif
+#include "yue2/c_api_v1.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef struct yue2_transcriber_context yue2_transcriber_context;
-typedef struct yue2_generator_context yue2_generator_context;
 
 /* Called synchronously on the inference thread. fraction is stage-local 0..1.
  * Generation stages are "abc", "semantic", "flow", "decode", "complete";

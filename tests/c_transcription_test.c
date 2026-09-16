@@ -1,4 +1,4 @@
-#include "yue2/c_api.h"
+#include "yue2/c_api_v1.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -9,35 +9,43 @@
 static int progress_calls = 0;
 static int cancel_now = 0;
 
-static void on_progress(
-    void * user, const char * stage, uint32_t current, uint32_t total, float fraction) {
+static void YUE2_CALL on_progress(void * user, const yue2_progress_v1 * progress) {
     (void)user;
-    if (strcmp(stage, "transcription") == 0 && current <= total &&
-        fraction >= 0.0f && fraction <= 1.0f) {
+    if (progress->stage == YUE2_PROGRESS_TRANSCRIPTION_V1 &&
+        progress->current <= progress->total && progress->fraction >= 0.0f &&
+        progress->fraction <= 1.0f) {
         ++progress_calls;
     }
 }
 
-static int32_t should_cancel(void * user) {
+static int32_t YUE2_CALL should_cancel(void * user) {
     (void)user;
     return cancel_now;
 }
 
+static int midi_file(const uint8_t * data, uint64_t size) {
+    return data && size >= 22 && memcmp(data, "MThd", 4) == 0;
+}
+
 int main(int argc, char ** argv) {
     enum { frames = 4800, channels = 2, sample_rate = 24000 };
-    char error[512] = {0};
+    const yue2_api_v1 * api;
+    yue2_error_v1 error = { sizeof error };
     float * planar;
-    yue2_transcriber_config config;
-    yue2_transcription_request request;
-    yue2_transcription_result result;
-    yue2_transcriber_context * context;
+    yue2_transcriber_config_v1 config = { sizeof config };
+    yue2_transcription_request_v1 request = { sizeof request };
+    yue2_transcription_result_v1 result = { sizeof result };
+    yue2_transcriber_context * context = NULL;
     int index;
-    int rc;
+    yue2_status_v1 status;
 
     if (argc < 2 || argc > 3) {
         fprintf(stderr, "usage: yue2-c-transcription-test TRANSCRIPTION.gguf [DEVICE]\n");
         return 2;
     }
+    api = yue2_get_api(YUE2_ABI_VERSION_1);
+    if (!api || api->size < YUE2_API_V1_MIN_SIZE) return 1;
+    api->error_init(&error);
     planar = (float *)malloc((size_t)frames * channels * sizeof(float));
     if (!planar) return 1;
     for (index = 0; index < frames; ++index) {
@@ -47,28 +55,23 @@ int main(int argc, char ** argv) {
         planar[frames + index] = value * 0.5f;
     }
 
-    memset(&config, 0, sizeof config);
-    config.size = (uint32_t)sizeof config;
+    api->transcriber_config_init(&config);
     config.model_path = argv[1];
     if (argc == 3) config.device = argv[2];
-    context = yue2_transcriber_create(&config, error, (int32_t)sizeof error);
-    if (!context) {
-        fprintf(stderr, "create failed: %s\n", error);
+    status = api->transcriber_create(&config, &context, &error);
+    if (status != YUE2_STATUS_OK_V1) {
+        fprintf(stderr, "create failed (%d): %s\n", status, error.message);
         free(planar);
         return 1;
     }
 
-    memset(&request, 0, sizeof request);
-    request.size = (uint32_t)sizeof request;
-    request.samples = planar;
-    request.frame_count = frames;
-    request.sample_rate = sample_rate;
-    request.channels = channels;
-    request.layout = YUE2_AUDIO_PLANAR;
-    request.options_set = 1;
-    request.melody_only = 1;
-    request.preset = YUE2_TRANSCRIPTION_STANDARD;
-    request.timing_set = 1;
+    api->transcription_request_init(&request);
+    request.audio.samples = planar;
+    request.audio.frame_count = frames;
+    request.audio.sample_rate = sample_rate;
+    request.audio.channels = channels;
+    request.audio.layout = YUE2_AUDIO_PLANAR_V1;
+    request.melody_only = 0;
     request.window_seconds = 0.2f;
     request.overlap_seconds = 0.0f;
     request.lookahead_seconds = 0.0f;
@@ -76,39 +79,42 @@ int main(int argc, char ** argv) {
     request.on_progress = on_progress;
     request.should_cancel = should_cancel;
 
-    memset(&result, 0, sizeof result);
-    result.size = (uint32_t)sizeof result;
-    rc = yue2_transcribe(context, &request, &result, error, (int32_t)sizeof error);
-    if (rc != 0 || !result.abc || strncmp(result.abc, "X:1\n", 4) != 0 ||
-        !result.midi || result.midi_size < 22 ||
-        memcmp(result.midi, "MThd", 4) != 0 ||
+    api->transcription_result_init(&result);
+    status = api->transcribe(context, &request, &result, &error);
+    if (status != YUE2_STATUS_OK_V1 || !result.abc ||
+        strncmp(result.abc, "X:1\n", 4) != 0 || !midi_file(result.midi, result.midi_size) ||
+        !midi_file(result.melody_midi, result.melody_midi_size) ||
+        !midi_file(result.vocal_midi, result.vocal_midi_size) ||
+        !midi_file(result.instrumental_midi, result.instrumental_midi_size) ||
+        !midi_file(result.chords_midi, result.chords_midi_size) ||
         !result.events_json || strstr(result.events_json, "\"events\"") == NULL ||
         result.duration_seconds < 0.199 || result.duration_seconds > 0.201 ||
         progress_calls == 0) {
-        fprintf(stderr, "transcribe failed or returned invalid data (%d): %s\n", rc, error);
-        yue2_free_transcription_result(&result);
-        yue2_transcriber_free(context);
+        fprintf(stderr, "transcribe failed or returned invalid data (%d): %s\n",
+                status, error.message);
+        api->transcription_result_free(&result);
+        api->transcriber_destroy(context);
         free(planar);
         return 1;
     }
-    printf("C ABI transcription events=%llu midi=%llu duration=%.3f\n",
+    printf("C ABI V1 transcription events=%llu midi=%llu duration=%.3f\n",
            (unsigned long long)result.event_count,
            (unsigned long long)result.midi_size,
            result.duration_seconds);
-    yue2_free_transcription_result(&result);
+    api->transcription_result_free(&result);
 
     cancel_now = 1;
-    result.size = (uint32_t)sizeof result;
-    rc = yue2_transcribe(context, &request, &result, error, (int32_t)sizeof error);
-    if (rc == 0 || strstr(error, "cancelled") == NULL || result.abc != NULL) {
-        fprintf(stderr, "cooperative transcription cancellation failed (%d): %s\n", rc, error);
-        yue2_free_transcription_result(&result);
-        yue2_transcriber_free(context);
+    status = api->transcribe(context, &request, &result, &error);
+    if (status != YUE2_STATUS_CANCELLED_V1 || result.abc != NULL) {
+        fprintf(stderr, "cooperative transcription cancellation failed (%d): %s\n",
+                status, error.message);
+        api->transcription_result_free(&result);
+        api->transcriber_destroy(context);
         free(planar);
         return 1;
     }
-    yue2_free_transcription_result(&result);
-    yue2_transcriber_free(context);
+    api->transcription_result_free(&result);
+    api->transcriber_destroy(context);
     free(planar);
     return 0;
 }

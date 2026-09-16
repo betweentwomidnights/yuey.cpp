@@ -1,127 +1,112 @@
 # Embedding yue2.cpp
 
-`yue2.dll` / `libyue2.so` exposes a pure-C ABI for gary4local, JUCE, and
-other hosts that cannot safely exchange C++ standard-library objects across a
-module boundary. The public contract is
-[`include/yue2/c_api.h`](../include/yue2/c_api.h).
+`yue2.dll` / `libyue2.so` exposes a pure-C API for gary4local, JUCE, and other
+hosts. New integrations should include
+[`include/yue2/c_api_v1.h`](../include/yue2/c_api_v1.h), resolve
+`yue2_get_api(YUE2_ABI_VERSION_1)`, and initialize every structure through the
+returned table.
 
-Transcription and generation use separate contexts. This is deliberate: a host
-that only needs audio-to-score loads the SheetSage2/MERT2 GGUF without also
-paying for the 3B generation model and VAE. A context owns its model weights and
-backend scheduler, remains resident across calls, and is not reentrant. Use one
-worker queue per context, or create multiple contexts only when the host can
-afford duplicate weights.
+The complete versioning, ownership, and callback rules live in
+[`C_ABI_V1.md`](C_ABI_V1.md).
 
-## In-memory transcription
+## Transcribe audio already owned by the host
 
-The transcription request accepts float PCM as either ordinary interleaved
-frames or channel-planar buffers (the native shape of a JUCE `AudioBuffer`). It
-downmixes without normalization, resamples internally to 24 kHz, and returns
-ABC, Standard MIDI bytes, and a lossless events JSON document. The C result's
-MIDI is the combined format-1 arrangement: conductor metadata, active named
-melody tracks, and a chord-note track in full mode. The C++
-`TranscriptionResult::midi_exports` additionally exposes the separate melody,
-vocal, instrumental, and chord files.
+Transcription and generation have separate resident contexts. A plugin can load
+only SheetSage2/MERT2 for audio-to-score and leave the much larger generator on
+a remote service.
 
 ```c
-#include "yue2/c_api.h"
+const yue2_api_v1 *api = yue2_get_api(YUE2_ABI_VERSION_1);
 
-char error[512] = {0};
-yue2_transcriber_config config = {0};
-config.size = sizeof config;
+yue2_error_v1 error = { sizeof error };
+api->error_init(&error);
+
+yue2_transcriber_config_v1 config = { sizeof config };
+api->transcriber_config_init(&config);
 config.model_path = "sheetsage2-mert2-0.7B-v1.0-F16.gguf";
 config.device = "cuda";
-yue2_transcriber_context *ctx =
-    yue2_transcriber_create(&config, error, sizeof error);
 
-yue2_transcription_request request = {0};
-request.size = sizeof request;
-request.samples = planar_samples;
-request.frame_count = frames_per_channel;
-request.channels = channel_count;
-request.sample_rate = host_sample_rate;
-request.layout = YUE2_AUDIO_PLANAR;
-
-yue2_transcription_result result = {0};
-result.size = sizeof result;
-if (yue2_transcribe(ctx, &request, &result, error, sizeof error) == 0) {
-    use_abc(result.abc);
-    use_midi(result.midi, result.midi_size);
-    yue2_free_transcription_result(&result);
+yue2_transcriber_context *context = NULL;
+if (api->transcriber_create(&config, &context, &error) != YUE2_STATUS_OK_V1) {
+    log_error(error.message);
+    return;
 }
-yue2_transcriber_free(ctx);
+
+yue2_transcription_request_v1 request = { sizeof request };
+api->transcription_request_init(&request);
+request.audio.samples = planar_samples;
+request.audio.frame_count = frames_per_channel;
+request.audio.channels = channel_count;
+request.audio.sample_rate = host_sample_rate;
+request.audio.layout = YUE2_AUDIO_PLANAR_V1;
+request.melody_only = 0;
+
+yue2_transcription_result_v1 result = { sizeof result };
+api->transcription_result_init(&result);
+if (api->transcribe(context, &request, &result, &error) == YUE2_STATUS_OK_V1) {
+    use_score(result.abc);
+    use_midi(result.midi, result.midi_size);
+    use_midi(result.chords_midi, result.chords_midi_size);
+}
+api->transcription_result_free(&result);
+api->transcriber_destroy(context);
 ```
 
-## Resident generation
+Input may be planar (the native shape of a JUCE `AudioBuffer`) or interleaved.
+The library downmixes without peak normalization and resamples internally.
 
-The generator context loads the combined AR/NAR GGUF, VAE GGUF, and tokenizer
-once. Each request may use an external ABC score, ask the AR model to plan one,
-seed planning with `abc_prefix`, or disable symbolic conditioning. The prefix is
-placed immediately after `ABC_START`, must end with a newline, and is mutually
-exclusive with a complete `abc`; it lets a host lock a validated tempo/key/meter
-header before the model composes any notes. Token budgets, sampling, guidance,
-and flow steps can vary per call without reloading the model. Results contain
-interleaved 48 kHz stereo PCM plus ABC, raw semantic codec IDs, and
-`[frames,64]` latents. Older request structs remain ABI-compatible because the
-new controls are size-gated tail fields.
+## Plan, edit, and render
 
-Native C++ callers can construct the same validated prefix without formatting
-ABC themselves:
-
-```cpp
-yue2::PlanningHeader planning{95, 4, 4, "C# minor"};
-request.abc_prefix = yue2::make_planning_abc_prefix(planning);
-request.target_bars = 16;
-request.ending_mode = yue2::EndingMode::outro;
-request.outro_bars = 4;
-```
-
-With no explicit `semantic_max_tokens`, generation prevents `MUSIC_END` before
-the completed score's final bar and derives a conservative safety budget beyond
-it. This keeps musical length in the score; token limits remain an advanced
-failure ceiling.
-
-The HTTP server exposes this as a typed `planning` object. A client omits that
-object for automatic planning; it never sends partially assembled header text.
-
-Generation LoRAs are fixed when the resident context is created. They remain
-unmerged on the same backend as the base model, so hosts can use F16 or F32
-adapter factors with an unmodified quantized base:
+A generator context owns the combined AR/NAR GGUF, VAE GGUF, tokenizer, backend,
+and optional resident LoRA stack. Per-call sampling, score controls, callbacks,
+and seeds live in `yue2_generation_request_v1`.
 
 ```c
-yue2_lora_adapter adapters[2] = {0};
-adapters[0].size = sizeof adapters[0];
-adapters[0].path = "genre.gguf";
-adapters[0].strength = 0.8f;
-adapters[1].size = sizeof adapters[1];
-adapters[1].path = "instrument.gguf";
-adapters[1].strength = 0.5f;
-
-yue2_generator_config config = {0};
-config.size = sizeof config;
+yue2_generator_config_v1 config = { sizeof config };
+api->generator_config_init(&config);
 config.model_path = "yue2-3.6B-v1.0-Q4_K_M.gguf";
 config.vae_path = "yue2-vae-v1.0-F16.gguf";
 config.tokenizer_path = "qwen.tiktoken";
 config.device = "cuda";
-config.lora_adapters = adapters;
-config.lora_adapter_count = 2;
+
+yue2_generator_context *generator = NULL;
+if (api->generator_create(&config, &generator, &error) != YUE2_STATUS_OK_V1) {
+    log_error(error.message);
+    return;
+}
+
+yue2_generation_request_v1 request = { sizeof request };
+api->generation_request_init(&request);
+request.style = "dry acoustic trio, close room";
+request.instrumental = 1;
+
+yue2_plan_result_v1 plan = { sizeof plan };
+api->plan_result_init(&plan);
+if (api->plan(generator, &request, &plan, &error) == YUE2_STATUS_OK_V1) {
+    const char *edited_abc = edit_score(plan.abc);
+    request.abc = edited_abc;
+}
+
+yue2_generation_result_v1 song = { sizeof song };
+api->generation_result_init(&song);
+if (api->generate(generator, &request, &song, &error) == YUE2_STATUS_OK_V1) {
+    play_interleaved(song.samples, song.frame_count,
+                     song.channels, song.sample_rate);
+}
+api->generation_result_free(&song);
+api->plan_result_free(&plan);
+api->generator_destroy(generator);
 ```
 
-The adapter converter and CLI syntax are documented in the main README. A
-checkpoint fingerprint in an adapter must match the base GGUF; a zero strength
-still validates and loads the adapter but bypasses its graph operations.
+All returned strings, MIDI buffers, token arrays, latents, and PCM are owned by
+the shared library. Always use the matching result-free function, including on
+cancelled or failed calls.
 
-All result pointers are allocated by the shared library. Release them only with
-`yue2_free_transcription_result()` or `yue2_free_generation_result()`; this
-keeps the allocator/CRT boundary correct on Windows.
+`transcriber_unload()` and `generator_unload()` release model/VRAM allocations
+without discarding the context configuration. The next operation reloads the
+same model set lazily. Context calls are not reentrant; serialize them through a
+worker queue.
 
-Both requests accept synchronous progress and cooperative-cancel callbacks.
-Generation reports `abc`, `semantic`, `flow`, `decode`, and `complete` stages;
-transcription reports completed windows. A callback runs on the inference
-thread, so it should only update atomics or enqueue a small message. Cancellation
-is checked between AR tokens, flow steps, VAE tiles, and transcription windows;
-an already-running backend graph completes before the call returns.
-
-The CMake target is enabled by `YUE2_BUILD_SHARED=ON` (the default). Windows
-produces `yue2.dll` plus `yue2-dll.lib`, avoiding a collision with the static
-`yue2.lib`; Unix produces `libyue2.so` alongside `libyue2.a`.
+The individual functions in [`c_api.h`](../include/yue2/c_api.h) are retained
+for compatibility. They are not the contract new downstream integrations should
+target.

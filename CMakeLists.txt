@@ -255,6 +255,10 @@ if(YUE2_BUILD_TESTS)
         target_link_libraries(yue2-c-api-test PRIVATE yue2_shared)
         add_test(NAME yue2-c-api-test COMMAND yue2-c-api-test)
 
+        add_executable(yue2-c-api-v1-contract-test tests/c_api_v1_contract.c)
+        target_link_libraries(yue2-c-api-v1-contract-test PRIVATE yue2_shared)
+        add_test(NAME yue2-c-api-v1-contract-test COMMAND yue2-c-api-v1-contract-test)
+
         # Manual real-weight pure-C generation smoke test:
         # yue2-c-generation-test MODEL.gguf VAE.gguf QWEN.TIKTOKEN [DEVICE] [LORA.gguf]
         add_executable(yue2-c-generation-test tests/c_generation_test.c)

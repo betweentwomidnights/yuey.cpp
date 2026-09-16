@@ -132,6 +132,7 @@ Copy the same model directory to the Mac before testing
 - [Architecture](docs/architecture.md)
 - [Server and web API](docs/server.md)
 - [C/C++ embedding](docs/embedding.md)
+- [C ABI V1 contract](docs/C_ABI_V1.md)
 - [GGUF naming, conversion, and quantization](docs/distribution.md)
 - [Numerical and listening validation](docs/validation.md)
 - [Pinned upstream references](docs/reference-lock.md)
