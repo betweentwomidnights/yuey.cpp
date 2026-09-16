@@ -194,7 +194,8 @@
             <div><label for="transcription-mode">score detail</label><select id="transcription-mode"><option value="full">full score + chords</option><option value="melody">melody only</option></select></div>
             <div><div class="field-title"><label for="remix-prompt">remix prompt</label><label class="check"><input id="remix-instrumental" type="checkbox" checked><span>keep instrumental <small>(best effort)</small></span></label></div><input id="remix-prompt" placeholder="optional for transcription"></div>
           </div>
-          <div class="help">keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections. turn it off when the source contains vocals you want yuey to retain.</div>
+          <div id="remix-lyrics-field" hidden><label for="remix-lyrics">lyrics <span class="help">· required for a vocal remix</span></label><textarea id="remix-lyrics" placeholder="type the source lyrics here, including section labels when available…"></textarea></div>
+          <div class="help" id="remix-vocal-help">keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections. turn it off when the source contains vocals you want yuey to retain.</div>
           <div class="actions"><button id="transcribe" class="primary">transcribe</button><button id="remix" class="secondary">transcribe + remix</button></div>
           <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
         </div>
@@ -276,6 +277,16 @@
   }
   $('instrumental').onchange = syncInstrumental;
   syncInstrumental();
+  function syncRemixInstrumental() {
+    const enabled = $('remix-instrumental').checked;
+    $('remix-lyrics-field').hidden = enabled;
+    $('remix-lyrics').disabled = enabled;
+    $('remix-vocal-help').textContent = enabled
+      ? "keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections."
+      : 'SheetSage2 transcribes the vocal melody, not its words. supply the lyrics you want yuey to retain.';
+  }
+  $('remix-instrumental').onchange = syncRemixInstrumental;
+  syncRemixInstrumental();
   function syncLengthControls() {
     const fitted = $('ending').value === 'outro';
     $('bars').disabled = !fitted;
@@ -866,7 +877,12 @@
     $('transcribe').disabled = $('remix').disabled = true;
     try {
       const payload = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
-      if (remix) Object.assign(payload, { style: $('remix-prompt').value, instrumental: $('remix-instrumental').checked, encoding: state.encoding });
+      if (remix) {
+        const instrumental = $('remix-instrumental').checked;
+        const lyrics = instrumental ? '' : $('remix-lyrics').value.trim();
+        if (!instrumental && !lyrics) throw new Error('add the source lyrics for a vocal remix, or enable keep instrumental');
+        Object.assign(payload, { style: $('remix-prompt').value, lyrics, instrumental, encoding: state.encoding });
+      }
       const result = await run(remix ? '/cover' : '/transcribe', payload, 'transform');
       if (result.abc) setScore(result.abc);
       if (remix) {

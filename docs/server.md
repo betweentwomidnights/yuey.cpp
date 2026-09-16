@@ -208,6 +208,9 @@ the same empty lyric-section/no-vocal conditioning as instrumental generation.
 This flag defaults to `false` at the API boundary so vocal covers are not
 silently stripped. The bundled UI exposes a separate, default-on **keep
 instrumental** control for remixes; it never borrows state from the Create tab.
+SheetSage2 transcribes the vocal melody but does not recognize lyric text. A
+vocal cover should therefore set `instrumental: false` and provide `lyrics`;
+otherwise YuE2 must invent words while following the recovered melody.
 
 ### Transcription requests
 
