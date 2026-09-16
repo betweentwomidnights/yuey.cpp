@@ -24,6 +24,7 @@
     nav { display: grid; gap: 6px; }
     .nav { border: 0; border-radius: 10px; padding: 10px 12px; color: var(--muted); background: transparent; text-align: left; }
     .nav:hover, .nav.active { color: var(--accent); background: #e620201f; }
+    .settings-nav { width: 100%; margin-top: 18px; border-top: 1px solid var(--line-soft); border-radius: 0 0 10px 10px; padding-top: 15px; }
     .backend { position: absolute; left: 20px; right: 20px; bottom: 22px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
     .backend strong { display: block; font-size: 12px; }
     .backend span { color: var(--muted); font-size: 11px; }
@@ -125,11 +126,14 @@
     .downloads { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
     .download { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); text-decoration: none; background: #101010; font-size: 11px; }
     .notice { padding: 13px 15px; border-left: 3px solid var(--accent); color: #d0d0d0; background: #e6202012; font-size: 12px; }
+    .score-slot:not(:empty) { margin-top: 18px; }
+    .score-origin { margin-bottom: 10px; color: var(--accent); font-size: 11px; font-weight: 720; letter-spacing: .4px; }
     @media (max-width: 850px) {
       .shell { grid-template-columns: 1fr; }
       aside { position: static; height: auto; padding: 16px; border-right: 0; border-bottom: 1px solid var(--line); }
       .brand { margin: 0 0 13px; }
-      nav { grid-template-columns: repeat(4, 1fr); }
+      nav { grid-template-columns: repeat(2, 1fr); }
+      .settings-nav { margin-top: 8px; border-top: 0; }
       .backend { position: static; margin-top: 12px; }
       main { padding: 25px 16px 50px; }
       .grid { grid-template-columns: 1fr; }
@@ -143,10 +147,9 @@
     <div class="brand"><span class="mark">y</span> yuey</div>
     <nav>
       <button class="nav active" data-view="create">create</button>
-      <button class="nav" data-view="transform">transcribe / remix</button>
-      <button class="nav" data-view="score">score</button>
-      <button class="nav" data-view="models">models</button>
+      <button class="nav" data-view="transform">remix</button>
     </nav>
+    <button class="nav settings-nav" data-view="models">models &amp; runtime</button>
     <div class="backend"><strong><i class="dot connecting"></i><span id="connection">connecting…</span></strong><span id="device-mini">local backend</span></div>
   </aside>
   <main>
@@ -178,17 +181,18 @@
           <div class="status" id="create-status"><div class="status-head"><b id="create-stage">queued</b><span id="create-percent">0%</span></div><div class="bar"><i id="create-bar"></i></div><div class="help" id="create-detail"></div></div>
         </div>
         <div>
-          <div class="card result" id="audio-result"><h2>latest render</h2><div class="help" id="render-meta"></div><audio id="player" controls></audio><div class="actions"><button class="secondary" id="open-score">edit generated score</button><a class="download" id="save-audio" download="yuey.wav">download wav</a></div></div>
-          <div class="card result" id="plan-result"><h2>latest plan</h2><div class="help" id="plan-meta"></div><div class="actions"><button class="primary" id="edit-plan">edit plan</button><button class="secondary" id="render-plan">render this plan</button></div></div>
+          <div class="card result" id="audio-result"><h2>latest render</h2><div class="help" id="render-meta"></div><audio id="player" controls></audio><div class="actions"><a class="download" id="save-audio" download="yuey.wav">download wav</a></div></div>
+          <div class="card result" id="plan-result"><h2>latest plan</h2><div class="help" id="plan-meta"></div><div class="actions"><button class="secondary" id="render-plan">render this plan</button></div></div>
           <div class="card" id="create-empty"><div class="empty">your rendered audio and generated planning score will appear here.</div></div>
         </div>
       </div>
+      <div class="score-slot" id="create-score-slot"></div>
     </section>
 
     <section class="view" id="view-transform">
       <div class="grid">
         <div class="card">
-          <h2>bring in audio</h2><p>transcribe to an editable score and multi-track midi, or remix immediately through the same transcription path.</p>
+          <h2>bring in audio</h2><p>transcribe to an editable score, reinterpret the source bars, or let yuey compose beyond them.</p>
           <label class="drop" id="drop"><input id="audio-file" type="file" accept="audio/wav,.wav"><span><b>drop a wav here or click to browse</b><span class="help">stereo or mono; decoded locally by yue2-server</span><span class="file-name" id="file-name"></span></span></label>
           <div class="row two">
             <div><label for="transcription-mode">score detail</label><select id="transcription-mode"><option value="full">full score + chords</option><option value="melody">melody only</option></select></div>
@@ -196,20 +200,23 @@
           </div>
           <div id="remix-lyrics-field" hidden><label for="remix-lyrics">lyrics <span class="help">· required for a vocal remix</span></label><textarea id="remix-lyrics" placeholder="type the source lyrics here, including section labels when available…"></textarea></div>
           <div class="help" id="remix-vocal-help">keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections. turn it off when the source contains vocals you want yuey to retain.</div>
-          <div class="actions"><button id="transcribe" class="primary">transcribe</button><button id="remix" class="secondary">transcribe + remix</button></div>
+          <div class="actions"><button id="transcribe" class="primary">transcribe</button><button id="remix" class="secondary">transcribe + remix</button><button id="continue" class="secondary">transcribe + continue</button></div>
+          <div class="help">continue preserves the transcribed score as a planning prefix, appends new sections, and re-renders the complete piece. it is not a waveform splice.</div>
           <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
         </div>
         <div>
-          <div class="card result" id="transcription-result"><h2 id="transform-result-title">transcription</h2><div class="help" id="transcription-meta"></div><div id="remix-audio" hidden><audio id="remix-player" controls></audio></div><div class="downloads" id="midi-downloads"></div><div class="actions"><button id="edit-transcription" class="primary">open score</button><a class="download" id="save-remix" download="yuey-remix.wav" hidden>download wav</a></div></div>
+          <div class="card result" id="transcription-result"><h2 id="transform-result-title">transcription</h2><div class="help" id="transcription-meta"></div><div id="remix-audio" hidden><audio id="remix-player" controls></audio></div><div class="downloads" id="midi-downloads"></div><div class="actions"><a class="download" id="save-remix" download="yuey-remix.wav" hidden>download wav</a></div></div>
           <div class="card" id="transform-empty"><div class="empty">the editable abc score and separate melody/chord midi files will appear after transcription.</div></div>
         </div>
       </div>
+      <div class="score-slot" id="transform-score-slot"></div>
     </section>
 
-    <section class="view" id="view-score">
+    <div id="score-workspace" hidden>
       <div class="grid">
         <div class="card">
-          <h2>score workspace</h2><p>drag across the roll to select notes, transpose them together, and shape each chord by root and quality.</p>
+          <div class="score-origin" id="score-origin"></div>
+          <h2>editable score</h2><p>this is the score driving the current render. drag across the roll to select notes, transpose them together, and shape each chord by root and quality.</p>
           <div class="editor-toolbar">
             <label>lane<select id="score-lane"><option value="Ins">instrument</option><option value="Vocal">vocal</option><option value="all">both</option></select></label>
             <label>key root<select id="score-key-root"><option>C</option><option>C#</option><option>Db</option><option>D</option><option>D#</option><option>Eb</option><option>E</option><option>F</option><option>F#</option><option>Gb</option><option>G</option><option>G#</option><option>Ab</option><option>A</option><option>A#</option><option>Bb</option><option>B</option></select></label>
@@ -222,16 +229,18 @@
         </div>
         <div>
           <div class="card">
-            <h2>regenerate from score</h2><p>change notes or headers, then ask yuey to reinterpret the edited score with a new production prompt.</p>
+            <h2 id="score-action-title">render edited score</h2><p id="score-action-copy">change notes or headers, then ask yuey to reinterpret the edited score with a new production prompt.</p>
             <label for="score-prompt">prompt</label><textarea id="score-prompt" placeholder="more intimate, brushed drums, darker synth textures…"></textarea>
+            <div class="field-title"><label for="score-lyrics">lyrics</label><label class="check"><input id="score-instrumental" type="checkbox"><span>instrumental <small>(best effort)</small></span></label></div>
+            <div id="score-lyrics-field"><textarea id="score-lyrics" placeholder="write or retain lyrics here…"></textarea></div>
             <label for="score-seed">seed</label><input id="score-seed" type="number" value="-1"><div class="help">audio length follows the edited score; there is no seconds cutoff.</div>
-            <div class="actions"><button id="score-generate" class="primary">regenerate score</button><button id="export-abc" class="secondary">save abc</button></div>
+            <div class="actions"><button id="score-generate" class="primary">render edited score</button><button id="score-continue" class="secondary" hidden>continue after edited score</button><button id="export-abc" class="secondary">save abc</button></div>
             <div class="status" id="score-status"><div class="status-head"><b id="score-stage">queued</b><span id="score-percent">0%</span></div><div class="bar"><i id="score-bar"></i></div><div class="help" id="score-detail"></div></div>
           </div>
           <div class="notice">double-click an empty part of the roll to add a snapped note. right-click selected notes to transpose, duplicate, or delete them. ctrl/cmd+d duplicates the complete selected bar range, including rhythm and chords.</div>
         </div>
       </div>
-    </section>
+    </div>
 
     <section class="view" id="view-models">
       <div class="grid">
@@ -247,8 +256,8 @@
 <div class="roll-menu" id="roll-menu"><div class="roll-menu-row"><button data-transpose="-12">−12</button><button data-transpose="-1">−1</button><button data-transpose="1">+1</button><button data-transpose="12">+12</button></div><button id="menu-duplicate">duplicate selected bars</button><button id="menu-delete">delete selected notes</button></div>
 <script>
   const $ = id => document.getElementById(id);
-  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
-  const titles = { create: 'create with yuey', transform: 'transcribe or remix', score: 'edit the score', models: 'local models' };
+  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreContext: null, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
+  const titles = { create: 'create with yuey', transform: 'remix or continue', models: 'models and runtime' };
   const chordRoots = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
   const chordQualities = [
     ['', 'major'], ['m', 'minor'], ['6', 'major 6'], ['m6', 'minor 6'], ['7', 'dominant 7'],
@@ -287,6 +296,13 @@
   }
   $('remix-instrumental').onchange = syncRemixInstrumental;
   syncRemixInstrumental();
+  function syncScoreInstrumental() {
+    const enabled = $('score-instrumental').checked;
+    $('score-lyrics-field').hidden = enabled;
+    $('score-lyrics').disabled = enabled;
+  }
+  $('score-instrumental').onchange = syncScoreInstrumental;
+  syncScoreInstrumental();
   function syncLengthControls() {
     const fitted = $('ending').value === 'outro';
     $('bars').disabled = !fitted;
@@ -682,7 +698,33 @@
     };
     shell.scrollLeft = previousScroll;
   }
-  function setScore(text) { $('abc').value = text || ''; state.scoreHistory = []; state.selection = []; renderScore(); }
+  function mountScoreWorkspace(context, origin, syncControls = true) {
+    const workspace = $('score-workspace');
+    $(context + '-score-slot').appendChild(workspace);
+    workspace.hidden = false;
+    state.scoreContext = context;
+    $('score-origin').textContent = origin || (context === 'transform' ? 'transcribed source score' : 'generated planning score');
+    const transform = context === 'transform';
+    $('score-action-title').textContent = transform ? 'remix the edited score' : 'render the edited score';
+    $('score-action-copy').textContent = transform
+      ? 'edit the transcription before reinterpreting these bars, or use it as the opening of a longer composition.'
+      : 'change notes or headers, then render this exact plan with a new production prompt.';
+    $('score-generate').textContent = transform ? 'remix edited score' : 'render edited score';
+    $('score-continue').hidden = !transform;
+    if (syncControls) {
+      $('score-instrumental').checked = transform ? $('remix-instrumental').checked : $('instrumental').checked;
+      $('score-lyrics').value = transform ? $('remix-lyrics').value : $('lyrics').value;
+      $('score-prompt').value = transform ? $('remix-prompt').value : $('prompt').value;
+    }
+    syncScoreInstrumental();
+  }
+  function setScore(text, context = null, origin = '', syncControls = true) {
+    $('abc').value = text || '';
+    state.scoreHistory = [];
+    state.selection = [];
+    renderScore();
+    if (context) mountScoreWorkspace(context, origin, syncControls);
+  }
   $('score-lane').onchange = () => { state.selection = []; renderScore(); };
   $('score-key-root').onchange = updateScoreKey; $('score-key-mode').onchange = updateScoreKey;
   document.querySelectorAll('[data-transpose]').forEach(button => button.onclick = () => {
@@ -694,7 +736,8 @@
   $('abc').oninput = () => { state.selection = []; renderScore(); };
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') $('roll-menu').classList.remove('on');
-    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'd' || !$('view-score').classList.contains('active')) return;
+    const workspace = $('score-workspace');
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'd' || workspace.hidden || !workspace.closest('.view.active')) return;
     const target = event.target;
     if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
     event.preventDefault(); duplicateSelectedBars();
@@ -797,7 +840,7 @@
       target_bars: fitted ? Number($('bars').value) : 0, ending: $('ending').value,
       outro_bars: 4, seed: seed('seed'), planning: planningHeader(), encoding: state.encoding };
   }
-  function renderAudio(result, destination = 'create') {
+  function renderAudio(result, destination = 'create', transformKind = 'remix', preserveScoreControls = false) {
     if (state.wavUrls[destination]) URL.revokeObjectURL(state.wavUrls[destination]);
     const bytes = Uint8Array.from(atob(result.audio_data), c => c.charCodeAt(0));
     const wavUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
@@ -808,7 +851,7 @@
     if (destination === 'transform') {
       $('remix-player').src = wavUrl; $('save-remix').href = wavUrl;
       $('remix-audio').hidden = false; $('save-remix').hidden = false;
-      $('transform-result-title').textContent = 'latest remix';
+      $('transform-result-title').textContent = `latest ${transformKind}`;
       $('transcription-meta').textContent = meta;
       $('transcription-result').classList.add('on'); $('transform-empty').style.display = 'none';
     } else {
@@ -816,11 +859,13 @@
       $('audio-result').classList.add('on'); $('create-empty').style.display = 'none';
       $('render-meta').textContent = meta;
     }
-    if (result.abc) setScore(result.abc);
+    if (result.abc) setScore(result.abc, destination,
+      destination === 'transform' ? `${transformKind} score from ${state.file?.name || 'uploaded audio'}` : 'generated score',
+      !preserveScoreControls);
     state.result = result;
   }
   function renderPlannedScore(result, request) {
-    setScore(result.abc || ''); state.plannedRequest = { ...request, seed: result.seed };
+    setScore(result.abc || '', 'create', 'generated planning score'); state.plannedRequest = { ...request, seed: result.seed };
     const score = parseScore(result.abc || '');
     const vocalNotes = score.notes.filter(note => note.voice === 'Vocal').length;
     const vocal = vocalNotes ? `${vocalNotes} planned vocal note${vocalNotes === 1 ? '' : 's'}` : 'vocal lane fully rested';
@@ -842,8 +887,6 @@
       renderPlannedScore(result, request);
     } catch (error) { status('create', null, error); } finally { $('plan-track').disabled = false; }
   };
-  $('open-score').onclick = () => show('score');
-  $('edit-plan').onclick = () => show('score');
   $('render-plan').onclick = async () => {
     if (!state.plannedRequest || !$('abc').value.trim()) return;
     $('render-plan').disabled = true;
@@ -872,40 +915,61 @@
       const link = document.createElement('a'); link.className = 'download'; link.href = url; link.download = name; link.textContent = '↓ ' + name; $('midi-downloads').appendChild(link);
     }
   }
-  async function transform(remix) {
+  function remixControls() {
+    const instrumental = $('remix-instrumental').checked;
+    const lyrics = instrumental ? '' : $('remix-lyrics').value.trim();
+    if (!instrumental && !lyrics) throw new Error('add the source lyrics for a vocal remix, or enable keep instrumental');
+    return { style: $('remix-prompt').value, lyrics, instrumental, encoding: state.encoding };
+  }
+  async function transform(mode) {
     if (!state.file) { status('transform', null, new Error('choose a wav file first')); return; }
-    $('transcribe').disabled = $('remix').disabled = true;
+    $('transcribe').disabled = $('remix').disabled = $('continue').disabled = true;
     try {
-      const payload = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
-      if (remix) {
-        const instrumental = $('remix-instrumental').checked;
-        const lyrics = instrumental ? '' : $('remix-lyrics').value.trim();
-        if (!instrumental && !lyrics) throw new Error('add the source lyrics for a vocal remix, or enable keep instrumental');
-        Object.assign(payload, { style: $('remix-prompt').value, lyrics, instrumental, encoding: state.encoding });
-      }
-      const result = await run(remix ? '/cover' : '/transcribe', payload, 'transform');
-      if (result.abc) setScore(result.abc);
-      if (remix) {
-        addDownloads({}); renderAudio(result, 'transform');
-      } else {
+      const transcription = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
+      if (mode === 'transcribe') {
+        const result = await run('/transcribe', transcription, 'transform');
+        if (result.abc) setScore(result.abc, 'transform', `transcribed score from ${state.file.name}`);
         $('transform-result-title').textContent = 'transcription';
         $('remix-audio').hidden = true; $('remix-player').removeAttribute('src');
         $('save-remix').hidden = true; addDownloads(result.midi_files);
+        $('transcription-meta').textContent = `${Number(result.duration || 0).toFixed(1)} sec · ${$('transcription-mode').selectedOptions[0].textContent}`;
+        $('transcription-result').classList.add('on'); $('transform-empty').style.display = 'none';
+      } else if (mode === 'remix') {
+        const result = await run('/cover', { ...transcription, ...remixControls() }, 'transform');
+        addDownloads({}); renderAudio(result, 'transform', 'remix');
+      } else {
+        const source = await run('/transcribe', transcription, 'transform');
+        if (!source.abc) throw new Error('transcription produced no score to continue');
+        addDownloads(source.midi_files);
+        setScore(source.abc, 'transform', `transcribed opening from ${state.file.name}`);
+        const result = await run('/generate', { ...remixControls(), abc_prefix: source.abc, ending: 'natural' }, 'transform');
+        renderAudio(result, 'transform', 'continuation');
       }
-      $('transcription-result').classList.add('on'); $('transform-empty').style.display = 'none';
-      if (!remix) $('transcription-meta').textContent = `${Number(result.duration || 0).toFixed(1)} sec · ${$('transcription-mode').selectedOptions[0].textContent}`;
-    } catch (error) { status('transform', null, error); } finally { $('transcribe').disabled = $('remix').disabled = false; }
+    } catch (error) { status('transform', null, error); } finally { $('transcribe').disabled = $('remix').disabled = $('continue').disabled = false; }
   }
-  $('transcribe').onclick = () => transform(false); $('remix').onclick = () => transform(true); $('edit-transcription').onclick = () => show('score');
+  $('transcribe').onclick = () => transform('transcribe');
+  $('remix').onclick = () => transform('remix');
+  $('continue').onclick = () => transform('continue');
 
-  $('score-generate').onclick = async () => {
+  async function renderEditedScore(continuePlan) {
     if (!$('abc').value.trim()) { status('score', null, new Error('add or transcribe a score first')); return; }
-    $('score-generate').disabled = true;
+    $('score-generate').disabled = $('score-continue').disabled = true;
     try {
-      const result = await run('/generate', { abc: $('abc').value, symbolic_mode: 'full', style: $('score-prompt').value, instrumental: $('instrumental').checked, ending: 'natural', seed: seed('score-seed'), encoding: state.encoding }, 'score');
-      renderAudio(result); show('create');
-    } catch (error) { status('score', null, error); } finally { $('score-generate').disabled = false; }
-  };
+      const instrumental = $('score-instrumental').checked;
+      const lyrics = instrumental ? '' : $('score-lyrics').value.trim();
+      if (!instrumental && !lyrics && state.scoreContext === 'transform') {
+        throw new Error('add the source lyrics for a vocal remix, or enable instrumental');
+      }
+      const payload = { style: $('score-prompt').value, lyrics, instrumental, ending: 'natural', seed: seed('score-seed'), encoding: state.encoding };
+      if (continuePlan) payload.abc_prefix = $('abc').value;
+      else Object.assign(payload, { abc: $('abc').value, symbolic_mode: 'full' });
+      const result = await run('/generate', payload, 'score');
+      const destination = state.scoreContext === 'transform' ? 'transform' : 'create';
+      renderAudio(result, destination, continuePlan ? 'continuation' : 'remix', true);
+    } catch (error) { status('score', null, error); } finally { $('score-generate').disabled = $('score-continue').disabled = false; }
+  }
+  $('score-generate').onclick = () => renderEditedScore(false);
+  $('score-continue').onclick = () => renderEditedScore(true);
   $('export-abc').onclick = () => { const url = URL.createObjectURL(new Blob([$('abc').value], { type: 'text/plain' })); const a = document.createElement('a'); a.href = url; a.download = 'yuey-score.abc'; a.click(); URL.revokeObjectURL(url); };
   $('refresh-models').onclick = () => refreshRuntime(true);
   document.addEventListener('visibilitychange', () => {

@@ -107,13 +107,15 @@ pipeline stages directly:
    new sections, then render the combined score. This is therefore
    **cover-then-continue**: the output re-renders the source bars as well as the
    new bars. It is not waveform-conditioned, sample-contiguous audio extension.
+   The bundled Remix UI performs these two requests and presents the completed
+   score and audio as one operation.
 
 A future `/continue` convenience route can combine the two calls while still
 returning the intermediate transcription and completed plan for inspection.
-Score editing can also be added later without changing this contract: the
-lossless transcription events already expose timed notes, lanes, chords, key,
-meter, and structure labels suitable for a piano-roll-style editor, while
-`abc` remains the interchange representation sent to generation.
+The shared piano-roll editor is mounted directly inside Create or Remix instead
+of acting as a third workflow. It edits `abc`, which remains the interchange
+representation sent back to generation; transcription events continue to
+provide the lossless timed notes, lanes, chords, key, meter, and structure.
 
 **Transcribe** is an independent utility rather than a fourth generation mode.
 It needs only the smaller SheetSage2 model and returns ABC, Standard MIDI, and
