@@ -202,7 +202,12 @@ dragging even when the user does not want generated audio.
 `/cover` also requires `audio_data`, a base64 WAV of any rate and channel count.
 It accepts `transcription_mode`: `melody` (default) or `full`. A `full`
 transcription conditions `symbolic_mode: full` unless overridden. `/cover`
-rejects `abc`; the score comes from the audio.
+rejects `abc`; the score comes from the audio. Set `instrumental: true` for an
+instrumental-source remix: the server rests SheetSage2's Vocal lane and uses
+the same empty lyric-section/no-vocal conditioning as instrumental generation.
+This flag defaults to `false` at the API boundary so vocal covers are not
+silently stripped. The bundled UI exposes a separate, default-on **keep
+instrumental** control for remixes; it never borrows state from the Create tab.
 
 ### Transcription requests
 

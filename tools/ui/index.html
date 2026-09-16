@@ -192,8 +192,9 @@
           <label class="drop" id="drop"><input id="audio-file" type="file" accept="audio/wav,.wav"><span><b>drop a wav here or click to browse</b><span class="help">stereo or mono; decoded locally by yue2-server</span><span class="file-name" id="file-name"></span></span></label>
           <div class="row two">
             <div><label for="transcription-mode">score detail</label><select id="transcription-mode"><option value="full">full score + chords</option><option value="melody">melody only</option></select></div>
-            <div><label for="remix-prompt">remix prompt</label><input id="remix-prompt" placeholder="optional for transcription"></div>
+            <div><div class="field-title"><label for="remix-prompt">remix prompt</label><label class="check"><input id="remix-instrumental" type="checkbox" checked><span>keep instrumental <small>(best effort)</small></span></label></div><input id="remix-prompt" placeholder="optional for transcription"></div>
           </div>
+          <div class="help">keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections. turn it off when the source contains vocals you want yuey to retain.</div>
           <div class="actions"><button id="transcribe" class="primary">transcribe</button><button id="remix" class="secondary">transcribe + remix</button></div>
           <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
         </div>
@@ -865,7 +866,7 @@
     $('transcribe').disabled = $('remix').disabled = true;
     try {
       const payload = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
-      if (remix) Object.assign(payload, { style: $('remix-prompt').value, instrumental: $('instrumental').checked, encoding: state.encoding });
+      if (remix) Object.assign(payload, { style: $('remix-prompt').value, instrumental: $('remix-instrumental').checked, encoding: state.encoding });
       const result = await run(remix ? '/cover' : '/transcribe', payload, 'transform');
       if (result.abc) setScore(result.abc);
       if (remix) {
