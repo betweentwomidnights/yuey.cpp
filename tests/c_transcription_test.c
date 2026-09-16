@@ -75,7 +75,7 @@ int main(int argc, char ** argv) {
     request.window_seconds = 0.2f;
     request.overlap_seconds = 0.0f;
     request.lookahead_seconds = 0.0f;
-    request.max_tokens = 6;
+    request.max_tokens = 32;
     request.on_progress = on_progress;
     request.should_cancel = should_cancel;
 
