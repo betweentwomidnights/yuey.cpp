@@ -88,7 +88,10 @@ int main(int argc, char ** argv) {
     api->generation_request_init(&request);
     request.style = "acoustic, intimate";
     request.lyrics = "[Verse]\nA quiet line";
-    request.abc = "X:1\nM:4/4\nL:1/8\nQ:1/4=95\nK:C\nV:Vocal\nC2 E2 G4|\nV:Ins\nC,8|";
+    request.abc =
+        "X:1\nT:C ABI smoke\nM:4/4\nL:1/8\nQ:1/4=95\n"
+        "V: Vocal clef=treble\nV: Ins clef=treble\nK:C\n% verse\n"
+        "V: Vocal\nC8E8G16|\nV: Ins\nC,32|\n";
     request.semantic_min_tokens = 2;
     request.semantic_max_tokens = 2;
     request.semantic_budget_explicit = 1;
