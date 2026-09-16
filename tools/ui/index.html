@@ -48,6 +48,9 @@
     .check { display: flex; align-items: center; gap: 8px; margin: 0; white-space: nowrap; }
     .check input { width: 16px; height: 16px; accent-color: var(--accent); }
     .check small { color: var(--muted); font-weight: 500; }
+    .mode-switch { display: grid; grid-template-columns: repeat(2, 1fr); padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-2); }
+    .mode-switch button { min-height: 38px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-weight: 720; }
+    .mode-switch button.active { color: var(--accent-ink); background: var(--accent); }
     .field-title { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: 15px; }
     .field-title label { margin: 0 0 7px; }
     .inline-pair { display: grid; grid-template-columns: .8fr 1.2fr; gap: 6px; }
@@ -194,19 +197,22 @@
         <div class="card">
           <h2>bring in audio</h2><p>transcribe to an editable score, reinterpret the source bars, or let yuey compose beyond them.</p>
           <label class="drop" id="drop"><input id="audio-file" type="file" accept="audio/wav,.wav"><span><b>drop a wav here or click to browse</b><span class="help">stereo or mono; decoded locally by yue2-server</span><span class="file-name" id="file-name"></span></span></label>
+          <label>generation mode</label><div class="mode-switch"><button id="transform-mode-remix" class="active" type="button" aria-pressed="true">remix</button><button id="transform-mode-continue" type="button" aria-pressed="false">continue</button></div>
           <div class="row two">
             <div><label for="transcription-mode">score detail</label><select id="transcription-mode"><option value="full">full score + chords</option><option value="melody">melody only</option></select></div>
-            <div><div class="field-title"><label for="remix-prompt">remix prompt</label><label class="check"><input id="remix-instrumental" type="checkbox" checked><span>keep instrumental <small>(best effort)</small></span></label></div><input id="remix-prompt" placeholder="optional for transcription"></div>
+            <div><div class="field-title"><label for="remix-prompt" id="remix-prompt-label">remix prompt</label><label class="check"><input id="remix-instrumental" type="checkbox" checked><span>keep instrumental <small>(best effort)</small></span></label></div><input id="remix-prompt" placeholder="optional for transcription"></div>
           </div>
-          <div id="remix-lyrics-field" hidden><label for="remix-lyrics">lyrics <span class="help">· required for a vocal remix</span></label><textarea id="remix-lyrics" placeholder="type the source lyrics here, including section labels when available…"></textarea></div>
+          <div id="remix-lyrics-field" hidden><label for="remix-lyrics">lyrics <span class="help">· required when retaining vocals</span></label><textarea id="remix-lyrics" placeholder="type the source lyrics here, including section labels when available…"></textarea></div>
           <div class="help" id="remix-vocal-help">keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections. turn it off when the source contains vocals you want yuey to retain.</div>
-          <div class="row two">
-            <div><label for="continue-ending">continuation length</label><select id="continue-ending"><option value="natural">let yuey choose</option><option value="outro">add bars</option></select></div>
-            <div id="continue-bars-field" hidden><label for="continue-bars">new bars</label><input id="continue-bars" type="number" min="4" max="256" value="8"></div>
+          <div id="continuation-controls" hidden>
+            <div class="row two">
+              <div><label for="continue-ending">continuation length</label><select id="continue-ending"><option value="natural">let yuey choose</option><option value="outro">add bars</option></select></div>
+              <div id="continue-bars-field" hidden><label for="continue-bars">new bars</label><input id="continue-bars" type="number" min="4" max="256" value="8"></div>
+            </div>
+            <div class="help" id="continue-length-help">yuey decides when the continued composition is complete.</div>
+            <div class="help">continue preserves the transcribed score as a planning prefix, appends new sections, and re-renders the complete piece. it is not a waveform splice.</div>
           </div>
-          <div class="help" id="continue-length-help">yuey decides when the continued composition is complete.</div>
-          <div class="actions"><button id="transcribe" class="primary">transcribe</button><button id="remix" class="secondary">transcribe + remix</button><button id="continue" class="secondary">transcribe + continue</button></div>
-          <div class="help">continue preserves the transcribed score as a planning prefix, appends new sections, and re-renders the complete piece. it is not a waveform splice.</div>
+          <div class="actions"><button id="transform-run" class="primary">transcribe + remix</button><button id="transcribe" class="secondary">transcribe only</button></div>
           <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
         </div>
         <div>
@@ -239,7 +245,7 @@
             <div class="field-title"><label for="score-lyrics">lyrics</label><label class="check"><input id="score-instrumental" type="checkbox"><span>instrumental <small>(best effort)</small></span></label></div>
             <div id="score-lyrics-field"><textarea id="score-lyrics" placeholder="write or retain lyrics here…"></textarea></div>
             <label for="score-seed">seed</label><input id="score-seed" type="number" value="-1"><div class="help">audio length follows the edited score; there is no seconds cutoff.</div>
-            <div class="actions"><button id="score-generate" class="primary">render edited score</button><button id="score-continue" class="secondary" hidden>continue after edited score</button><button id="export-abc" class="secondary">save abc</button></div>
+            <div class="actions"><button id="score-generate" class="primary">render edited score</button><button id="export-abc" class="secondary">save abc</button></div>
             <div class="status" id="score-status"><div class="status-head"><b id="score-stage">queued</b><span id="score-percent">0%</span></div><div class="bar"><i id="score-bar"></i></div><div class="help" id="score-detail"></div></div>
           </div>
           <div class="notice">double-click an empty part of the roll to add a snapped note. right-click selected notes to transpose, duplicate, or delete them. ctrl/cmd+d duplicates the complete selected bar range, including rhythm and chords.</div>
@@ -261,7 +267,7 @@
 <div class="roll-menu" id="roll-menu"><div class="roll-menu-row"><button data-transpose="-12">−12</button><button data-transpose="-1">−1</button><button data-transpose="1">+1</button><button data-transpose="12">+12</button></div><button id="menu-duplicate">duplicate selected bars</button><button id="menu-delete">delete selected notes</button></div>
 <script>
   const $ = id => document.getElementById(id);
-  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreContext: null, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
+  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreContext: null, transformMode: 'remix', scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
   const titles = { create: 'create with yuey', transform: 'remix or continue', models: 'models and runtime' };
   const chordRoots = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
   const chordQualities = [
@@ -302,7 +308,9 @@
   $('remix-instrumental').onchange = syncRemixInstrumental;
   syncRemixInstrumental();
   function syncContinueLength() {
-    const fitted = $('continue-ending').value === 'outro';
+    const continuation = state.transformMode === 'continue';
+    const fitted = continuation && $('continue-ending').value === 'outro';
+    $('continuation-controls').hidden = !continuation;
     $('continue-bars-field').hidden = !fitted;
     $('continue-bars').disabled = !fitted;
     $('continue-length-help').textContent = fitted
@@ -310,7 +318,26 @@
       : 'yuey decides when the continued composition is complete.';
   }
   $('continue-ending').onchange = syncContinueLength;
-  syncContinueLength();
+  function syncTransformMode() {
+    const continuation = state.transformMode === 'continue';
+    for (const [id, active] of [['transform-mode-remix', !continuation], ['transform-mode-continue', continuation]]) {
+      $(id).classList.toggle('active', active);
+      $(id).setAttribute('aria-pressed', String(active));
+    }
+    $('remix-prompt-label').textContent = continuation ? 'continuation prompt' : 'remix prompt';
+    $('transform-run').textContent = continuation ? 'transcribe + continue' : 'transcribe + remix';
+    syncContinueLength();
+    if (state.scoreContext === 'transform') {
+      $('score-action-title').textContent = continuation ? 'continue the edited score' : 'remix the edited score';
+      $('score-action-copy').textContent = continuation
+        ? 'use the edited transcription as the opening of a longer composition with the continuation length selected above.'
+        : 'reinterpret these edited bars with a new production prompt.';
+      $('score-generate').textContent = continuation ? 'continue edited score' : 'remix edited score';
+    }
+  }
+  $('transform-mode-remix').onclick = () => { state.transformMode = 'remix'; syncTransformMode(); };
+  $('transform-mode-continue').onclick = () => { state.transformMode = 'continue'; syncTransformMode(); };
+  syncTransformMode();
   function syncScoreInstrumental() {
     const enabled = $('score-instrumental').checked;
     $('score-lyrics-field').hidden = enabled;
@@ -720,12 +747,12 @@
     state.scoreContext = context;
     $('score-origin').textContent = origin || (context === 'transform' ? 'transcribed source score' : 'generated planning score');
     const transform = context === 'transform';
-    $('score-action-title').textContent = transform ? 'remix the edited score' : 'render the edited score';
-    $('score-action-copy').textContent = transform
-      ? 'edit the transcription before reinterpreting these bars, or continue it using the length controls above.'
-      : 'change notes or headers, then render this exact plan with a new production prompt.';
-    $('score-generate').textContent = transform ? 'remix edited score' : 'render edited score';
-    $('score-continue').hidden = !transform;
+    if (transform) syncTransformMode();
+    else {
+      $('score-action-title').textContent = 'render the edited score';
+      $('score-action-copy').textContent = 'change notes or headers, then render this exact plan with a new production prompt.';
+      $('score-generate').textContent = 'render edited score';
+    }
     if (syncControls) {
       $('score-instrumental').checked = transform ? $('remix-instrumental').checked : $('instrumental').checked;
       $('score-lyrics').value = transform ? $('remix-lyrics').value : $('lyrics').value;
@@ -933,7 +960,7 @@
   function remixControls() {
     const instrumental = $('remix-instrumental').checked;
     const lyrics = instrumental ? '' : $('remix-lyrics').value.trim();
-    if (!instrumental && !lyrics) throw new Error('add the source lyrics for a vocal remix, or enable keep instrumental');
+    if (!instrumental && !lyrics) throw new Error('add the source lyrics, or enable keep instrumental');
     return { style: $('remix-prompt').value, lyrics, instrumental, encoding: state.encoding };
   }
   function continuationLength(abc) {
@@ -948,7 +975,7 @@
   }
   async function transform(mode) {
     if (!state.file) { status('transform', null, new Error('choose a wav file first')); return; }
-    $('transcribe').disabled = $('remix').disabled = $('continue').disabled = true;
+    $('transcribe').disabled = $('transform-run').disabled = true;
     try {
       const transcription = { audio_data: await fileBase64(state.file), transcription_mode: $('transcription-mode').value };
       if (mode === 'transcribe') {
@@ -970,20 +997,19 @@
         const result = await run('/generate', { ...remixControls(), abc_prefix: source.abc, ...continuationLength(source.abc) }, 'transform');
         renderAudio(result, 'transform', 'continuation');
       }
-    } catch (error) { status('transform', null, error); } finally { $('transcribe').disabled = $('remix').disabled = $('continue').disabled = false; }
+    } catch (error) { status('transform', null, error); } finally { $('transcribe').disabled = $('transform-run').disabled = false; }
   }
   $('transcribe').onclick = () => transform('transcribe');
-  $('remix').onclick = () => transform('remix');
-  $('continue').onclick = () => transform('continue');
+  $('transform-run').onclick = () => transform(state.transformMode);
 
   async function renderEditedScore(continuePlan) {
     if (!$('abc').value.trim()) { status('score', null, new Error('add or transcribe a score first')); return; }
-    $('score-generate').disabled = $('score-continue').disabled = true;
+    $('score-generate').disabled = true;
     try {
       const instrumental = $('score-instrumental').checked;
       const lyrics = instrumental ? '' : $('score-lyrics').value.trim();
       if (!instrumental && !lyrics && state.scoreContext === 'transform') {
-        throw new Error('add the source lyrics for a vocal remix, or enable instrumental');
+        throw new Error('add the source lyrics, or enable instrumental');
       }
       const payload = { style: $('score-prompt').value, lyrics, instrumental, ending: 'natural', seed: seed('score-seed'), encoding: state.encoding };
       if (continuePlan) Object.assign(payload, { abc_prefix: $('abc').value, ...continuationLength($('abc').value) });
@@ -991,10 +1017,10 @@
       const result = await run('/generate', payload, 'score');
       const destination = state.scoreContext === 'transform' ? 'transform' : 'create';
       renderAudio(result, destination, continuePlan ? 'continuation' : 'remix', true);
-    } catch (error) { status('score', null, error); } finally { $('score-generate').disabled = $('score-continue').disabled = false; }
+    } catch (error) { status('score', null, error); } finally { $('score-generate').disabled = false; }
   }
-  $('score-generate').onclick = () => renderEditedScore(false);
-  $('score-continue').onclick = () => renderEditedScore(true);
+  $('score-generate').onclick = () => renderEditedScore(
+    state.scoreContext === 'transform' && state.transformMode === 'continue');
   $('export-abc').onclick = () => { const url = URL.createObjectURL(new Blob([$('abc').value], { type: 'text/plain' })); const a = document.createElement('a'); a.href = url; a.download = 'yuey-score.abc'; a.click(); URL.revokeObjectURL(url); };
   $('refresh-models').onclick = () => refreshRuntime(true);
   document.addEventListener('visibilitychange', () => {
