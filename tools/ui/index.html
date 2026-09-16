@@ -200,6 +200,11 @@
           </div>
           <div id="remix-lyrics-field" hidden><label for="remix-lyrics">lyrics <span class="help">· required for a vocal remix</span></label><textarea id="remix-lyrics" placeholder="type the source lyrics here, including section labels when available…"></textarea></div>
           <div class="help" id="remix-vocal-help">keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections. turn it off when the source contains vocals you want yuey to retain.</div>
+          <div class="row two">
+            <div><label for="continue-ending">continuation length</label><select id="continue-ending"><option value="natural">let yuey choose</option><option value="outro">add bars</option></select></div>
+            <div id="continue-bars-field" hidden><label for="continue-bars">new bars</label><input id="continue-bars" type="number" min="4" max="256" value="8"></div>
+          </div>
+          <div class="help" id="continue-length-help">yuey decides when the continued composition is complete.</div>
           <div class="actions"><button id="transcribe" class="primary">transcribe</button><button id="remix" class="secondary">transcribe + remix</button><button id="continue" class="secondary">transcribe + continue</button></div>
           <div class="help">continue preserves the transcribed score as a planning prefix, appends new sections, and re-renders the complete piece. it is not a waveform splice.</div>
           <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
@@ -296,6 +301,16 @@
   }
   $('remix-instrumental').onchange = syncRemixInstrumental;
   syncRemixInstrumental();
+  function syncContinueLength() {
+    const fitted = $('continue-ending').value === 'outro';
+    $('continue-bars-field').hidden = !fitted;
+    $('continue-bars').disabled = !fitted;
+    $('continue-length-help').textContent = fitted
+      ? 'yuey plans a complete continuation, then keeps the source, the requested new bars, and its real ending.'
+      : 'yuey decides when the continued composition is complete.';
+  }
+  $('continue-ending').onchange = syncContinueLength;
+  syncContinueLength();
   function syncScoreInstrumental() {
     const enabled = $('score-instrumental').checked;
     $('score-lyrics-field').hidden = enabled;
@@ -707,7 +722,7 @@
     const transform = context === 'transform';
     $('score-action-title').textContent = transform ? 'remix the edited score' : 'render the edited score';
     $('score-action-copy').textContent = transform
-      ? 'edit the transcription before reinterpreting these bars, or use it as the opening of a longer composition.'
+      ? 'edit the transcription before reinterpreting these bars, or continue it using the length controls above.'
       : 'change notes or headers, then render this exact plan with a new production prompt.';
     $('score-generate').textContent = transform ? 'remix edited score' : 'render edited score';
     $('score-continue').hidden = !transform;
@@ -921,6 +936,16 @@
     if (!instrumental && !lyrics) throw new Error('add the source lyrics for a vocal remix, or enable keep instrumental');
     return { style: $('remix-prompt').value, lyrics, instrumental, encoding: state.encoding };
   }
+  function continuationLength(abc) {
+    if ($('continue-ending').value !== 'outro') return { ending: 'natural', target_bars: 0 };
+    const added = Number($('continue-bars').value);
+    if (!Number.isInteger(added) || added < 4 || added > 256) {
+      throw new Error('new bars must be a whole number from 4 through 256');
+    }
+    const sourceBars = parseScore(abc).bars;
+    if (!sourceBars) throw new Error('could not count the source bars for continuation');
+    return { ending: 'outro', target_bars: sourceBars + added, outro_bars: Math.min(4, added) };
+  }
   async function transform(mode) {
     if (!state.file) { status('transform', null, new Error('choose a wav file first')); return; }
     $('transcribe').disabled = $('remix').disabled = $('continue').disabled = true;
@@ -942,7 +967,7 @@
         if (!source.abc) throw new Error('transcription produced no score to continue');
         addDownloads(source.midi_files);
         setScore(source.abc, 'transform', `transcribed opening from ${state.file.name}`);
-        const result = await run('/generate', { ...remixControls(), abc_prefix: source.abc, ending: 'natural' }, 'transform');
+        const result = await run('/generate', { ...remixControls(), abc_prefix: source.abc, ...continuationLength(source.abc) }, 'transform');
         renderAudio(result, 'transform', 'continuation');
       }
     } catch (error) { status('transform', null, error); } finally { $('transcribe').disabled = $('remix').disabled = $('continue').disabled = false; }
@@ -961,7 +986,7 @@
         throw new Error('add the source lyrics for a vocal remix, or enable instrumental');
       }
       const payload = { style: $('score-prompt').value, lyrics, instrumental, ending: 'natural', seed: seed('score-seed'), encoding: state.encoding };
-      if (continuePlan) payload.abc_prefix = $('abc').value;
+      if (continuePlan) Object.assign(payload, { abc_prefix: $('abc').value, ...continuationLength($('abc').value) });
       else Object.assign(payload, { abc: $('abc').value, symbolic_mode: 'full' });
       const result = await run('/generate', payload, 'score');
       const destination = state.scoreContext === 'transform' ? 'transform' : 'create';

@@ -108,7 +108,10 @@ pipeline stages directly:
    **cover-then-continue**: the output re-renders the source bars as well as the
    new bars. It is not waveform-conditioned, sample-contiguous audio extension.
    The bundled Remix UI performs these two requests and presents the completed
-   score and audio as one operation.
+   score and audio as one operation. Its default **let yuey choose** option
+   keeps the natural completed plan. **Add bars** counts the accepted source
+   score, sets `target_bars` to source plus the requested new bars, and uses the
+   planner's genuine tail as the outro rather than cutting generated audio.
 
 A future `/continue` convenience route can combine the two calls while still
 returning the intermediate transcription and completed plan for inspection.
