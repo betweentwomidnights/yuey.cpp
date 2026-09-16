@@ -125,7 +125,8 @@ Copy the same model directory to the Mac before testing
 - [ ] Fully validate the Vulkan and Metal backends.
 - [ ] Produce useful benchmarks on hardware beyond our RTX 5070 Laptop GPU and
   DGX Spark.
-- [ ] Validate the C ABI from a standalone iPlug2 project or Ableton extension.
+- [ ] Validate the C ABI from standalone Ableton Live and REAPER extensions,
+  including host-selected MIDI-region workflows.
 
 ## Documentation
 

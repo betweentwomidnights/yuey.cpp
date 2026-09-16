@@ -124,6 +124,7 @@ struct Configuration {
     std::string device;
     int threads = 0;
     bool keep_models = false;
+    bool force_unload = false;
     std::vector<yue2::LoraAdapterSpec> loras;
 };
 
@@ -185,6 +186,7 @@ void usage(const char * executable) {
         << "  --adapters-dir DIR           LoRA discovery, default models dir (YUE2_ADAPTERS_DIR)\n"
         << "  --lora PATH[=SCALE]          Default adapter for requests without \"loras\"; repeatable\n"
         << "  --keep-models                Keep models resident between jobs by default\n"
+        << "  --force-unload               Ignore per-request keep_models and unload after every job\n"
         << "  --device NAME                cpu, cuda, or another GGML backend (YUE2_DEVICE)\n"
         << "  --threads N                  CPU worker threads\n\n"
         << "Server:\n"
@@ -230,6 +232,10 @@ Configuration parse_configuration(int argc, char ** argv) {
     if (const auto value = option(argc, argv, "--threads"); !value.empty()) result.threads = std::stoi(value);
     if (result.threads < 0) throw std::invalid_argument("--threads cannot be negative");
     result.keep_models = has(argc, argv, "--keep-models");
+    const auto force_unload = upper(environment("YUE2_FORCE_UNLOAD"));
+    result.force_unload = has(argc, argv, "--force-unload") ||
+        force_unload == "1" || force_unload == "TRUE";
+    if (result.force_unload) result.keep_models = false;
     for (const auto & value : options(argc, argv, "--lora")) result.loras.push_back(lora_spec(value));
     return result;
 }
@@ -609,6 +615,7 @@ private:
             ",\"encoding\":" + json::quote(configuration_.encoding) +
             ",\"models_dir\":" + json_path(configuration_.models_dir) +
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
+            ",\"force_unload\":" + json_bool(configuration_.force_unload) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
             ",\"generation\":" + generation + ",\"transcription\":" + transcription + "}");
     }
@@ -686,7 +693,8 @@ private:
         }
         body += "]},\"defaults\":{\"encoding\":" + json::quote(configuration_.encoding) +
             ",\"device\":" + json::quote(configuration_.device.empty() ? "auto" : configuration_.device) +
-            ",\"keep_models\":" + json_bool(configuration_.keep_models) + "}}";
+            ",\"keep_models\":" + json_bool(configuration_.keep_models) +
+            ",\"force_unload\":" + json_bool(configuration_.force_unload) + "}}";
         return yue2::server::json_response(std::move(body));
     }
 
@@ -710,7 +718,8 @@ private:
         const auto root = parse_object(request.body);
         auto job = std::make_shared<Job>();
         job->kind = kind;
-        job->keep_models = json::boolean(root, "keep_models", configuration_.keep_models);
+        job->keep_models = configuration_.force_unload
+            ? false : json::boolean(root, "keep_models", configuration_.keep_models);
 
         if (kind == JobKind::cover && present(root, "abc")) {
             throw std::invalid_argument("/cover scores audio_data itself; use /generate to supply abc");

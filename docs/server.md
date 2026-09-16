@@ -9,7 +9,7 @@ repository.
 
 ```bash
 yue2-server --models-dir models --encoding Q4_K_M
-# --host 127.0.0.1  --port 8007  --device cuda  --keep-models
+# --host 127.0.0.1  --port 8007  --device cuda  --keep-models  --force-unload
 # --model/--vae/--tokenizer/--transcription-model PATH  explicit files
 # --adapters-dir DIR  --lora PATH[=SCALE]  --threads N  --max-body-mb N
 ```
@@ -22,6 +22,7 @@ runtime/VRAM status, and installed quantization-tier selection.
 
 `YUE2_MODELS_DIR`, `YUE2_ENCODING`, `YUE2_ADAPTERS_DIR`, `YUE2_PORT`, and
 `YUE2_DEVICE` do the same as the flags, so a supervisor can stay declarative.
+`YUE2_FORCE_UNLOAD=1` prevents clients from retaining models between jobs.
 Port 8007 is the next free port after the services gary4juce already addresses
 (8000, 8002, 8003, 8005, 8006, and 8015).
 
@@ -46,6 +47,10 @@ free between requests. A cover transcribes, releases SheetSage2/MERT2, then
 loads generation, so the two models never share the GPU. Send
 `"keep_models": true`, or start with `--keep-models`, to stay resident, and
 `POST /unload` to release.
+
+Supervisors running Yuey on a shared GPU can start with `--force-unload`. It
+overrides request-level `keep_models:true`, ensuring each success, failure, or
+cancellation releases the transcriber and generator before the job finishes.
 
 ## Routes
 
