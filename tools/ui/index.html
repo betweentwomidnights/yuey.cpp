@@ -198,7 +198,7 @@
           <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
         </div>
         <div>
-          <div class="card result" id="transcription-result"><h2>transcription</h2><div class="help" id="transcription-meta"></div><div class="downloads" id="midi-downloads"></div><div class="actions"><button id="edit-transcription" class="primary">open score</button></div></div>
+          <div class="card result" id="transcription-result"><h2 id="transform-result-title">transcription</h2><div class="help" id="transcription-meta"></div><div id="remix-audio" hidden><audio id="remix-player" controls></audio></div><div class="downloads" id="midi-downloads"></div><div class="actions"><button id="edit-transcription" class="primary">open score</button><a class="download" id="save-remix" download="yuey-remix.wav" hidden>download wav</a></div></div>
           <div class="card" id="transform-empty"><div class="empty">the editable abc score and separate melody/chord midi files will appear after transcription.</div></div>
         </div>
       </div>
@@ -245,7 +245,7 @@
 <div class="roll-menu" id="roll-menu"><div class="roll-menu-row"><button data-transpose="-12">−12</button><button data-transpose="-1">−1</button><button data-transpose="1">+1</button><button data-transpose="12">+12</button></div><button id="menu-duplicate">duplicate selected bars</button><button id="menu-delete">delete selected notes</button></div>
 <script>
   const $ = id => document.getElementById(id);
-  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrl: null, result: null, plannedRequest: null, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
+  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
   const titles = { create: 'create with yuey', transform: 'transcribe or remix', score: 'edit the score', models: 'local models' };
   const chordRoots = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
   const chordQualities = [
@@ -785,15 +785,25 @@
       target_bars: fitted ? Number($('bars').value) : 0, ending: $('ending').value,
       outro_bars: 4, seed: seed('seed'), planning: planningHeader(), encoding: state.encoding };
   }
-  function renderAudio(result) {
-    if (state.wavUrl) URL.revokeObjectURL(state.wavUrl);
+  function renderAudio(result, destination = 'create') {
+    if (state.wavUrls[destination]) URL.revokeObjectURL(state.wavUrls[destination]);
     const bytes = Uint8Array.from(atob(result.audio_data), c => c.charCodeAt(0));
-    state.wavUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
-    $('player').src = state.wavUrl; $('save-audio').href = state.wavUrl;
-    $('audio-result').classList.add('on'); $('create-empty').style.display = 'none';
+    const wavUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+    state.wavUrls[destination] = wavUrl;
     const warning = result.warnings?.length ? ` · warning: ${result.warnings.join('; ')}` : '';
     const bars = result.meta?.score_bars ? ` · ${result.meta.score_bars} bars` : '';
-    $('render-meta').textContent = `${Number(result.meta?.duration || 0).toFixed(1)} sec${bars} · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${warning}`;
+    const meta = `${Number(result.meta?.duration || 0).toFixed(1)} sec${bars} · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${warning}`;
+    if (destination === 'transform') {
+      $('remix-player').src = wavUrl; $('save-remix').href = wavUrl;
+      $('remix-audio').hidden = false; $('save-remix').hidden = false;
+      $('transform-result-title').textContent = 'latest remix';
+      $('transcription-meta').textContent = meta;
+      $('transcription-result').classList.add('on'); $('transform-empty').style.display = 'none';
+    } else {
+      $('player').src = wavUrl; $('save-audio').href = wavUrl;
+      $('audio-result').classList.add('on'); $('create-empty').style.display = 'none';
+      $('render-meta').textContent = meta;
+    }
     if (result.abc) setScore(result.abc);
     state.result = result;
   }
@@ -858,9 +868,15 @@
       if (remix) Object.assign(payload, { style: $('remix-prompt').value, instrumental: $('instrumental').checked, encoding: state.encoding });
       const result = await run(remix ? '/cover' : '/transcribe', payload, 'transform');
       if (result.abc) setScore(result.abc);
-      if (remix) renderAudio(result); else addDownloads(result.midi_files);
+      if (remix) {
+        addDownloads({}); renderAudio(result, 'transform');
+      } else {
+        $('transform-result-title').textContent = 'transcription';
+        $('remix-audio').hidden = true; $('remix-player').removeAttribute('src');
+        $('save-remix').hidden = true; addDownloads(result.midi_files);
+      }
       $('transcription-result').classList.add('on'); $('transform-empty').style.display = 'none';
-      $('transcription-meta').textContent = `${Number(result.duration || result.meta?.duration || 0).toFixed(1)} sec · ${$('transcription-mode').selectedOptions[0].textContent}`;
+      if (!remix) $('transcription-meta').textContent = `${Number(result.duration || 0).toFixed(1)} sec · ${$('transcription-mode').selectedOptions[0].textContent}`;
     } catch (error) { status('transform', null, error); } finally { $('transcribe').disabled = $('remix').disabled = false; }
   }
   $('transcribe').onclick = () => transform(false); $('remix').onclick = () => transform(true); $('edit-transcription').onclick = () => show('score');
