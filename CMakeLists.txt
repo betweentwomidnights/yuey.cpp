@@ -99,6 +99,9 @@ if(YUE2_BUILD_TOOLS)
     add_executable(yue2-transcribe tools/yue2-transcribe.cpp)
     target_link_libraries(yue2-transcribe PRIVATE yue2)
 
+    add_executable(yue2-semantic-tokenize tools/yue2-semantic-tokenize.cpp)
+    target_link_libraries(yue2-semantic-tokenize PRIVATE yue2)
+
     add_executable(yue2-inspect-generation tools/yue2-inspect-generation.cpp)
     target_link_libraries(yue2-inspect-generation PRIVATE yue2)
 

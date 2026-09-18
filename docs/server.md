@@ -11,7 +11,10 @@ repository.
 yue2-server --models-dir models --encoding Q4_K_M
 # --host 127.0.0.1  --port 8007  --device cuda  --keep-models  --force-unload
 # --model/--vae/--tokenizer/--transcription-model PATH  explicit files
+# --semantic-tokenizer-model PATH
 # --adapters-dir DIR  --lora PATH[=SCALE]  --threads N  --max-body-mb N
+# --instrumental-lora REF[=SCALE]
+# --continuation-lora REF[=SCALE]
 ```
 
 Open `http://127.0.0.1:8007/` after launch. The responsive Yuey SPA is embedded
@@ -20,8 +23,10 @@ same-origin API. Its first slice covers creation, typed musical planning,
 upload/transcription/remix, MIDI downloads, exact ABC editing and regeneration,
 runtime/VRAM status, and installed quantization-tier selection.
 
-`YUE2_MODELS_DIR`, `YUE2_ENCODING`, `YUE2_ADAPTERS_DIR`, `YUE2_PORT`, and
-`YUE2_DEVICE` do the same as the flags, so a supervisor can stay declarative.
+`YUE2_MODELS_DIR`, `YUE2_ENCODING`, `YUE2_ADAPTERS_DIR`, `YUE2_PORT`,
+`YUE2_DEVICE`, `YUE2_SEMANTIC_TOKENIZER_MODEL`, `YUE2_INSTRUMENTAL_LORA`, and
+`YUE2_CONTINUATION_LORA` do the same as the flags, so a supervisor can stay
+declarative.
 `YUE2_FORCE_UNLOAD=1` prevents clients from retaining models between jobs.
 Port 8007 is the next free port after the services gary4juce already addresses
 (8000, 8002, 8003, 8005, 8006, and 8015).
@@ -37,6 +42,10 @@ directory and one level of subdirectories:
 | VAE | `yue2-vae-*-{F16,F32}.gguf` | F16 |
 | Tokenizer | `sidecars/yue2-qwen.tiktoken` or `qwen.tiktoken` beside the model | |
 | Transcription | `sheetsage2-mert2-*-{F16,F32}.gguf` | F16 |
+| Real-audio tokenizer | `yue2-semantic-tokenizer-*-{F16,F32}.gguf` | F16 |
+
+See [Instrumental and real-audio adapters](realaudio-continuation.md) for the
+conversion commands, version pairing, and weight-license note.
 
 Pass `--encoding Q4_K_M` on an 8 GB GPU: automatic selection prefers precision.
 `GET /health` reports what resolved and what is loaded.
@@ -44,7 +53,9 @@ Pass `--encoding Q4_K_M` on an 8 GB GPU: automatic selection prefers precision.
 By default, models load when a job needs them and are released when it
 finishes. This is sa3-server's frugal default and keeps a DAW machine's VRAM
 free between requests. A cover transcribes, releases SheetSage2/MERT2, then
-loads generation, so the two models never share the GPU. Send
+loads generation, so the two models never share the GPU. A continuation also
+loads its separate unmodified-MERT semantic tokenizer, extracts the 25 Hz audio
+prefix, releases it, and only then loads generation. Send
 `"keep_models": true`, or start with `--keep-models`, to stay resident, and
 `POST /unload` to release.
 
@@ -63,6 +74,7 @@ cancellation releases the transcriber and generator before the job finishes.
 | `POST` | `/plan` | text to an editable ABC plan without semantic/flow/VAE work |
 | `POST` | `/generate` | text, or text plus ABC, to a song → `{success, session_id, seed, status}` |
 | `POST` | `/cover` | `audio_data` → transcription → song → `{success, session_id, seed, status}` |
+| `POST` | `/continue` | `audio_data` → score + semantic prefix → extended song |
 | `POST` | `/transcribe` | `audio_data` → ABC, MIDI, events → `{success, session_id, status}` |
 | `GET` | `/poll_status/<id>` | progress; results on completion; `?consume=1` removes a finished job |
 | `POST` | `/cancel/<id>` | cooperative cancel; a queued job fails immediately as `cancelled` |
@@ -107,19 +119,20 @@ pipeline stages directly:
    `/generate`. YuE2 plans a new ABC score and renders it.
 2. **Cover** sends input audio to `/cover`. SheetSage2 transcribes the audio and
    YuE2 renders a new performance of that score. It does not extend the score.
-3. **Continue** is currently a composed client workflow: transcribe the input,
-   pass the accepted ABC back to `/generate` as `abc_prefix`, let YuE2 append
-   new sections, then render the combined score. This is therefore
-   **cover-then-continue**: the output re-renders the source bars as well as the
-   new bars. It is not waveform-conditioned, sample-contiguous audio extension.
-   The bundled Remix UI performs these two requests and presents the completed
-   score and audio as one operation. Its default **let yuey choose** option
-   keeps the natural completed plan. **Add bars** counts the accepted source
-   score, sets `target_bars` to source plus the requested new bars, and uses the
-   planner's genuine tail as the outro rather than cutting generated audio.
+3. **Continue** sends the source WAV to `/continue`. SheetSage2 supplies the ABC
+   planning prefix while the dedicated real-audio tokenizer supplies a 25 Hz
+   semantic prefix. YuE2 extends both, and the matching continuation NAR adapter
+   reconstructs the source-plus-tail result. This is audio-semantic continuation
+   rather than the older cover-then-continue approximation, though the result is
+   still a model reconstruction rather than a bit-exact waveform splice. The
+   response includes the extended ABC, transcription MIDI,
+   `semantic_prefix_frames`, and `semantic_prefix_duration`.
 
-A future `/continue` convenience route can combine the two calls while still
-returning the intermediate transcription and completed plan for inspection.
+The standalone UI exposes two continuation methods. **Score continuation** is
+the default: it calls `/transcribe`, then `/generate` with the recovered ABC as
+`abc_prefix`. **Audio continuation** is opt-in and calls `/continue`; it carries
+the source's semantic audio forward, but reconstructs the entire result through
+the real-audio decoder and can therefore lose fidelity relative to the input.
 The shared piano-roll editor is mounted directly inside Create or Remix instead
 of acting as a third workflow. It edits `abc`, which remains the interchange
 representation sent back to generation; transcription events continue to
@@ -139,6 +152,7 @@ dragging even when the user does not want generated audio.
   "style": "indie folk, warm female vocal, fingerpicked guitar",
   "lyrics": "[Verse]\n...\n[Chorus]\n...",
   "instrumental": false,
+  "use_instrumental_adapter": true,
   "experimental_vocal_rest": false,
   "encoding": "Q4_K_M",
   "planning": {"bpm": 95, "key": "C# minor", "meter_numerator": 4, "meter_denominator": 4},
@@ -209,6 +223,17 @@ dragging even when the user does not want generated audio.
 - **`loras`** entries name an adapter in `--adapters-dir` or give a `path`.
   Adapters are bound when the model loads, so a different set reloads it.
   Omitting `loras` uses the `--lora` defaults.
+- **`--instrumental-lora`** (or `YUE2_INSTRUMENTAL_LORA`) names an adapter
+  automatically stacked whenever a request sets `instrumental: true`. This is
+  intended for score-first instrumental AR adapters: the server forces full
+  symbolic planning and, for covers, a full SheetSage2 score. Explicit request
+  adapters still compose with it. Set **`use_instrumental_adapter: false`** on
+  an individual request to bypass the configured automatic adapter for an A/B
+  comparison without disabling the instrumental score/lyric controls.
+- **`--continuation-lora`** (or `YUE2_CONTINUATION_LORA`) names the NAR adapter
+  paired with the configured real-audio tokenizer. `/continue` refuses to run
+  without one, preventing real-audio tokens from being decoded with incompatible
+  stock NAR weights. Explicit request adapters still compose with it.
 - **`audio_format`**: `wav` is 16-bit PCM, which gary4juce reads; `wav_float`
   keeps the model's float output.
 
@@ -224,6 +249,16 @@ instrumental** control for remixes; it never borrows state from the Create tab.
 SheetSage2 transcribes the vocal melody but does not recognize lyric text. A
 vocal cover should therefore set `instrumental: false` and provide `lyrics`;
 otherwise YuE2 must invent words while following the recovered melody.
+
+`/continue` accepts the same audio, style, lyrics, instrumental, transcription,
+sampling, and adapter fields as `/cover`. It rejects caller-supplied `abc`,
+`abc_prefix`, and `planning` because both prefixes must be derived from the same
+audio. `continuation_bars` is the number of *new* bars (1–256); zero or omission
+lets the planner choose. The server converts it to a total target only after it
+knows the transcribed source length. `use_continuation_adapter` defaults to
+true. Setting it false rejects `/continue`, because those semantic tokens cannot
+be decoded safely with stock NAR weights; clients should use the composed score
+continuation workflow instead.
 
 ### Transcription requests
 

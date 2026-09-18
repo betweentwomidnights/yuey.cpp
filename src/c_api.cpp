@@ -377,6 +377,25 @@ YUE2_API int32_t yue2_generate(
         if (request->size >= outro_bars_size && request->outro_bars != 0) {
             song.outro_bars = request->outro_bars;
         }
+        const auto semantic_prefix_count_size =
+            offsetof(yue2_generation_request, semantic_prefix_count) +
+            sizeof(request->semantic_prefix_count);
+        if (request->size >= semantic_prefix_count_size) {
+            if (request->semantic_prefix_count != 0 && !request->semantic_prefix) {
+                throw std::invalid_argument(
+                    "semantic prefix pointer is null for a nonzero count");
+            }
+            if (request->semantic_prefix_count >
+                static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+                throw std::invalid_argument("semantic prefix is too large");
+            }
+            if (request->semantic_prefix_count != 0) {
+                song.semantic_prefix.assign(
+                    request->semantic_prefix,
+                    request->semantic_prefix +
+                        static_cast<std::size_t>(request->semantic_prefix_count));
+            }
+        }
         if (request->seed_set) song.seed = request->seed;
         if (request->guidance_set) song.guidance_scale = request->guidance_scale;
 

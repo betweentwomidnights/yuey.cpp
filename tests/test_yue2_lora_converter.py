@@ -87,6 +87,43 @@ class YuE2LoraConverterTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsupported"):
                 convert(args)
 
+    def test_mothersuperior_names_and_joint_nar_replacements(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "nar_lora_joint.bf16.safetensors"
+            output = root / "nar.gguf"
+            save_file({
+                "layers.0.nar_self_attn.q_proj.lora_A":
+                    torch.arange(16, dtype=torch.bfloat16).reshape(2, 8),
+                "layers.0.nar_self_attn.q_proj.lora_B":
+                    torch.arange(12, dtype=torch.bfloat16).reshape(6, 2),
+                "vae2llm.weight": torch.ones(6, 4, dtype=torch.bfloat16),
+                "vae2llm.bias": torch.ones(6, dtype=torch.bfloat16),
+                "llm2vae.weight": torch.ones(4, 6, dtype=torch.bfloat16),
+                "llm2vae.bias": torch.ones(4, dtype=torch.bfloat16),
+            }, source)
+            converted = convert(SimpleNamespace(
+                input=source, config=None, output=output, name="joint-nar",
+                alpha=None, base_sha256=None, type="f16", overwrite=False,
+            ))
+            reader = GGUFReader(converted)
+            tensors = {tensor.name: tensor for tensor in reader.tensors}
+            self.assertEqual(set(tensors), {
+                "model.layers.0.nar_self_attn.q_proj.lora_A",
+                "model.layers.0.nar_self_attn.q_proj.lora_B",
+                "vae2llm.weight.replacement",
+                "vae2llm.bias.replacement",
+                "llm2vae.weight.replacement",
+                "llm2vae.bias.replacement",
+            })
+            self.assertTrue(all(
+                tensor.tensor_type == GGMLQuantizationType.F16
+                for tensor in tensors.values()
+            ))
+            del tensors
+            del reader
+            gc.collect()
+
     def test_invalid_fingerprint_leaves_no_partial_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -37,16 +37,40 @@ def load_config(path: Path | None) -> dict:
     return value
 
 
-def canonical_key(name: str) -> tuple[str, str] | None:
+def strip_wrapper_prefix(name: str) -> str:
     for prefix in ("module.", "base_model.model.", "base_model."):
         if name.startswith(prefix):
             name = name[len(prefix):]
-    for suffix, factor in ((".lora_A.weight", "lora_A"), (".lora_B.weight", "lora_B")):
+    return name
+
+
+def canonical_key(name: str) -> tuple[str, str] | None:
+    name = strip_wrapper_prefix(name)
+    for suffix, factor in (
+        (".lora_A.weight", "lora_A"),
+        (".lora_B.weight", "lora_B"),
+        (".lora_A", "lora_A"),
+        (".lora_B", "lora_B"),
+    ):
         if name.endswith(suffix):
             stem = name[: -len(suffix)]
+            # Mothersuperior checkpoints use layers.N... while the released
+            # YuE2 checkpoint and our GGUF runtime use model.layers.N....
+            if stem.startswith("layers."):
+                stem = "model." + stem
             if not TARGET.fullmatch(stem):
                 raise ValueError(f"unsupported YuE2 LoRA target: {stem}")
             return stem, factor
+    return None
+
+
+def canonical_replacement(name: str) -> str | None:
+    name = strip_wrapper_prefix(name)
+    if name in {
+        "vae2llm.weight", "vae2llm.bias",
+        "llm2vae.weight", "llm2vae.bias",
+    }:
+        return name
     return None
 
 
@@ -60,13 +84,19 @@ def convert(args: argparse.Namespace) -> Path:
     config = load_config(args.config.resolve() if args.config else None)
 
     pairs: dict[str, dict[str, torch.Tensor]] = {}
+    replacements: dict[str, torch.Tensor] = {}
     with safe_open(source, framework="pt", device="cpu") as checkpoint:
         for source_name in checkpoint.keys():
             canonical = canonical_key(source_name)
-            if canonical is None:
+            if canonical is not None:
+                stem, factor = canonical
+                pairs.setdefault(stem, {})[factor] = checkpoint.get_tensor(source_name)
                 continue
-            stem, factor = canonical
-            pairs.setdefault(stem, {})[factor] = checkpoint.get_tensor(source_name)
+            replacement = canonical_replacement(source_name)
+            if replacement is not None:
+                if replacement in replacements:
+                    raise ValueError(f"duplicate replacement tensor: {replacement}")
+                replacements[replacement] = checkpoint.get_tensor(source_name)
     if not pairs:
         raise ValueError("checkpoint contains no supported YuE2 LoRA factors")
 
@@ -84,6 +114,12 @@ def convert(args: argparse.Namespace) -> Path:
     if len(ranks) != 1:
         raise ValueError(f"mixed LoRA ranks are not supported: {sorted(ranks)}")
     rank = ranks.pop()
+    for name, tensor in replacements.items():
+        expected_dims = 1 if name.endswith(".bias") else 2
+        if tensor.ndim != expected_dims:
+            raise ValueError(
+                f"invalid replacement shape for {name}: {tuple(tensor.shape)}"
+            )
     declared_rank = int(config.get("r", rank))
     if declared_rank != rank:
         raise ValueError(f"adapter config rank {declared_rank} != tensor rank {rank}")
@@ -108,7 +144,8 @@ def convert(args: argparse.Namespace) -> Path:
         writer.add_string("yue2.adapter.type", "lora")
         writer.add_uint32("yue2.adapter.rank", rank)
         writer.add_float32("yue2.adapter.alpha", alpha)
-        writer.add_uint32("yue2.adapter.target_count", len(pairs))
+        writer.add_uint32("yue2.adapter.target_count", len(pairs) + len(replacements))
+        writer.add_uint32("yue2.adapter.replacement_count", len(replacements))
         if digest:
             writer.add_string("yue2.adapter.base_sha256", digest)
         for stem in sorted(pairs):
@@ -119,6 +156,13 @@ def convert(args: argparse.Namespace) -> Path:
                 if len(name.encode("utf-8")) >= 64:
                     raise ValueError(f"GGML tensor name is too long: {name}")
                 writer.add_tensor(name, np.ascontiguousarray(tensor.numpy()))
+        for base_name in sorted(replacements):
+            tensor = replacements[base_name].detach().cpu().contiguous()
+            tensor = tensor.float() if args.type == "f32" else tensor.half()
+            name = f"{base_name}.replacement"
+            if len(name.encode("utf-8")) >= 64:
+                raise ValueError(f"GGML tensor name is too long: {name}")
+            writer.add_tensor(name, np.ascontiguousarray(tensor.numpy()))
         writer.write_header_to_file()
         writer.write_kv_data_to_file()
         writer.write_tensors_to_file(progress=True)
@@ -133,7 +177,11 @@ def convert(args: argparse.Namespace) -> Path:
                 pass
         if work.exists():
             work.unlink()
-    print(f"[done] {len(pairs)} targets, rank {rank}, alpha {alpha:g} -> {output}", file=sys.stderr)
+    print(
+        f"[done] {len(pairs)} LoRA targets + {len(replacements)} replacements, "
+        f"rank {rank}, alpha {alpha:g} -> {output}",
+        file=sys.stderr,
+    )
     return output
 
 

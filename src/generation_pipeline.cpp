@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -19,6 +20,14 @@ VaeRuntimeOptions resolve_vae_options(const GenerationPipelineOptions & options)
 }
 
 void validate_request(const SongRequest & request) {
+    if (request.semantic_prefix.size() >= 24576) {
+        throw std::invalid_argument("YuE2 semantic continuation prefix is too long");
+    }
+    for (const auto token : request.semantic_prefix) {
+        if (token < 0 || token >= kCodecSize) {
+            throw std::invalid_argument("YuE2 semantic continuation token is out of range");
+        }
+    }
     if (request.target_bars != 0 && request.ending_mode != EndingMode::outro) {
         throw std::invalid_argument(
             "YuE2 target bars require ending mode outro");
@@ -226,16 +235,41 @@ public:
             effective.symbolic_mode == SymbolicMode::off
             ? std::nullopt
             : std::optional<std::vector<std::int32_t>>(result.abc_token_ids);
-        const auto positive = make_positive_prefix(effective, tokenizer, abc_ids);
+        const auto generation_prefix = make_positive_prefix(effective, tokenizer, abc_ids);
+        auto positive = generation_prefix;
+        positive.reserve(positive.size() + effective.semantic_prefix.size());
+        for (const auto code : effective.semantic_prefix) {
+            positive.push_back(kCodecOffset + code);
+        }
+        if (positive.size() >= 24576) {
+            throw std::invalid_argument(
+                "YuE2 score and audio continuation prefix leave no semantic room");
+        }
         const auto guidance = generation_guidance(effective);
         auto semantic_sampling = run_options.generation.semantic;
         if (!run_options.semantic_budget_explicit && result.score_bars != 0) {
             AbcScoreInfo score;
             score.bars = result.score_bars;
             score.duration_seconds = result.score_duration_seconds;
-            auto budget = score_aligned_semantic_budget(score);
-            const auto minimum = static_cast<std::uint32_t>(
+            auto total_budget = score_aligned_semantic_budget(score);
+            const auto total_minimum = static_cast<std::uint32_t>(
                 std::ceil(score.duration_seconds * 25.0));
+            const auto prefix_frames = static_cast<std::uint32_t>(effective.semantic_prefix.size());
+            auto budget = total_budget > prefix_frames ? total_budget - prefix_frames : 0;
+            const auto minimum = total_minimum > prefix_frames
+                ? total_minimum - prefix_frames : 1U;
+            if (!effective.semantic_prefix.empty()) {
+                // With a real-audio prefix the stock AR can otherwise treat
+                // the continuation as a fresh song and run far beyond the
+                // completed score. Keep enough room for two seconds of decay,
+                // while still requiring every planned continuation frame.
+                constexpr std::uint32_t continuation_tail_frames = 50;
+                const auto aligned_budget = minimum >
+                        std::numeric_limits<std::uint32_t>::max() - continuation_tail_frames
+                    ? std::numeric_limits<std::uint32_t>::max()
+                    : minimum + continuation_tail_frames;
+                budget = std::min(budget, aligned_budget);
+            }
             const auto positive_capacity = positive.size() < 24576
                 ? 24576 - positive.size()
                 : 0;
@@ -245,8 +279,9 @@ public:
                     "YuE2 score is too long to align inside the model context");
             }
             semantic_sampling.max_tokens = budget;
-            semantic_sampling.min_tokens = std::max(
-                semantic_sampling.min_tokens, minimum);
+            semantic_sampling.min_tokens = effective.semantic_prefix.empty()
+                ? std::max(semantic_sampling.min_tokens, minimum)
+                : minimum;
         }
         result.semantic_budget = semantic_sampling.max_tokens;
         AutoregressiveResult semantic;
@@ -256,7 +291,11 @@ public:
                 AutoregressivePhase::semantic, effective.seed,
                 ar_control(control, GenerationStage::semantic));
         } else {
-            const auto negative = make_negative_prefix(effective, tokenizer, abc_ids);
+            auto negative = make_negative_prefix(effective, tokenizer, abc_ids);
+            negative.reserve(negative.size() + effective.semantic_prefix.size());
+            for (const auto code : effective.semantic_prefix) {
+                negative.push_back(kCodecOffset + code);
+            }
             if (negative.size() >= 24576) {
                 throw std::invalid_argument(
                     "YuE2 negative score prefix leaves no semantic room in the model context");
@@ -283,7 +322,10 @@ public:
             control.on_progress(
                 GenerationStage::semantic, completed, std::max(1U, completed));
         }
-        result.semantic_codec_ids.reserve(semantic.tokens.size());
+        result.semantic_prefix_frames = static_cast<std::uint32_t>(effective.semantic_prefix.size());
+        result.semantic_codec_ids = effective.semantic_prefix;
+        result.semantic_codec_ids.reserve(
+            result.semantic_codec_ids.size() + semantic.tokens.size());
         for (const auto token : semantic.tokens) {
             if (token < kCodecOffset || token >= kCodecOffset + kCodecSize) {
                 throw std::logic_error("YuE2 semantic sampler emitted a non-codec token");
@@ -294,7 +336,7 @@ public:
             throw std::runtime_error("YuE2 semantic generation produced no audio codes");
         }
         result.latents = autoregressive.synthesize_latents(
-            positive, result.semantic_codec_ids, effective.seed, run_options.flow,
+            generation_prefix, result.semantic_codec_ids, effective.seed, run_options.flow,
             ar_control(control, GenerationStage::flow));
         VaeDecodeControl decode_control;
         decode_control.should_cancel = control.should_cancel;

@@ -25,6 +25,12 @@ namespace {
 constexpr float subsampling_norm_epsilon = 1.0e-6F;
 constexpr float conformer_norm_epsilon = 1.0e-5F;
 constexpr std::size_t graph_size = 8192;
+constexpr std::int64_t semantic_input = 1024;
+constexpr std::int64_t semantic_hidden = 512;
+constexpr std::int64_t semantic_heads = 8;
+constexpr std::int64_t semantic_head_width = 64;
+constexpr std::int64_t semantic_window = 512;
+constexpr std::int64_t semantic_vocab = 32768;
 
 ggml_tensor * named(detail::GgufModel & model, const std::string & name) {
     return model.get("mert2." + name);
@@ -145,6 +151,72 @@ ggml_tensor * attention_f32(
     auto * value_transposed = ggml_cont(context, ggml_transpose(context, value));
     auto * attended = ggml_mul_mat(context, value_transposed, scores);
     return ggml_cont(context, ggml_permute(context, attended, 0, 2, 1, 3));
+}
+
+ggml_tensor * semantic_named(detail::GgufModel & model, const std::string & name) {
+    return model.get("semantic_head." + name);
+}
+
+ggml_tensor * semantic_attention(
+    ggml_context * context,
+    detail::GgufModel & model,
+    ggml_tensor * value,
+    int layer) {
+    const std::string prefix = "enc.layers." + std::to_string(layer) + ".self_attn.";
+    auto * projected = linear(
+        context, value,
+        semantic_named(model, prefix + "in_proj_weight"),
+        semantic_named(model, prefix + "in_proj_bias"));
+    const std::size_t matrix_bytes = static_cast<std::size_t>(semantic_hidden * projected->nb[0]);
+    auto view = [&](std::size_t index) {
+        auto * matrix = ggml_view_2d(
+            context, projected, semantic_hidden, value->ne[1], projected->nb[1],
+            index * matrix_bytes);
+        matrix = ggml_cont(context, matrix);
+        matrix = ggml_reshape_3d(
+            context, matrix, semantic_head_width, semantic_heads, value->ne[1]);
+        return ggml_permute(context, matrix, 0, 2, 1, 3);
+    };
+    auto * query = view(0);
+    auto * key = view(1);
+    auto * projected_value = view(2);
+    auto * attended = attention_f32(
+        context, query, key, projected_value, nullptr,
+        1.0F / std::sqrt(static_cast<float>(semantic_head_width)));
+    attended = ggml_reshape_2d(context, attended, semantic_hidden, value->ne[1]);
+    return linear(
+        context, attended,
+        semantic_named(model, prefix + "out_proj.weight"),
+        semantic_named(model, prefix + "out_proj.bias"));
+}
+
+ggml_tensor * semantic_layer(
+    ggml_context * context,
+    detail::GgufModel & model,
+    ggml_tensor * value,
+    int layer) {
+    const std::string prefix = "enc.layers." + std::to_string(layer) + ".";
+    auto * normalized = layer_norm(
+        context, value,
+        semantic_named(model, prefix + "norm1.weight"),
+        semantic_named(model, prefix + "norm1.bias"),
+        conformer_norm_epsilon);
+    value = ggml_add(context, value, semantic_attention(context, model, normalized, layer));
+    normalized = layer_norm(
+        context, value,
+        semantic_named(model, prefix + "norm2.weight"),
+        semantic_named(model, prefix + "norm2.bias"),
+        conformer_norm_epsilon);
+    auto * feed_forward = linear(
+        context, normalized,
+        semantic_named(model, prefix + "linear1.weight"),
+        semantic_named(model, prefix + "linear1.bias"));
+    feed_forward = ggml_gelu_erf(context, feed_forward);
+    feed_forward = linear(
+        context, feed_forward,
+        semantic_named(model, prefix + "linear2.weight"),
+        semantic_named(model, prefix + "linear2.bias"));
+    return ggml_add(context, value, feed_forward);
 }
 
 ggml_tensor * decoder_attention(
@@ -547,7 +619,33 @@ ggml_tensor * conformer_layer(
 class Encoder::Impl {
 public:
     Impl(const std::string & path, const EncoderOptions & options)
-        : model(detail::load_gguf(path.c_str(), options.device.empty() ? nullptr : options.device.c_str(), options.threads)) {
+        : model(detail::load_gguf_raw(
+              path.c_str(), options.device.empty() ? nullptr : options.device.c_str(), options.threads)) {
+        const auto component = model.string("yue2.component");
+        if (component == "transcription" &&
+            model.string("yue2.transcription.architecture") == "sheetsage2-mert2-fs") {
+            sheetsage = true;
+            if (model.u32("yue2.transcription.sample_rate") != 24000) {
+                throw std::runtime_error("[yue2:mert2] unsupported transcription sample rate");
+            }
+        } else if (component == "semantic-tokenizer" &&
+                   model.string("yue2.semantic_tokenizer.architecture") ==
+                       "mert2-layer20-transformer-v1") {
+            semantic = true;
+            if (model.u32("yue2.semantic_tokenizer.sample_rate") != 24000 ||
+                model.u32("yue2.semantic_tokenizer.frame_rate") != 25 ||
+                model.u32("yue2.semantic_tokenizer.mert_layer") != 20 ||
+                model.u32("yue2.semantic_tokenizer.input_size") != semantic_input ||
+                model.u32("yue2.semantic_tokenizer.hidden_size") != semantic_hidden ||
+                model.u32("yue2.semantic_tokenizer.layer_count") != 8 ||
+                model.u32("yue2.semantic_tokenizer.head_count") != semantic_heads ||
+                model.u32("yue2.semantic_tokenizer.window_frames") != semantic_window ||
+                model.u32("yue2.semantic_tokenizer.vocab_size") != semantic_vocab) {
+                throw std::runtime_error("[yue2:mert2] unsupported semantic tokenizer metadata");
+            }
+        } else {
+            throw std::runtime_error("[yue2:mert2] unsupported MERT2 GGUF component");
+        }
         ggml_backend_t backends[] = {model.backend(), nullptr};
         std::size_t backend_count = 1;
         auto * primary_device = ggml_backend_get_device(model.backend());
@@ -557,15 +655,18 @@ public:
         }
         scheduler = ggml_backend_sched_new(backends, nullptr, backend_count, graph_size, false, true);
         if (!scheduler) throw std::runtime_error("[yue2:mert2] could not create GGML scheduler");
-        std::array<float, 25> logits{};
-        ggml_backend_tensor_get(model.get("sheetsage2.layer_weight"), logits.data(), 0, sizeof(logits));
-        const float maximum = *std::max_element(logits.begin(), logits.end());
-        float total = 0.0F;
-        for (std::size_t index = 0; index < logits.size(); ++index) {
-            mixture_weights[index] = std::exp(logits[index] - maximum);
-            total += mixture_weights[index];
+        if (sheetsage) {
+            std::array<float, 25> logits{};
+            ggml_backend_tensor_get(
+                model.get("sheetsage2.layer_weight"), logits.data(), 0, sizeof(logits));
+            const float maximum = *std::max_element(logits.begin(), logits.end());
+            float total = 0.0F;
+            for (std::size_t index = 0; index < logits.size(); ++index) {
+                mixture_weights[index] = std::exp(logits[index] - maximum);
+                total += mixture_weights[index];
+            }
+            for (float & weight : mixture_weights) weight /= total;
         }
-        for (float & weight : mixture_weights) weight /= total;
     }
 
     ~Impl() {
@@ -580,6 +681,9 @@ public:
         int layer0_stop_stage = 5) {
         if (conformer_layers < 0 || conformer_layers > 24) {
             throw std::invalid_argument("MERT2 layer count must be in [0,24]");
+        }
+        if (build_sheetsage_memory && !sheetsage) {
+            throw std::logic_error("SheetSage2 memory requires a transcription GGUF");
         }
         const bool full_encoder = conformer_layers > 0;
         if (features.bins != 128 || features.frames < 4 ||
@@ -712,15 +816,180 @@ public:
 
     HiddenFeatures subsample(const LogMelFeatures & features) { return run(features, 0); }
     HiddenFeatures encode(const LogMelFeatures & features, int layer_count) { return run(features, layer_count); }
-    HiddenFeatures sheetsage_memory(const LogMelFeatures & features) { return run(features, 24, true); }
+    HiddenFeatures sheetsage_memory(const LogMelFeatures & features) {
+        if (!sheetsage) throw std::logic_error("SheetSage2 memory requires a transcription GGUF");
+        return run(features, 24, true);
+    }
     HiddenFeatures layer0_stage(const LogMelFeatures & features, int stage) {
         if (stage < 1 || stage > 6) throw std::invalid_argument("MERT2 diagnostic stage must be in [1,6]");
         return run(features, 1, false, stage == 6 ? 0 : stage);
     }
 
+    std::vector<std::int32_t> semantic_window_tokens(
+        const float * values,
+        std::size_t frames) {
+        if (!semantic) {
+            throw std::logic_error("semantic tokenization requires a semantic-tokenizer GGUF");
+        }
+        if (!values || frames == 0 || frames > semantic_window) {
+            throw std::invalid_argument("semantic tokenizer window must contain 1..512 frames");
+        }
+        const std::size_t context_bytes = ggml_tensor_overhead() * graph_size +
+            ggml_graph_overhead_custom(graph_size, false);
+        std::vector<std::uint8_t> context_storage(context_bytes);
+        const ggml_init_params params = {context_bytes, context_storage.data(), true};
+        std::unique_ptr<ggml_context, decltype(&ggml_free)> context(
+            ggml_init(params), ggml_free);
+        if (!context) {
+            throw std::runtime_error("[yue2:semantic] could not allocate tokenizer graph context");
+        }
+        auto * graph = ggml_new_graph_custom(context.get(), graph_size, false);
+        auto * input = ggml_new_tensor_2d(
+            context.get(), GGML_TYPE_F32, semantic_input, semantic_window);
+        ggml_set_input(input);
+        ggml_set_name(input, "semantic.input");
+        auto * hidden = linear(
+            context.get(), input,
+            semantic_named(model, "inp.weight"),
+            semantic_named(model, "inp.bias"));
+        auto * position = ggml_reshape_2d(
+            context.get(), semantic_named(model, "pos"), semantic_hidden, semantic_window);
+        position = ggml_cast(context.get(), position, GGML_TYPE_F32);
+        hidden = ggml_add(context.get(), hidden, position);
+        for (int layer = 0; layer < 8; ++layer) {
+            hidden = semantic_layer(context.get(), model, hidden, layer);
+        }
+        hidden = layer_norm(
+            context.get(), hidden,
+            semantic_named(model, "norm.weight"),
+            semantic_named(model, "norm.bias"),
+            conformer_norm_epsilon);
+        auto * logits = linear(
+            context.get(), hidden,
+            semantic_named(model, "head.weight"),
+            semantic_named(model, "head.bias"));
+        auto * tokens = ggml_argmax(context.get(), logits);
+        ggml_set_name(tokens, "semantic.tokens");
+        ggml_build_forward_expand(graph, tokens);
+
+        ggml_backend_sched_reset(scheduler);
+        if (!ggml_backend_sched_alloc_graph(scheduler, graph)) {
+            throw std::runtime_error("[yue2:semantic] could not allocate tokenizer graph");
+        }
+        std::vector<float> padded(
+            static_cast<std::size_t>(semantic_window * semantic_input), 0.0F);
+        std::copy_n(values, frames * static_cast<std::size_t>(semantic_input), padded.begin());
+        ggml_backend_tensor_set(input, padded.data(), 0, padded.size() * sizeof(float));
+        const auto status = ggml_backend_sched_graph_compute(scheduler, graph);
+        if (status != GGML_STATUS_SUCCESS) {
+            throw std::runtime_error(std::string("[yue2:semantic] tokenizer graph failed: ") +
+                ggml_status_to_string(status));
+        }
+        std::vector<std::int32_t> result(static_cast<std::size_t>(semantic_window));
+        ggml_backend_tensor_get(tokens, result.data(), 0, result.size() * sizeof(std::int32_t));
+        result.resize(frames);
+        return result;
+    }
+
+    std::vector<std::int32_t> semantic_tokens_24k(
+        const std::vector<float> & mono_samples) {
+        if (!semantic) {
+            throw std::logic_error("semantic tokenization requires a semantic-tokenizer GGUF");
+        }
+        constexpr std::size_t sample_rate = 24000;
+        constexpr std::size_t chunk_samples = 30 * sample_rate;
+        if (mono_samples.size() < sample_rate) {
+            throw std::invalid_argument("semantic tokenization requires at least one second of audio");
+        }
+
+        std::vector<float> source;
+        std::size_t source_frames = 0;
+        for (std::size_t offset = 0; offset < mono_samples.size(); offset += chunk_samples) {
+            const auto count = std::min(chunk_samples, mono_samples.size() - offset);
+            if (count < sample_rate) break;
+            std::vector<float> chunk(
+                mono_samples.begin() + static_cast<std::ptrdiff_t>(offset),
+                mono_samples.begin() + static_cast<std::ptrdiff_t>(offset + count));
+            // The released extraction indexes output_hidden_states[20]. The
+            // custom MERT implementation stores one entry after each block,
+            // so this is the output of blocks 0..20 (21 executed blocks).
+            auto encoded = run(log_mel_spectrogram(chunk), 21);
+            if (encoded.channels != semantic_input) {
+                throw std::runtime_error("[yue2:semantic] MERT layer 20 has unexpected width");
+            }
+            source.insert(source.end(), encoded.values.begin(), encoded.values.end());
+            source_frames += static_cast<std::size_t>(encoded.frames);
+        }
+        if (source_frames == 0) {
+            throw std::runtime_error("[yue2:semantic] MERT produced no usable frames");
+        }
+
+        const auto target_frames = static_cast<std::size_t>(std::llround(
+            static_cast<double>(mono_samples.size()) * 25.0 / sample_rate));
+        std::vector<float> features(target_frames * static_cast<std::size_t>(semantic_input));
+        for (std::size_t output = 0; output < target_frames; ++output) {
+            double position = (static_cast<double>(output) + 0.5) * source_frames /
+                target_frames - 0.5;
+            position = std::clamp(position, 0.0, static_cast<double>(source_frames - 1));
+            const auto left = static_cast<std::size_t>(std::floor(position));
+            const auto right = std::min(left + 1, source_frames - 1);
+            const float fraction = static_cast<float>(position - left);
+            for (std::size_t channel = 0; channel < semantic_input; ++channel) {
+                const float a = source[left * semantic_input + channel];
+                const float b = source[right * semantic_input + channel];
+                features[output * semantic_input + channel] = a + (b - a) * fraction;
+            }
+        }
+
+        for (std::size_t channel = 0; channel < semantic_input; ++channel) {
+            double sum = 0.0;
+            for (std::size_t frame = 0; frame < target_frames; ++frame) {
+                sum += features[frame * semantic_input + channel];
+            }
+            const double mean = sum / target_frames;
+            double variance = 0.0;
+            for (std::size_t frame = 0; frame < target_frames; ++frame) {
+                const double delta = features[frame * semantic_input + channel] - mean;
+                variance += delta * delta;
+            }
+            const double deviation = std::sqrt(variance / target_frames) + 1.0e-5;
+            for (std::size_t frame = 0; frame < target_frames; ++frame) {
+                auto & value = features[frame * semantic_input + channel];
+                value = static_cast<float>((value - mean) / deviation);
+            }
+        }
+
+        std::vector<std::int32_t> result(target_frames);
+        std::vector<std::size_t> starts;
+        const auto stop = std::max<std::size_t>(
+            1, target_frames >= semantic_window ? target_frames - semantic_window + 1 : 1);
+        for (std::size_t start = 0; start < stop; start += semantic_window / 2) {
+            starts.push_back(start);
+        }
+        const auto tail_start = target_frames > semantic_window
+            ? target_frames - semantic_window : 0;
+        if (starts.empty() || starts.back() + semantic_window < target_frames) {
+            starts.push_back(tail_start);
+        }
+        for (const auto start : starts) {
+            const auto count = std::min<std::size_t>(semantic_window, target_frames - start);
+            auto window = semantic_window_tokens(
+                features.data() + start * semantic_input, count);
+            const auto lo = start + (start == 0 ? 0 : semantic_window / 4);
+            const auto hi = start + count -
+                (start + count >= target_frames ? 0 : semantic_window / 4);
+            std::copy(
+                window.begin() + static_cast<std::ptrdiff_t>(lo - start),
+                window.begin() + static_cast<std::ptrdiff_t>(hi - start),
+                result.begin() + static_cast<std::ptrdiff_t>(lo));
+        }
+        return result;
+    }
+
     std::vector<float> decode_logits(
         const HiddenFeatures & memory,
         const std::vector<std::int32_t> & decoder_token_ids) {
+        if (!sheetsage) throw std::logic_error("SheetSage2 decoding requires a transcription GGUF");
         if (memory.channels != 512 || memory.frames <= 0 ||
             memory.values.size() != static_cast<std::size_t>(memory.frames * memory.channels)) {
             throw std::invalid_argument("SheetSage2 decoder expects [frames,512] encoder memory");
@@ -941,6 +1210,7 @@ public:
         const std::vector<std::int32_t> & prefix,
         std::size_t max_tokens,
         double stop_time_seconds) {
+        if (!sheetsage) throw std::logic_error("SheetSage2 generation requires a transcription GGUF");
         using sheetsage2::PromptGrammarState;
         using sheetsage2::TokenLayout;
         if (prefix.empty() || prefix.front() != TokenLayout::sos) {
@@ -1001,6 +1271,8 @@ public:
     ggml_backend_t cpu_backend = nullptr;
     ggml_backend_sched_t scheduler = nullptr;
     std::array<float, 25> mixture_weights{};
+    bool sheetsage = false;
+    bool semantic = false;
 };
 
 Encoder::Encoder(const std::string & model_path, const EncoderOptions & options)
@@ -1020,6 +1292,11 @@ HiddenFeatures Encoder::encode(const LogMelFeatures & features, int layer_count)
 
 HiddenFeatures Encoder::sheetsage_memory(const LogMelFeatures & features) {
     return impl_->sheetsage_memory(features);
+}
+
+std::vector<std::int32_t> Encoder::semantic_tokens_24k(
+    const std::vector<float> & mono_samples) {
+    return impl_->semantic_tokens_24k(mono_samples);
 }
 
 HiddenFeatures Encoder::layer0_stage(const LogMelFeatures & features, int stage) {

@@ -572,7 +572,8 @@ ggml_tensor * linear_bias(
     ggml_tensor * weight,
     ggml_tensor * bias) {
     return ggml_add(
-        context, linear(context, loras, value, weight), f32(context, bias));
+        context, linear(context, loras, value, weight),
+        f32(context, loras.bias(context, bias)));
 }
 
 ggml_tensor * nar_mlp(

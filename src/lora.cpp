@@ -65,6 +65,7 @@ LoraStack::LoraStack(GgufModel & base, const std::vector<LoraAdapterSpec> & spec
         adapter.scale = alpha / static_cast<float>(rank) * spec.strength;
 
         std::map<std::string, std::pair<ggml_tensor *, ggml_tensor *>> pairs;
+        std::map<std::string, ggml_tensor *> replacements;
         for (const auto & name : adapter.model.tensor_names()) {
             if (ends_with(name, ".lora_A")) {
                 auto & pair = pairs[remove_suffix(name, ".lora_A")];
@@ -74,14 +75,22 @@ LoraStack::LoraStack(GgufModel & base, const std::vector<LoraAdapterSpec> & spec
                 auto & pair = pairs[remove_suffix(name, ".lora_B")];
                 if (pair.second) throw lora_error("duplicate factor: " + name);
                 pair.second = adapter.model.get(name);
+            } else if (ends_with(name, ".replacement")) {
+                const auto target = remove_suffix(name, ".replacement");
+                if (!replacements.emplace(target, adapter.model.get(name)).second) {
+                    throw lora_error("duplicate replacement: " + name);
+                }
             } else {
                 throw lora_error("unsupported adapter tensor: " + name);
             }
         }
-        if (pairs.size() != adapter.model.u32("yue2.adapter.target_count")) {
+        if (pairs.size() + replacements.size() !=
+            adapter.model.u32("yue2.adapter.target_count")) {
             throw lora_error("adapter target count does not match its tensors: " + spec.path);
         }
-        if (pairs.empty()) throw lora_error("adapter has no targets: " + spec.path);
+        if (pairs.empty() && replacements.empty()) {
+            throw lora_error("adapter has no targets: " + spec.path);
+        }
 
         adapters_.push_back(std::move(adapter));
         auto & loaded = adapters_.back();
@@ -102,9 +111,30 @@ LoraStack::LoraStack(GgufModel & base, const std::vector<LoraAdapterSpec> & spec
             }
             bindings_[weight].push_back({a, b, loaded.scale});
         }
+        for (const auto & entry : replacements) {
+            if (!base.has(entry.first)) {
+                throw lora_error("base model has no replacement target: " + entry.first);
+            }
+            auto * base_tensor = base.get(entry.first);
+            auto * replacement = entry.second;
+            validate_factor_type(replacement, entry.first + ".replacement");
+            if (replacement->type != base_tensor->type &&
+                replacement->type != GGML_TYPE_F32 && replacement->type != GGML_TYPE_F16) {
+                throw lora_error("unsupported replacement type: " + entry.first);
+            }
+            if (replacement->ne[0] != base_tensor->ne[0] ||
+                replacement->ne[1] != base_tensor->ne[1] ||
+                replacement->ne[2] != base_tensor->ne[2] ||
+                replacement->ne[3] != base_tensor->ne[3]) {
+                throw lora_error("replacement shape does not match base tensor: " + entry.first);
+            }
+            replacements_[base_tensor].push_back({replacement, spec.strength});
+        }
         std::fprintf(
-            stderr, "[yue2] LoRA: %s (rank %u, alpha %.6g, strength %.6g, %zu targets)\n",
-            spec.path.c_str(), rank, alpha, spec.strength, pairs.size());
+            stderr, "[yue2] LoRA: %s (rank %u, alpha %.6g, strength %.6g, "
+            "%zu low-rank + %zu replacement targets)\n",
+            spec.path.c_str(), rank, alpha, spec.strength,
+            pairs.size(), replacements.size());
     }
 }
 
@@ -113,6 +143,18 @@ ggml_tensor * LoraStack::linear(
     ggml_tensor * weight,
     ggml_tensor * input) const {
     auto * output = ggml_mul_mat(context, weight, input);
+    const auto replacement = replacements_.find(weight);
+    if (replacement != replacements_.end()) {
+        for (const auto & item : replacement->second) {
+            if (item.strength == 0.0F) continue;
+            auto * replaced = ggml_mul_mat(context, item.tensor, input);
+            output = ggml_add(
+                context, output,
+                ggml_scale(context, ggml_sub(context, replaced,
+                                               ggml_mul_mat(context, weight, input)),
+                           item.strength));
+        }
+    }
     const auto found = bindings_.find(weight);
     if (found == bindings_.end()) return output;
     for (const auto & factor : found->second) {
@@ -120,6 +162,23 @@ ggml_tensor * LoraStack::linear(
         auto * ax = ggml_mul_mat(context, factor.a, input);
         auto * bax = ggml_mul_mat(context, factor.b, ax);
         output = ggml_add(context, output, ggml_scale(context, bax, factor.scale));
+    }
+    return output;
+}
+
+ggml_tensor * LoraStack::bias(ggml_context * context, ggml_tensor * base) const {
+    const auto found = replacements_.find(base);
+    if (found == replacements_.end()) return base;
+    auto * base_f32 = base->type == GGML_TYPE_F32
+        ? base : ggml_cast(context, base, GGML_TYPE_F32);
+    ggml_tensor * output = base_f32;
+    for (const auto & item : found->second) {
+        if (item.strength == 0.0F) continue;
+        auto * replacement = item.tensor->type == GGML_TYPE_F32
+            ? item.tensor : ggml_cast(context, item.tensor, GGML_TYPE_F32);
+        output = ggml_add(
+            context, output,
+            ggml_scale(context, ggml_sub(context, replacement, base_f32), item.strength));
     }
     return output;
 }

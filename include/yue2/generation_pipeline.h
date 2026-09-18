@@ -60,6 +60,7 @@ struct GeneratedSong {
     std::vector<std::int32_t> abc_token_ids;
     bool abc_truncated = false;
     std::vector<std::int32_t> semantic_codec_ids;
+    std::uint32_t semantic_prefix_frames = 0;
     bool semantic_truncated = false;
     std::uint32_t score_bars = 0;
     double score_duration_seconds = 0.0;

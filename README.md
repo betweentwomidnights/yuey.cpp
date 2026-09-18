@@ -19,14 +19,15 @@ public APIs retain the `yue2` prefix to identify the underlying model.
 
 - Audio transcription to full or melody-only ABC, multi-track MIDI, and timed
   events using native MERT2 + SheetSage2 inference.
-- Text-to-music, score-conditioned generation, covers, and cover-then-continue
-  workflows through the native YuE2 AR, flow, and VAE pipeline.
+- Text-to-music, score-conditioned generation, covers, and real-audio semantic
+  continuation through the native YuE2 AR, flow, and VAE pipeline.
 - Typed BPM, key, and meter controls that are applied to the planning score
   instead of being left to prompt interpretation.
 - Score-first length and ending controls that fit generated plans to musical
   bars and let semantic generation reach the score's natural end.
-- Best-effort instrumental generation using score-aligned empty lyric sections
-  and a duration-preserving rested Vocal lane.
+- Best-effort instrumental generation using score-aligned empty lyric sections,
+  a duration-preserving rested Vocal lane, and optional instrumental AR adapter
+  support.
 - BF16, Q8_0, Q5_K_M, and Q4_K_M generation models, including automatic device
   memory recommendations.
 - A local asynchronous HTTP server and embedded Yuey web UI.
@@ -135,6 +136,7 @@ Copy the same model directory to the Mac before testing
 - [C/C++ embedding](docs/embedding.md)
 - [C ABI V1 contract](docs/C_ABI_V1.md)
 - [GGUF naming, conversion, and quantization](docs/distribution.md)
+- [Instrumental adapters and real-audio continuation](docs/realaudio-continuation.md)
 - [Numerical and listening validation](docs/validation.md)
 - [Pinned upstream references](docs/reference-lock.md)
 

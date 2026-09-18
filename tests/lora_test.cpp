@@ -85,6 +85,27 @@ void write_adapter(
     ggml_free(context);
 }
 
+void write_replacement_adapter(const std::filesystem::path & path) {
+    auto * context = ggml_init({8192, nullptr, false});
+    assert(context);
+    auto * replacement = tensor_2d(
+        context, "model.layers.0.self_attn.q_proj.weight.replacement", 3, 2,
+        {0, 0, 0, 0, 0, 0});
+    auto * file = gguf_init_empty();
+    gguf_set_val_str(file, "general.architecture", "yue2_lora");
+    gguf_set_val_str(file, "yue2.component", "generation-adapter");
+    gguf_set_val_str(file, "yue2.adapter.type", "lora");
+    gguf_set_val_u32(file, "yue2.adapter.rank", 1);
+    gguf_set_val_f32(file, "yue2.adapter.alpha", 1.0F);
+    gguf_set_val_u32(file, "yue2.adapter.target_count", 1);
+    gguf_set_val_u32(file, "yue2.adapter.replacement_count", 1);
+    gguf_set_val_str(file, "yue2.adapter.base_sha256", kHash);
+    gguf_add_tensor(file, replacement);
+    assert(gguf_write_to_file(file, path.string().c_str(), false));
+    gguf_free(file);
+    ggml_free(context);
+}
+
 std::vector<float> run(
     yue2::detail::GgufModel & base,
     const yue2::detail::LoraStack & loras) {
@@ -125,11 +146,13 @@ int main(int argc, char ** argv) {
     const auto base_path = temporary.path / "base.gguf";
     const auto adapter_path = temporary.path / "adapter.gguf";
     const auto wrong_path = temporary.path / "wrong.gguf";
+    const auto replacement_path = temporary.path / "replacement.gguf";
     write_base(base_path);
     write_adapter(adapter_path);
     write_adapter(
         wrong_path,
         "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    write_replacement_adapter(replacement_path);
 
     const char * device = argc > 1 ? argv[1] : "cpu";
     auto base = yue2::detail::load_gguf_raw(base_path.string().c_str(), device);
@@ -146,6 +169,11 @@ int main(int argc, char ** argv) {
     yue2::detail::LoraStack disabled(
         base, {{adapter_path.string(), 0.0F}});
     require_close(run(base, disabled), {-2, -2, 4, 13});
+
+    yue2::detail::LoraStack replaced(
+        base, {{replacement_path.string(), 0.5F}});
+    assert(replaced.target_count() == 1);
+    require_close(run(base, replaced), {-1, -1, 2, 6.5F});
 
     std::vector<float> after(6);
     ggml_backend_tensor_get(

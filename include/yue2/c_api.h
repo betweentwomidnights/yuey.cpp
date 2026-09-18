@@ -152,6 +152,11 @@ typedef struct {
     uint32_t target_bars;
     int32_t ending_mode;       /* YUE2_ENDING_* */
     uint32_t outro_bars;       /* zero uses the native default of four */
+
+    /* Optional real-audio semantic continuation prefix: raw codec IDs in
+     * [0,32767] at 25 Hz. The pointed-to memory is borrowed for the call. */
+    const int32_t * semantic_prefix;
+    uint64_t semantic_prefix_count;
 } yue2_generation_request;
 
 typedef struct {

@@ -42,6 +42,11 @@ public:
     // Apply SheetSage2's learned mixture of the subsampler and all 24 encoder
     // layers, then its 1024 -> 512 encoder projection.
     HiddenFeatures sheetsage_memory(const LogMelFeatures & features);
+    // Convert mono 24 kHz PCM into YuE2 semantic codec IDs at 25 Hz using
+    // the dedicated real-audio tokenizer head. This requires a
+    // yue2-semantic-tokenizer GGUF rather than the SheetSage2 model.
+    std::vector<std::int32_t> semantic_tokens_24k(
+        const std::vector<float> & mono_samples);
     // Validation hook: return layer zero after stage 1=FFN1, 2=attention,
     // 3=convolution, 4=FFN2 residual, 5=final LayerNorm, or 6=the
     // rotated query projection flattened to 1024 channels.

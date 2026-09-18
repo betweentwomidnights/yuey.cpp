@@ -85,6 +85,10 @@
     .tier:last-child { border-bottom: 0; }
     .tier input { width: 16px; height: 16px; accent-color: var(--accent); }
     .tier small { display: block; color: var(--muted); }
+    .adapter-setting { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 14px 0; margin: 0; border-bottom: 1px solid var(--line-soft); }
+    .adapter-setting:last-child { border-bottom: 0; }
+    .adapter-setting input { width: 16px; height: 16px; accent-color: var(--accent); }
+    .adapter-setting small { display: block; color: var(--muted); font-weight: 500; }
     .pill { padding: 4px 8px; border-radius: 99px; color: var(--muted); background: var(--line-soft); font-size: 10px; font-weight: 730; }
     .pill.good { color: #001b09; background: var(--ok); }
     .pill.warn { color: var(--accent); background: #e620201f; }
@@ -94,6 +98,11 @@
     .score-area { min-height: 410px; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
     .editor-toolbar { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; margin: 16px 0 10px; }
     .editor-toolbar label { min-width: 135px; margin: 0; }
+    .zoom-tools { display: flex; align-items: center; gap: 5px; margin-left: auto; }
+    .zoom-tools span { min-width: 42px; color: var(--muted); font-size: 10px; text-align: center; }
+    .icon-button { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: #101010; }
+    .icon-button:hover { color: var(--accent-ink); border-color: var(--accent); background: var(--accent); }
+    .icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
     .roll-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: 11px; background: #050505; }
     .chord-scroll, .roll-scroll { overflow-x: auto; }
     .chord-row, .roll-row { display: flex; width: max-content; min-width: 100%; }
@@ -108,6 +117,7 @@
     .piano-key { position: absolute; right: 0; width: 100%; padding-right: 4px; border-bottom: 1px solid #5a5a5a; color: #111; background: #ddd; font-size: 8px; line-height: 13px; text-align: right; }
     .piano-key.black { width: 68%; color: #ddd; background: #292929; }
     .piano-key.c { color: var(--accent); font-weight: 750; }
+    .piano-key.pitch-selected { color: #fff; background: #a41010; box-shadow: inset 0 0 0 1px var(--accent); }
     .piano-roll { position: relative; flex: 0 0 auto; min-height: 350px; user-select: none; }
     .note-block { position: absolute; z-index: 2; min-width: 5px; height: 12px; overflow: hidden; padding: 0 3px; border: 1px solid #ff5b5b; border-radius: 3px; color: #fff; background: #b70e0e; font-size: 9px; line-height: 10px; cursor: ns-resize; }
     .note-block.vocal { border-color: #ff9a9a; background: #711010; }
@@ -205,12 +215,13 @@
           <div id="remix-lyrics-field" hidden><label for="remix-lyrics">lyrics <span class="help">· required when retaining vocals</span></label><textarea id="remix-lyrics" placeholder="type the source lyrics here, including section labels when available…"></textarea></div>
           <div class="help" id="remix-vocal-help">keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections. turn it off when the source contains vocals you want yuey to retain.</div>
           <div id="continuation-controls" hidden>
+            <label>continuation method</label><div class="mode-switch"><button id="continue-method-score" class="active" type="button" aria-pressed="true">score continuation</button><button id="continue-method-audio" type="button" aria-pressed="false">audio continuation</button></div>
+            <div class="help" id="continue-method-help">transcribes the composition and renders a fresh continuation from its score. this is the default because it avoids real-audio codec loss.</div>
             <div class="row two">
               <div><label for="continue-ending">continuation length</label><select id="continue-ending"><option value="natural">let yuey choose</option><option value="outro">add bars</option></select></div>
               <div id="continue-bars-field" hidden><label for="continue-bars">new bars</label><input id="continue-bars" type="number" min="4" max="256" value="8"></div>
             </div>
             <div class="help" id="continue-length-help">yuey decides when the continued composition is complete.</div>
-            <div class="help">continue preserves the transcribed score as a planning prefix, appends new sections, and re-renders the complete piece. it is not a waveform splice.</div>
           </div>
           <div class="actions"><button id="transform-run" class="primary">transcribe + remix</button><button id="transcribe" class="secondary">transcribe only</button></div>
           <div class="status" id="transform-status"><div class="status-head"><b id="transform-stage">queued</b><span id="transform-percent">0%</span></div><div class="bar"><i id="transform-bar"></i></div><div class="help" id="transform-detail"></div></div>
@@ -233,6 +244,11 @@
             <label>key root<select id="score-key-root"><option>C</option><option>C#</option><option>Db</option><option>D</option><option>D#</option><option>Eb</option><option>E</option><option>F</option><option>F#</option><option>Gb</option><option>G</option><option>G#</option><option>Ab</option><option>A</option><option>A#</option><option>Bb</option><option>B</option></select></label>
             <label>scale<select id="score-key-mode"><option value="">major</option><option value="m">minor</option></select></label>
             <button id="undo-score" class="ghost">undo</button>
+            <div class="zoom-tools" role="group" aria-label="piano roll horizontal zoom">
+              <button id="roll-zoom-out" class="icon-button" type="button" title="zoom out" aria-label="zoom piano roll out"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M15.5 15.5 21 21M7.5 10.5h6"></path></svg></button>
+              <span id="roll-zoom-level">100%</span>
+              <button id="roll-zoom-in" class="icon-button" type="button" title="zoom in" aria-label="zoom piano roll in"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M15.5 15.5 21 21M7.5 10.5h6M10.5 7.5v6"></path></svg></button>
+            </div>
           </div>
           <div class="help" id="score-meta">add, generate, or transcribe a score to begin.</div>
           <div class="roll-shell" id="roll-shell"><div class="roll-empty">the editable note grid will appear here.</div></div>
@@ -248,7 +264,7 @@
             <div class="actions"><button id="score-generate" class="primary">render edited score</button><button id="export-abc" class="secondary">save abc</button></div>
             <div class="status" id="score-status"><div class="status-head"><b id="score-stage">queued</b><span id="score-percent">0%</span></div><div class="bar"><i id="score-bar"></i></div><div class="help" id="score-detail"></div></div>
           </div>
-          <div class="notice">double-click an empty part of the roll to add a snapped note. right-click selected notes to transpose, duplicate, or delete them. ctrl/cmd+d duplicates the complete selected bar range, including rhythm and chords.</div>
+          <div class="notice">click a piano key to select every instance of that pitch, or drag across keys to select a pitch range. double-click an empty part of the roll to add a snapped note. right-click selected notes to transpose, duplicate, or delete them. ctrl/cmd+d duplicates the complete selected bar range, including rhythm and chords.</div>
         </div>
       </div>
     </div>
@@ -258,6 +274,10 @@
         <div class="card"><h2>generation quality</h2><p>choose an installed tier per job. yuey unloads and switches models between jobs when needed.</p><div id="tiers"></div></div>
         <div>
           <div class="card"><h2>runtime</h2><div id="devices"></div></div>
+          <div class="card"><h2>optional adapters</h2><p>turn these off for controlled comparisons against the base model.</p>
+            <label class="adapter-setting"><input id="use-instrumental-adapter" type="checkbox"><span><b>instrumental planner</b><small>applies the instrumental AR LoRA only when an instrumental request is enabled.</small></span><span class="pill" id="instrumental-adapter-state">checking</span></label>
+            <label class="adapter-setting"><input id="use-continuation-adapter" type="checkbox"><span><b>real-audio continuation</b><small>enables the matching semantic-tokenizer NAR decoder. turning it off keeps score continuation available.</small></span><span class="pill" id="continuation-adapter-state">checking</span></label>
+          </div>
           <div class="card"><h2>model installation</h2><p id="model-folder"></p><div class="notice" id="download-note">automatic downloads are waiting on a stable published model manifest. for now, place converted gguf files in the model folder and refresh.</div><div class="actions"><button class="secondary" id="refresh-models">rescan folder</button></div></div>
         </div>
       </div>
@@ -267,7 +287,7 @@
 <div class="roll-menu" id="roll-menu"><div class="roll-menu-row"><button data-transpose="-12">−12</button><button data-transpose="-1">−1</button><button data-transpose="1">+1</button><button data-transpose="12">+12</button></div><button id="menu-duplicate">duplicate selected bars</button><button id="menu-delete">delete selected notes</button></div>
 <script>
   const $ = id => document.getElementById(id);
-  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreContext: null, transformMode: 'remix', scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
+  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreContext: null, transformMode: 'remix', continuationMethod: 'score', instrumentalAdapterEnabled: null, audioContinuationAdapterEnabled: null, rollZoom: 1, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
   const titles = { create: 'create with yuey', transform: 'remix or continue', models: 'models and runtime' };
   const chordRoots = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
   const chordQualities = [
@@ -318,6 +338,25 @@
       : 'yuey decides when the continued composition is complete.';
   }
   $('continue-ending').onchange = syncContinueLength;
+  function syncContinuationMethod() {
+    const audioAvailable = state.audioContinuationAdapterEnabled !== false &&
+      state.props?.capabilities?.continuation_adapter !== false;
+    if (state.continuationMethod === 'audio' && !audioAvailable) state.continuationMethod = 'score';
+    const audio = state.continuationMethod === 'audio';
+    for (const [id, active] of [['continue-method-score', !audio], ['continue-method-audio', audio]]) {
+      $(id).classList.toggle('active', active);
+      $(id).setAttribute('aria-pressed', String(active));
+    }
+    $('continue-method-audio').disabled = !audioAvailable;
+    $('continue-method-help').textContent = audio
+      ? "opt-in: extends the source's semantic audio tokens as well as its score. continuity is stronger, but the complete result is reconstructed and may lose fidelity."
+      : 'transcribes the composition and renders a fresh continuation from its score. this is the default because it avoids real-audio codec loss.';
+    if (state.transformMode === 'continue') {
+      $('transform-run').textContent = audio ? 'continue from audio' : 'continue from score';
+    }
+  }
+  $('continue-method-score').onclick = () => { state.continuationMethod = 'score'; syncContinuationMethod(); };
+  $('continue-method-audio').onclick = () => { if (state.audioContinuationAdapterEnabled !== false) state.continuationMethod = 'audio'; syncContinuationMethod(); };
   function syncTransformMode() {
     const continuation = state.transformMode === 'continue';
     for (const [id, active] of [['transform-mode-remix', !continuation], ['transform-mode-continue', continuation]]) {
@@ -325,7 +364,9 @@
       $(id).setAttribute('aria-pressed', String(active));
     }
     $('remix-prompt-label').textContent = continuation ? 'continuation prompt' : 'remix prompt';
-    $('transform-run').textContent = continuation ? 'transcribe + continue' : 'transcribe + remix';
+    $('transform-run').textContent = continuation
+      ? (state.continuationMethod === 'audio' ? 'continue from audio' : 'continue from score')
+      : 'transcribe + remix';
     syncContinueLength();
     if (state.scoreContext === 'transform') {
       $('score-action-title').textContent = continuation ? 'continue the edited score' : 'remix the edited score';
@@ -334,6 +375,7 @@
         : 'reinterpret these edited bars with a new production prompt.';
       $('score-generate').textContent = continuation ? 'continue edited score' : 'remix edited score';
     }
+    syncContinuationMethod();
   }
   $('transform-mode-remix').onclick = () => { state.transformMode = 'remix'; syncTransformMode(); };
   $('transform-mode-continue').onclick = () => { state.transformMode = 'continue'; syncTransformMode(); };
@@ -604,7 +646,11 @@
   function setSelection(ids, score = null) {
     state.selection = [...new Set(ids)];
     document.querySelectorAll('.note-block').forEach(block => block.classList.toggle('selected', state.selection.includes(block.dataset.noteId)));
-    if (score) updateScoreMeta(score);
+    if (score) {
+      const pitches = new Set(selectedNotes(score).map(note => note.pitch));
+      document.querySelectorAll('.piano-key').forEach(key => key.classList.toggle('pitch-selected', pitches.has(Number(key.dataset.pitch))));
+      updateScoreMeta(score);
+    }
   }
   function updateScoreMeta(score) {
     const count = selectedNotes(score).length;
@@ -626,14 +672,17 @@
     const referenceNotes = notes.length ? notes : score.notes;
     const minPitch = referenceNotes.length ? Math.max(0, Math.min(...referenceNotes.map(n => n.pitch)) - 3) : 48;
     const maxPitch = referenceNotes.length ? Math.min(127, Math.max(...referenceNotes.map(n => n.pitch)) + 3) : 84;
-    const barWidth = 180, rowHeight = 14, width = Math.max(720, score.bars * barWidth), height = Math.max(350, (maxPitch - minPitch + 1) * rowHeight);
+    const barWidth = Math.round(180 * state.rollZoom), rowHeight = 14, width = Math.max(720, score.bars * barWidth), height = Math.max(350, (maxPitch - minPitch + 1) * rowHeight);
     const chordsByBar = {};
+    const selectedPitches = new Set(selectedNotes(score).map(note => note.pitch));
     for (const chord of score.chords) (chordsByBar[chord.bar] ||= []).push(chord);
     shell.innerHTML = `<div class="chord-row" style="width:${width + 52}px"><div class="gutter-head"></div><div class="chord-strip" style="width:${width}px;grid-template-columns:repeat(${score.bars},${barWidth}px)"></div></div><div class="roll-row" style="width:${width + 52}px"><div class="piano-keys" style="height:${height}px"></div><div class="piano-roll" style="width:${width}px;height:${height}px;background-image:linear-gradient(to right,transparent ${barWidth - 1}px,#3b2020 ${barWidth - 1}px),linear-gradient(to bottom,transparent ${rowHeight - 1}px,#202020 ${rowHeight - 1}px);background-size:${barWidth}px 100%,100% ${rowHeight}px"></div></div>`;
     const strip = shell.querySelector('.chord-strip'), roll = shell.querySelector('.piano-roll'), keys = shell.querySelector('.piano-keys');
     for (let pitch = maxPitch; pitch >= minPitch; --pitch) {
       const key = document.createElement('div'), pitchClass = ((pitch % 12) + 12) % 12;
       key.className = `piano-key${[1, 3, 6, 8, 10].includes(pitchClass) ? ' black' : ''}${pitchClass === 0 ? ' c' : ''}`;
+      key.classList.toggle('pitch-selected', selectedPitches.has(pitch));
+      key.dataset.pitch = String(pitch);
       key.style.top = `${(maxPitch - pitch) * rowHeight}px`; key.style.height = `${rowHeight}px`; key.textContent = pitchLabel(pitch); keys.appendChild(key);
     }
     for (let bar = 0; bar < score.bars; ++bar) {
@@ -694,6 +743,31 @@
       };
       roll.appendChild(block);
     }
+    keys.onpointerdown = event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const rect = keys.getBoundingClientRect();
+      const pitchAt = current => {
+        const row = Math.max(0, Math.min(maxPitch - minPitch,
+          Math.floor((current.clientY - rect.top) / rowHeight)));
+        return maxPitch - row;
+      };
+      const startPitch = pitchAt(event);
+      const retained = event.shiftKey ? [...state.selection] : [];
+      keys.setPointerCapture?.(event.pointerId);
+      const selectRange = current => {
+        const endPitch = pitchAt(current);
+        const low = Math.min(startPitch, endPitch), high = Math.max(startPitch, endPitch);
+        const hits = notes.filter(note => note.pitch >= low && note.pitch <= high).map(note => noteId(note));
+        setSelection([...retained, ...hits], score);
+      };
+      const finish = current => {
+        selectRange(current);
+        keys.onpointermove = null; keys.onpointerup = null; keys.onpointercancel = null;
+      };
+      selectRange(event);
+      keys.onpointermove = selectRange; keys.onpointerup = finish; keys.onpointercancel = finish;
+    };
     roll.onpointerdown = event => {
       if (event.target !== roll) return;
       event.preventDefault();
@@ -769,6 +843,23 @@
   }
   $('score-lane').onchange = () => { state.selection = []; renderScore(); };
   $('score-key-root').onchange = updateScoreKey; $('score-key-mode').onchange = updateScoreKey;
+  function updateRollZoomControls() {
+    $('roll-zoom-level').textContent = `${Math.round(state.rollZoom * 100)}%`;
+    $('roll-zoom-out').disabled = state.rollZoom <= .5;
+    $('roll-zoom-in').disabled = state.rollZoom >= 3;
+  }
+  function changeRollZoom(delta) {
+    const shell = $('roll-shell');
+    const center = shell.scrollWidth > 0
+      ? (shell.scrollLeft + shell.clientWidth / 2) / shell.scrollWidth : 0;
+    state.rollZoom = Math.max(.5, Math.min(3, Math.round((state.rollZoom + delta) * 4) / 4));
+    renderScore();
+    shell.scrollLeft = Math.max(0, center * shell.scrollWidth - shell.clientWidth / 2);
+    updateRollZoomControls();
+  }
+  $('roll-zoom-out').onclick = () => changeRollZoom(-.25);
+  $('roll-zoom-in').onclick = () => changeRollZoom(.25);
+  updateRollZoomControls();
   document.querySelectorAll('[data-transpose]').forEach(button => button.onclick = () => {
     $('roll-menu').classList.remove('on'); transposeSelected(Number(button.dataset.transpose));
   });
@@ -800,6 +891,21 @@
     state.deviceLabel = accelerator ? `${accelerator.description} · ${humanBytes(accelerator.memory_total_bytes)}` : 'cpu mode';
     $('model-folder').textContent = `model folder: ${p.models.directory}`;
     $('devices').innerHTML = p.devices.map(d => `<div class="device"><div><b>${escapeHtml(d.description)}</b><br><span>${escapeHtml(d.backend)} · ${escapeHtml(d.type.replaceAll('_', ' '))}</span></div><span>${humanBytes(d.memory_free_bytes)} free / ${humanBytes(d.memory_total_bytes)}</span></div>`).join('');
+    const instrumentalAvailable = !!p.capabilities.instrumental_adapter;
+    const continuationAvailable = !!p.capabilities.continuation_adapter;
+    if (state.instrumentalAdapterEnabled == null) state.instrumentalAdapterEnabled = instrumentalAvailable;
+    if (state.audioContinuationAdapterEnabled == null) state.audioContinuationAdapterEnabled = continuationAvailable;
+    if (!instrumentalAvailable) state.instrumentalAdapterEnabled = false;
+    if (!continuationAvailable) state.audioContinuationAdapterEnabled = false;
+    $('use-instrumental-adapter').disabled = !instrumentalAvailable;
+    $('use-instrumental-adapter').checked = state.instrumentalAdapterEnabled;
+    $('instrumental-adapter-state').textContent = instrumentalAvailable ? (state.instrumentalAdapterEnabled ? 'enabled' : 'bypassed') : 'not installed';
+    $('instrumental-adapter-state').className = `pill ${state.instrumentalAdapterEnabled ? 'good' : ''}`;
+    $('use-continuation-adapter').disabled = !continuationAvailable;
+    $('use-continuation-adapter').checked = state.audioContinuationAdapterEnabled;
+    $('continuation-adapter-state').textContent = continuationAvailable ? (state.audioContinuationAdapterEnabled ? 'enabled' : 'bypassed') : 'not installed';
+    $('continuation-adapter-state').className = `pill ${state.audioContinuationAdapterEnabled ? 'good' : ''}`;
+    syncContinuationMethod();
     const installed = p.models.tiers.filter(t => t.installed);
     if (!installed.some(t => t.encoding === state.encoding)) {
       const pick = installed.find(t => t.recommended) || installed[0];
@@ -879,6 +985,7 @@
   function createPayload() {
     const fitted = $('ending').value === 'outro';
     return { style: $('prompt').value, lyrics: $('lyrics').value, instrumental: $('instrumental').checked,
+      use_instrumental_adapter: state.instrumentalAdapterEnabled !== false,
       target_bars: fitted ? Number($('bars').value) : 0, ending: $('ending').value,
       outro_bars: 4, seed: seed('seed'), planning: planningHeader(), encoding: state.encoding };
   }
@@ -889,7 +996,9 @@
     state.wavUrls[destination] = wavUrl;
     const warning = result.warnings?.length ? ` · warning: ${result.warnings.join('; ')}` : '';
     const bars = result.meta?.score_bars ? ` · ${result.meta.score_bars} bars` : '';
-    const meta = `${Number(result.meta?.duration || 0).toFixed(1)} sec${bars} · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${warning}`;
+    const adapters = [result.meta?.instrumental_adapter ? 'instrumental adapter' : '', result.meta?.continuation_adapter ? 'real-audio adapter' : ''].filter(Boolean);
+    const adapterText = adapters.length ? ` · ${adapters.join(' + ')}` : ' · no automatic adapter';
+    const meta = `${Number(result.meta?.duration || 0).toFixed(1)} sec${bars} · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${adapterText}${warning}`;
     if (destination === 'transform') {
       $('remix-player').src = wavUrl; $('save-remix').href = wavUrl;
       $('remix-audio').hidden = false; $('save-remix').hidden = false;
@@ -911,7 +1020,8 @@
     const score = parseScore(result.abc || '');
     const vocalNotes = score.notes.filter(note => note.voice === 'Vocal').length;
     const vocal = vocalNotes ? `${vocalNotes} planned vocal note${vocalNotes === 1 ? '' : 's'}` : 'vocal lane fully rested';
-    $('plan-meta').textContent = `${score.bars} bars · about ${score.seconds.toFixed(1)} sec · seed ${result.seed} · ${vocal} · ${result.encoding || result.meta?.encoding || state.encoding}`;
+    const adapter = result.meta?.instrumental_adapter ? ' · instrumental adapter' : ' · no automatic adapter';
+    $('plan-meta').textContent = `${score.bars} bars · about ${score.seconds.toFixed(1)} sec · seed ${result.seed} · ${vocal} · ${result.encoding || result.meta?.encoding || state.encoding}${adapter}`;
     $('plan-result').classList.add('on'); $('create-empty').style.display = 'none';
   }
 
@@ -961,7 +1071,8 @@
     const instrumental = $('remix-instrumental').checked;
     const lyrics = instrumental ? '' : $('remix-lyrics').value.trim();
     if (!instrumental && !lyrics) throw new Error('add the source lyrics, or enable keep instrumental');
-    return { style: $('remix-prompt').value, lyrics, instrumental, encoding: state.encoding };
+    return { style: $('remix-prompt').value, lyrics, instrumental, encoding: state.encoding,
+      use_instrumental_adapter: state.instrumentalAdapterEnabled !== false };
   }
   function continuationLength(abc) {
     if ($('continue-ending').value !== 'outro') return { ending: 'natural', target_bars: 0 };
@@ -972,6 +1083,14 @@
     const sourceBars = parseScore(abc).bars;
     if (!sourceBars) throw new Error('could not count the source bars for continuation');
     return { ending: 'outro', target_bars: sourceBars + added, outro_bars: Math.min(4, added) };
+  }
+  function continuationRequestLength() {
+    if ($('continue-ending').value !== 'outro') return { continuation_bars: 0 };
+    const added = Number($('continue-bars').value);
+    if (!Number.isInteger(added) || added < 4 || added > 256) {
+      throw new Error('new bars must be a whole number from 4 through 256');
+    }
+    return { continuation_bars: added };
   }
   async function transform(mode) {
     if (!state.file) { status('transform', null, new Error('choose a wav file first')); return; }
@@ -989,13 +1108,22 @@
       } else if (mode === 'remix') {
         const result = await run('/cover', { ...transcription, ...remixControls() }, 'transform');
         addDownloads({}); renderAudio(result, 'transform', 'remix');
-      } else {
+      } else if (state.continuationMethod === 'score') {
         const source = await run('/transcribe', transcription, 'transform');
         if (!source.abc) throw new Error('transcription produced no score to continue');
         addDownloads(source.midi_files);
         setScore(source.abc, 'transform', `transcribed opening from ${state.file.name}`);
-        const result = await run('/generate', { ...remixControls(), abc_prefix: source.abc, ...continuationLength(source.abc) }, 'transform');
-        renderAudio(result, 'transform', 'continuation');
+        const result = await run('/generate', {
+          ...remixControls(), abc_prefix: source.abc, ...continuationLength(source.abc)
+        }, 'transform');
+        renderAudio(result, 'transform', 'score continuation');
+      } else {
+        const result = await run('/continue', {
+          ...transcription, ...remixControls(), ...continuationRequestLength(),
+          use_continuation_adapter: state.audioContinuationAdapterEnabled !== false
+        }, 'transform');
+        addDownloads(result.midi_files);
+        renderAudio(result, 'transform', 'audio continuation');
       }
     } catch (error) { status('transform', null, error); } finally { $('transcribe').disabled = $('transform-run').disabled = false; }
   }
@@ -1011,7 +1139,9 @@
       if (!instrumental && !lyrics && state.scoreContext === 'transform') {
         throw new Error('add the source lyrics, or enable instrumental');
       }
-      const payload = { style: $('score-prompt').value, lyrics, instrumental, ending: 'natural', seed: seed('score-seed'), encoding: state.encoding };
+      const payload = { style: $('score-prompt').value, lyrics, instrumental,
+        use_instrumental_adapter: state.instrumentalAdapterEnabled !== false,
+        ending: 'natural', seed: seed('score-seed'), encoding: state.encoding };
       if (continuePlan) Object.assign(payload, { abc_prefix: $('abc').value, ...continuationLength($('abc').value) });
       else Object.assign(payload, { abc: $('abc').value, symbolic_mode: 'full' });
       const result = await run('/generate', payload, 'score');
@@ -1022,6 +1152,15 @@
   $('score-generate').onclick = () => renderEditedScore(
     state.scoreContext === 'transform' && state.transformMode === 'continue');
   $('export-abc').onclick = () => { const url = URL.createObjectURL(new Blob([$('abc').value], { type: 'text/plain' })); const a = document.createElement('a'); a.href = url; a.download = 'yuey-score.abc'; a.click(); URL.revokeObjectURL(url); };
+  $('use-instrumental-adapter').onchange = event => {
+    state.instrumentalAdapterEnabled = event.target.checked;
+    if (state.props) renderProps();
+  };
+  $('use-continuation-adapter').onchange = event => {
+    state.audioContinuationAdapterEnabled = event.target.checked;
+    if (!state.audioContinuationAdapterEnabled) state.continuationMethod = 'score';
+    if (state.props) renderProps();
+  };
   $('refresh-models').onclick = () => refreshRuntime(true);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) { clearTimeout(state.runtimeTimer); state.runtimeTimer = setTimeout(monitorRuntime, 0); }

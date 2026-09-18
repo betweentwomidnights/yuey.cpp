@@ -25,6 +25,7 @@ quantized tiers are produced. The convention is the one `sa3.cpp` and
 | `yue2-vae-v1.0-F16.gguf` | `convert_yue2_gguf.py` | Also `F32`; never quantized |
 | `sheetsage2-mert2-0.7B-v1.0-F16.gguf` | `convert_sheetsage2_gguf.py` | Also `F32`; never quantized |
 | `<name>-v1.0-F16-LoRA.gguf` | `convert_yue2_lora.py` | Generation adapters |
+| `yue2-semantic-tokenizer-<params>-v1.0-F16.gguf` | `convert_semantic_tokenizer_gguf.py` | Real-audio continuation tokenizer |
 
 The YuE2-3B checkpoint holds 3,630.7M parameters, so its size label is `3.6B`
 under the same helper the sibling converters use. The generation converter also

@@ -102,6 +102,11 @@ struct SongRequest {
     // This is the low-level injection point for a validated tempo/key/meter
     // header. It is mutually exclusive with a complete external ABC score.
     std::optional<std::string> abc_prefix;
+    // Optional real-audio continuation seed, expressed as raw codec IDs
+    // [0,32767] at 25 Hz. The planner may still extend abc_prefix first; the
+    // semantic model then continues from these frames instead of starting at
+    // silence. Matching real-audio NAR weights are expected for reconstruction.
+    std::vector<std::int32_t> semantic_prefix;
     // Experimental symbolic intervention. Requires melody/full mode and empty
     // lyrics; Vocal is rested without changing Ins before semantic inference.
     bool experimental_vocal_rest = false;

@@ -5,6 +5,7 @@
 // services expose to gary4juce. See docs/server.md.
 #include "yue2/audio.h"
 #include "yue2/generation_pipeline.h"
+#include "yue2/mert2_encoder.h"
 #include "yue2/runtime_info.h"
 #include "yue2/transcription.h"
 
@@ -121,11 +122,14 @@ struct Configuration {
     fs::path vae;
     fs::path tokenizer;
     fs::path transcription_model;
+    fs::path semantic_tokenizer_model;
     std::string device;
     int threads = 0;
     bool keep_models = false;
     bool force_unload = false;
     std::vector<yue2::LoraAdapterSpec> loras;
+    std::vector<yue2::LoraAdapterSpec> instrumental_loras;
+    std::vector<yue2::LoraAdapterSpec> continuation_loras;
 };
 
 bool has(int argc, char ** argv, std::string_view name) {
@@ -183,8 +187,14 @@ void usage(const char * executable) {
         << "  --encoding ENC               auto, BF16, F16, F32, Q8_0, Q5_K_M, Q4_K_M (YUE2_ENCODING)\n"
         << "  --model PATH --vae PATH --tokenizer PATH --transcription-model PATH\n"
         << "                               Explicit files instead of resolution\n"
+        << "  --semantic-tokenizer-model PATH\n"
+        << "                               Real-audio continuation tokenizer GGUF\n"
         << "  --adapters-dir DIR           LoRA discovery, default models dir (YUE2_ADAPTERS_DIR)\n"
         << "  --lora PATH[=SCALE]          Default adapter for requests without \"loras\"; repeatable\n"
+        << "  --instrumental-lora REF[=SCALE]\n"
+        << "                               Adapter added whenever instrumental=true; repeatable\n"
+        << "  --continuation-lora REF[=SCALE]\n"
+        << "                               Matching real-audio NAR adapter for /continue; repeatable\n"
         << "  --keep-models                Keep models resident between jobs by default\n"
         << "  --force-unload               Ignore per-request keep_models and unload after every job\n"
         << "  --device NAME                cpu, cuda, or another GGML backend (YUE2_DEVICE)\n"
@@ -193,7 +203,7 @@ void usage(const char * executable) {
         << "  --host IPV4                  Bind address (default 127.0.0.1)\n"
         << "  --port N                     Port (default 8007, YUE2_PORT)\n"
         << "  --max-body-mb N              Upload limit (default 512)\n\n"
-        << "Routes: GET /, GET /health, GET /props, GET /loras, POST /plan, POST /generate, POST /cover, POST /transcribe,\n"
+        << "Routes: GET /, GET /health, GET /props, GET /loras, POST /plan, POST /generate, POST /cover, POST /continue, POST /transcribe,\n"
         << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload\n";
 }
 
@@ -228,6 +238,8 @@ Configuration parse_configuration(int argc, char ** argv) {
     result.vae = option(argc, argv, "--vae");
     result.tokenizer = option(argc, argv, "--tokenizer");
     result.transcription_model = option(argc, argv, "--transcription-model");
+    result.semantic_tokenizer_model = pick(
+        "--semantic-tokenizer-model", "YUE2_SEMANTIC_TOKENIZER_MODEL");
     result.device = option(argc, argv, "--device");
     if (const auto value = option(argc, argv, "--threads"); !value.empty()) result.threads = std::stoi(value);
     if (result.threads < 0) throw std::invalid_argument("--threads cannot be negative");
@@ -237,6 +249,18 @@ Configuration parse_configuration(int argc, char ** argv) {
         force_unload == "1" || force_unload == "TRUE";
     if (result.force_unload) result.keep_models = false;
     for (const auto & value : options(argc, argv, "--lora")) result.loras.push_back(lora_spec(value));
+    for (const auto & value : options(argc, argv, "--instrumental-lora")) {
+        result.instrumental_loras.push_back(lora_spec(value));
+    }
+    if (const auto value = environment("YUE2_INSTRUMENTAL_LORA"); !value.empty()) {
+        result.instrumental_loras.push_back(lora_spec(value));
+    }
+    for (const auto & value : options(argc, argv, "--continuation-lora")) {
+        result.continuation_loras.push_back(lora_spec(value));
+    }
+    if (const auto value = environment("YUE2_CONTINUATION_LORA"); !value.empty()) {
+        result.continuation_loras.push_back(lora_spec(value));
+    }
     return result;
 }
 
@@ -332,6 +356,18 @@ fs::path resolve_transcription(const Configuration & configuration) {
         return *found;
     }
     throw std::runtime_error("no sheetsage2-mert2 GGUF under " + configuration.models_dir.string());
+}
+
+fs::path resolve_semantic_tokenizer(const Configuration & configuration) {
+    if (!configuration.semantic_tokenizer_model.empty()) {
+        return configuration.semantic_tokenizer_model;
+    }
+    if (const auto found = find_component(
+            configuration.models_dir, "semantic-tokenizer", {"F16", "F32"})) {
+        return *found;
+    }
+    throw std::runtime_error(
+        "no yue2 semantic-tokenizer GGUF under " + configuration.models_dir.string());
 }
 
 // <name>-v1.0-F16-LoRA.gguf -> <name>
@@ -478,7 +514,7 @@ HttpResponse failure(int status, const std::string & message) {
 // ---------------------------------------------------------------------------
 // Jobs
 
-enum class JobKind { plan, generate, cover, transcribe };
+enum class JobKind { plan, generate, cover, continue_audio, transcribe };
 
 struct Job {
     std::string id;
@@ -490,6 +526,7 @@ struct Job {
     std::vector<yue2::LoraAdapterSpec> loras;
     yue2::audio::MonoAudio input;
     yue2::TranscriptionOptions transcription;
+    std::uint32_t continuation_bars = 0;
     bool keep_models = false;
     bool float_wav = false;
     std::string encoding = "auto";
@@ -512,6 +549,9 @@ struct Job {
     std::string error;
     bool cancelled = false;
     std::size_t semantic_frames = 0;
+    std::size_t semantic_prefix_frames = 0;
+    bool instrumental_adapter = false;
+    bool continuation_adapter = false;
     bool abc_truncated = false;
     bool semantic_truncated = false;
     std::uint32_t score_bars = 0;
@@ -553,6 +593,7 @@ public:
             if (path == "/plan") return post ? submit(request, JobKind::plan) : not_allowed();
             if (path == "/generate") return post ? submit(request, JobKind::generate) : not_allowed();
             if (path == "/cover") return post ? submit(request, JobKind::cover) : not_allowed();
+            if (path == "/continue") return post ? submit(request, JobKind::continue_audio) : not_allowed();
             if (path == "/transcribe") return post ? submit(request, JobKind::transcribe) : not_allowed();
             if (path == "/unload") return post ? unload() : not_allowed();
             if (starts_with(path, "/poll_status/")) {
@@ -601,6 +642,16 @@ private:
         } catch (const std::exception & error) {
             transcription = "{\"available\":false,\"loaded\":false,\"error\":" + json::quote(error.what()) + "}";
         }
+        std::string continuation;
+        try {
+            continuation = "{\"available\":true,\"model\":" +
+                json_path(resolve_semantic_tokenizer(configuration_)) +
+                ",\"adapter_configured\":" +
+                json_bool(!configuration_.continuation_loras.empty()) + "}";
+        } catch (const std::exception & error) {
+            continuation = "{\"available\":false,\"error\":" +
+                json::quote(error.what()) + "}";
+        }
         bool busy = false;
         std::size_t queued = 0;
         {
@@ -617,7 +668,8 @@ private:
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
             ",\"force_unload\":" + json_bool(configuration_.force_unload) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
-            ",\"generation\":" + generation + ",\"transcription\":" + transcription + "}");
+            ",\"generation\":" + generation + ",\"transcription\":" + transcription +
+            ",\"continuation\":" + continuation + "}");
     }
 
     HttpResponse props() {
@@ -643,9 +695,12 @@ private:
         std::string body =
             "{\"success\":true,\"service\":\"yue2\",\"api_version\":1,\"version\":" +
             json::quote(yue2::version()) +
-            ",\"capabilities\":{\"plan\":true,\"generate\":true,\"transcribe\":true,\"cover\":true,"
+            ",\"capabilities\":{\"plan\":true,\"generate\":true,\"transcribe\":true,\"cover\":true,\"continue\":true,"
             "\"planning_controls\":true,\"instrumental\":true,"
-            "\"instrumental_best_effort\":true,\"vocal_rest_experiment\":true,"
+            "\"instrumental_adapter\":" + json_bool(!configuration_.instrumental_loras.empty()) + ","
+            "\"continuation_adapter\":" + json_bool(!configuration_.continuation_loras.empty()) + ","
+            "\"instrumental_best_effort\":" + json_bool(configuration_.instrumental_loras.empty()) + ","
+            "\"vocal_rest_experiment\":true,"
             "\"score_editing\":true,\"score_aligned_generation\":true,"
             "\"model_downloads\":false},\"devices\":[";
         for (std::size_t index = 0; index < devices.size(); ++index) {
@@ -721,10 +776,15 @@ private:
         job->keep_models = configuration_.force_unload
             ? false : json::boolean(root, "keep_models", configuration_.keep_models);
 
-        if (kind == JobKind::cover && present(root, "abc")) {
-            throw std::invalid_argument("/cover scores audio_data itself; use /generate to supply abc");
+        if ((kind == JobKind::cover || kind == JobKind::continue_audio) &&
+            (present(root, "abc") || present(root, "abc_prefix") || present(root, "planning"))) {
+            throw std::invalid_argument(
+                kind == JobKind::cover
+                    ? "/cover scores audio_data itself; use /generate to supply abc"
+                    : "/continue transcribes and extends audio_data itself; abc, abc_prefix, and planning are not accepted");
         }
-        if (kind == JobKind::cover || kind == JobKind::transcribe) {
+        if (kind == JobKind::cover || kind == JobKind::continue_audio ||
+            kind == JobKind::transcribe) {
             const auto encoded = json::string(root, "audio_data");
             if (encoded.empty()) throw std::invalid_argument("audio_data (base64 WAV) is required");
             const auto wav = yue2::server::base64_decode(encoded);
@@ -768,6 +828,20 @@ private:
         song.instrumental = json::boolean(root, "instrumental", false);
         song.experimental_vocal_rest = json::boolean(root, "experimental_vocal_rest", false);
         song.target_bars = json::u32(root, "target_bars", 0);
+        if (job.kind == JobKind::continue_audio) {
+            job.continuation_bars = json::u32(root, "continuation_bars", 0);
+            if (job.continuation_bars > 256) {
+                throw std::invalid_argument("continuation_bars must be in [1,256], or zero for natural length");
+            }
+            if (job.continuation_bars != 0 && song.target_bars != 0) {
+                throw std::invalid_argument(
+                    "continuation_bars and target_bars are mutually exclusive");
+            }
+            if (job.continuation_bars != 0) {
+                song.ending_mode = yue2::EndingMode::natural;
+                song.target_bars = 0;
+            }
+        }
         song.outro_bars = json::u32(root, "outro_bars", 4);
         const auto ending = json::string(
             root, "ending", song.target_bars == 0 ? "natural" : "outro");
@@ -821,13 +895,14 @@ private:
             throw std::invalid_argument("abc and abc_prefix are mutually exclusive");
         }
         if (!abc_prefix.empty() && !song.abc_prefix) song.abc_prefix = abc_prefix;
-        const bool scored = job.kind == JobKind::cover || song.abc.has_value();
+        const bool scored = job.kind == JobKind::cover ||
+            job.kind == JobKind::continue_audio || song.abc.has_value();
         auto mode = first_string(root, {"symbolic_mode", "cot"});
         if (mode.empty()) {
             // A supplied or transcribed score conditions melody by default, as
             // the upstream cover workflow recommends; without one YuE2 plans a
             // full score first.
-            mode = job.kind == JobKind::cover
+            mode = (job.kind == JobKind::cover || job.kind == JobKind::continue_audio)
                 ? (job.transcription.melody_only ? "melody" : "full")
                 : (scored ? "melody" : "full");
         }
@@ -878,6 +953,47 @@ private:
         }
         job.float_wav = format == "wav_float";
         job.loras = parse_loras(root);
+        if (job.kind == JobKind::continue_audio) {
+            if (!json::boolean(root, "use_continuation_adapter", true)) {
+                throw std::invalid_argument(
+                    "/continue cannot run with use_continuation_adapter=false; use score continuation instead");
+            }
+            if (configuration_.continuation_loras.empty()) {
+                throw std::invalid_argument(
+                    "/continue requires a configured --continuation-lora matching the semantic tokenizer");
+            }
+            for (auto configured : configuration_.continuation_loras) {
+                configured.path = resolve_adapter(configuration_, configured.path).string();
+                const auto duplicate = std::find_if(
+                    job.loras.begin(), job.loras.end(),
+                    [&configured](const yue2::LoraAdapterSpec & existing) {
+                        return existing.path == configured.path;
+                    });
+                if (duplicate == job.loras.end()) job.loras.push_back(std::move(configured));
+            }
+            job.continuation_adapter = true;
+        }
+        if (song.instrumental &&
+            json::boolean(root, "use_instrumental_adapter", true) &&
+            !configuration_.instrumental_loras.empty()) {
+            // The instrumental AR adapters are trained for score-first COT and
+            // chord-annotated full SheetSage2 plans. Keep this policy in the
+            // server so every client gets the same reliable toggle behavior.
+            song.symbolic_mode = yue2::SymbolicMode::full;
+            if (job.kind == JobKind::cover || job.kind == JobKind::continue_audio) {
+                job.transcription.melody_only = false;
+            }
+            for (auto configured : configuration_.instrumental_loras) {
+                configured.path = resolve_adapter(configuration_, configured.path).string();
+                const auto duplicate = std::find_if(
+                    job.loras.begin(), job.loras.end(),
+                    [&configured](const yue2::LoraAdapterSpec & existing) {
+                        return existing.path == configured.path;
+                    });
+                if (duplicate == job.loras.end()) job.loras.push_back(std::move(configured));
+            }
+            job.instrumental_adapter = true;
+        }
     }
 
     std::vector<yue2::LoraAdapterSpec> parse_loras(const json::Value & root) {
@@ -957,6 +1073,8 @@ private:
                     ",\"score_bars\":" + std::to_string(job.score_bars) +
                     ",\"score_duration\":" + real(job.score_duration_seconds) +
                     ",\"encoding\":" + json::quote(job.encoding) +
+                    ",\"instrumental_adapter\":" + json_bool(job.instrumental_adapter) +
+                    ",\"continuation_adapter\":" + json_bool(job.continuation_adapter) +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) + "}";
             } else {
                 // Base64 needs no JSON escaping.
@@ -965,12 +1083,29 @@ private:
                     ",\"duration\":" + real(job.duration_seconds) +
                     ",\"sample_rate\":48000,\"channels\":2" +
                     ",\"semantic_frames\":" + std::to_string(job.semantic_frames) +
+                    ",\"semantic_prefix_frames\":" +
+                        std::to_string(job.semantic_prefix_frames) +
+                    ",\"semantic_prefix_duration\":" +
+                        real(job.semantic_prefix_frames / kSemanticTokensPerSecond) +
                     ",\"semantic_budget\":" + std::to_string(job.semantic_budget) +
                     ",\"score_bars\":" + std::to_string(job.score_bars) +
                     ",\"score_duration\":" + real(job.score_duration_seconds) +
                     ",\"encoding\":" + json::quote(job.encoding) +
+                    ",\"instrumental_adapter\":" + json_bool(job.instrumental_adapter) +
+                    ",\"continuation_adapter\":" + json_bool(job.continuation_adapter) +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) +
                     ",\"semantic_truncated\":" + json_bool(job.semantic_truncated) + "}";
+                if (job.kind == JobKind::continue_audio && !job.midi_data.empty()) {
+                    body += ",\"midi_files\":{\"transcription.mid\":\"" + job.midi_data +
+                        "\",\"melody.mid\":\"" + job.melody_midi_data +
+                        "\",\"melody_vocal.mid\":\"" + job.vocal_midi_data +
+                        "\",\"melody_instrumental.mid\":\"" +
+                        job.instrumental_midi_data + "\"";
+                    if (!job.chords_midi_data.empty()) {
+                        body += ",\"chords.mid\":\"" + job.chords_midi_data + "\"";
+                    }
+                    body += "}";
+                }
             }
         }
         if (job.status == "failed") {
@@ -1043,9 +1178,16 @@ private:
     void execute(Job & job) {
         try {
             if (job.cancel.load()) throw std::runtime_error("cancelled");
-            if (job.kind == JobKind::cover || job.kind == JobKind::transcribe) transcribe(job);
+            if (job.kind == JobKind::cover || job.kind == JobKind::continue_audio ||
+                job.kind == JobKind::transcribe) {
+                transcribe(job);
+            }
+            if (job.kind == JobKind::continue_audio) tokenize_continuation(job);
             if (job.kind == JobKind::plan) plan(job);
-            if (job.kind == JobKind::generate || job.kind == JobKind::cover) generate(job);
+            if (job.kind == JobKind::generate || job.kind == JobKind::cover ||
+                job.kind == JobKind::continue_audio) {
+                generate(job);
+            }
         } catch (const std::exception & error) {
             // Whatever failed may have been an allocation; hand the memory back.
             if (!job.keep_models) release_models();
@@ -1066,6 +1208,7 @@ private:
 
     void transcribe(Job & job) {
         const bool cover = job.kind == JobKind::cover;
+        const bool continuation = job.kind == JobKind::continue_audio;
         update(job, "transcribing", "load", 0, 0, 0);
         if (!transcriber_) {
             yue2::TranscriberRuntimeOptions options;
@@ -1077,7 +1220,7 @@ private:
         yue2::TranscriptionControl control;
         control.should_cancel = [&job]() { return job.cancel.load(); };
         control.on_progress = [&](std::size_t current, std::size_t total) {
-            const int span = cover ? 15 : 99;
+            const int span = cover ? 15 : (continuation ? 12 : 99);
             update(job, "transcribing", "transcription",
                 static_cast<int>(span * current / std::max<std::size_t>(1, total)),
                 static_cast<std::uint32_t>(current), static_cast<std::uint32_t>(total));
@@ -1085,7 +1228,7 @@ private:
         auto result = transcriber_->transcribe_mono(
             job.input.samples.data(), job.input.samples.size(), job.input.sample_rate,
             job.transcription, control);
-        if (!job.keep_models) {
+        if (!job.keep_models || continuation) {
             transcriber_.reset();
             transcriber_loaded_.store(false);
         }
@@ -1093,10 +1236,42 @@ private:
 
         std::lock_guard<std::mutex> lock(jobs_mutex_);
         job.abc = result.abc;
-        if (cover) {
+        if (cover || continuation) {
             if (result.abc.empty()) throw std::runtime_error("transcription produced no score");
-            job.song.abc = result.abc;
-            job.input = {};
+            if (cover) {
+                job.song.abc = result.abc;
+                job.input = {};
+            } else {
+                job.midi_data = yue2::server::base64_encode(
+                    result.midi.data(), result.midi.size());
+                job.melody_midi_data = yue2::server::base64_encode(
+                    result.midi_exports.melody.data(), result.midi_exports.melody.size());
+                job.vocal_midi_data = yue2::server::base64_encode(
+                    result.midi_exports.vocal.data(), result.midi_exports.vocal.size());
+                job.instrumental_midi_data = yue2::server::base64_encode(
+                    result.midi_exports.instrumental.data(),
+                    result.midi_exports.instrumental.size());
+                if (!result.midi_exports.chords.empty()) {
+                    job.chords_midi_data = yue2::server::base64_encode(
+                        result.midi_exports.chords.data(),
+                        result.midi_exports.chords.size());
+                }
+                job.events_json = yue2::serialize_transcription_json(result);
+                if (result.abc.back() != '\n') result.abc.push_back('\n');
+                job.song.abc_prefix = result.abc;
+                if (job.continuation_bars != 0) {
+                    const auto source = yue2::inspect_abc_score(result.abc);
+                    if (source.bars == 0 ||
+                        source.bars > std::numeric_limits<std::uint32_t>::max() -
+                            job.continuation_bars) {
+                        throw std::runtime_error(
+                            "could not derive a safe continuation bar target from transcription");
+                    }
+                    job.song.target_bars = source.bars + job.continuation_bars;
+                    job.song.ending_mode = yue2::EndingMode::outro;
+                    job.song.outro_bars = std::min(4U, job.continuation_bars);
+                }
+            }
             return;
         }
         job.midi_data = yue2::server::base64_encode(result.midi.data(), result.midi.size());
@@ -1115,8 +1290,36 @@ private:
         complete_locked(job);
     }
 
+    void tokenize_continuation(Job & job) {
+        update(job, "tokenizing", "semantic-tokenizer", 12, 0, 0);
+        auto samples = job.input.sample_rate == yue2::audio::transcription_sample_rate
+            ? job.input.samples
+            : yue2::audio::resample_sinc(
+                  job.input.samples, job.input.sample_rate,
+                  yue2::audio::transcription_sample_rate);
+        yue2::mert2::EncoderOptions options;
+        options.device = configuration_.device;
+        options.threads = configuration_.threads;
+        {
+            // The tokenizer contains its own unmodified MERT parent. Keep it
+            // request-local and destroy it before loading the 3B generator.
+            yue2::mert2::Encoder tokenizer(
+                resolve_semantic_tokenizer(configuration_).string(), options);
+            job.song.semantic_prefix = tokenizer.semantic_tokens_24k(samples);
+        }
+        if (job.song.semantic_prefix.empty()) {
+            throw std::runtime_error("real-audio tokenizer produced no continuation frames");
+        }
+        job.semantic_prefix_frames = job.song.semantic_prefix.size();
+        update(
+            job, "tokenizing", "semantic-prefix", 25,
+            static_cast<std::uint32_t>(job.semantic_prefix_frames),
+            static_cast<std::uint32_t>(job.semantic_prefix_frames));
+    }
+
     void generate(Job & job) {
-        const int base = job.kind == JobKind::cover ? 15 : 0;
+        const int base = job.kind == JobKind::cover ? 15 :
+            (job.kind == JobKind::continue_audio ? 25 : 0);
         update(job, "generating", "load", base, 0, 0);
         load_generator(job.loras, job.encoding);
 
@@ -1157,6 +1360,7 @@ private:
         job.audio_data = std::move(encoded);
         job.abc = song.abc;
         job.semantic_frames = song.semantic_codec_ids.size();
+        job.semantic_prefix_frames = song.semantic_prefix_frames;
         job.abc_truncated = song.abc_truncated;
         job.semantic_truncated = song.semantic_truncated;
         job.score_bars = song.score_bars;
@@ -1164,6 +1368,7 @@ private:
         job.semantic_budget = song.semantic_budget;
         job.duration_seconds = static_cast<double>(song.audio.interleaved_samples.size()) /
             (static_cast<double>(song.audio.sample_rate) * song.audio.channels);
+        job.input = {};
         complete_locked(job);
     }
 
