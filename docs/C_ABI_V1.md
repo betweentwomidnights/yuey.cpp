@@ -65,8 +65,9 @@ Every MIDI pointer is an independent complete Standard MIDI File.
 ### Planning
 
 `plan()` runs symbolic planning only. It returns ABC, raw ABC token IDs, seed,
-bar count, musical duration, and truncation state. It skips semantic generation,
-flow, and VAE decoding. The generator remains resident for a later render.
+bar count, musical duration, truncation state, and combined/component format-1
+MIDI files derived from the completed ABC. It skips semantic generation, flow,
+and VAE decoding. The generator remains resident for a later render.
 
 This is the native foundation for a plan/edit/render workflow. Supplying a
 complete `abc` in a generation request bypasses planning; `abc_prefix` instead
@@ -75,8 +76,9 @@ locks a validated header or continuation prefix before the planner composes.
 ### Generation
 
 `generate()` returns interleaved float PCM together with the ABC, ABC token IDs,
-semantic codec IDs, flow latents, seed, score length, derived semantic budget,
-and truncation flags.
+combined/component format-1 MIDI files, semantic codec IDs, flow latents, seed,
+score length, derived semantic budget, and truncation flags. MIDI always follows
+the final ABC used for the render, including fitted and continued scores.
 
 `target_bars == 0` retains the complete plan. A nonzero target is enforced
 during planning so YuE2 cannot end a newly planned score before the requested

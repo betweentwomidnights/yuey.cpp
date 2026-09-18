@@ -228,6 +228,18 @@ typedef struct {
     uint32_t score_bars;
     double score_duration_seconds;
     int32_t abc_truncated;
+
+    /* Complete format-1 MIDI files derived from abc. */
+    uint8_t * midi;
+    uint64_t midi_size;
+    uint8_t * melody_midi;
+    uint64_t melody_midi_size;
+    uint8_t * vocal_midi;
+    uint64_t vocal_midi_size;
+    uint8_t * instrumental_midi;
+    uint64_t instrumental_midi_size;
+    uint8_t * chords_midi;
+    uint64_t chords_midi_size;
 } yue2_plan_result_v1;
 
 /* Library-owned interleaved float audio plus the score and intermediate
@@ -251,6 +263,18 @@ typedef struct {
     uint32_t semantic_budget;
     int32_t abc_truncated;
     int32_t semantic_truncated;
+
+    /* Complete format-1 MIDI files derived from the final generated ABC. */
+    uint8_t * midi;
+    uint64_t midi_size;
+    uint8_t * melody_midi;
+    uint64_t melody_midi_size;
+    uint8_t * vocal_midi;
+    uint64_t vocal_midi_size;
+    uint8_t * instrumental_midi;
+    uint64_t instrumental_midi_size;
+    uint8_t * chords_midi;
+    uint64_t chords_midi_size;
 } yue2_generation_result_v1;
 
 typedef struct yue2_api_v1 {

@@ -69,6 +69,7 @@ add_library(yue2 STATIC
     src/mert2_frontend.cpp
     src/quantize.cpp
     src/runtime_info.cpp
+    src/score_midi.cpp
     src/sheetsage2_tokens.cpp
     src/tokenizer.cpp
     src/transcription.cpp

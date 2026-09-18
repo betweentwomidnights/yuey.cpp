@@ -315,6 +315,57 @@ int main() {
         return note.pitch == 40;
     }));
 
-    std::cout << "format-1 MIDI tracks, grid timing, meter changes, pickups, and inversions: ok\n";
+    const std::string native_abc =
+        "X:1\nT:\nM:4/4\nL:1/32\nQ:1/4=95\n"
+        "V: Vocal clef=treble\nV: Ins clef=treble\nK:C#m\n% verse\n"
+        "V: Vocal\n\"C#m\"^F8-^F8G16|Z|\n"
+        "V: Ins\nZ|C,32|\n% bridge\n"
+        "V: Vocal\nZ2|\n"
+        "V: Ins\nD,32|E,32|\n";
+    const auto native_exports = yue2::serialize_yue2_abc_midis(native_abc);
+    const auto native_midi = parse_midi(native_exports.transcription);
+    assert(native_midi.format == 1 && native_midi.ppq == 960);
+    assert(native_midi.tracks.size() == 4);
+    const auto & native_conductor = track_named(native_midi, "Conductor");
+    assert(meta_of_type(native_conductor, 0x51).payload ==
+        std::vector<std::uint8_t>({0x09, 0xa3, 0x1b}));
+    assert(meta_of_type(native_conductor, 0x59).payload ==
+        std::vector<std::uint8_t>({4, 1}));
+    const auto & native_vocal = track_named(native_midi, "Vocal Melody");
+    assert(native_vocal.notes.size() == 2);
+    assert(native_vocal.notes[0].pitch == 66 && native_vocal.notes[0].tick == 0);
+    assert(native_vocal.notes[1].pitch == 68 && native_vocal.notes[1].tick == 1920);
+    assert(track_named(native_midi, "Instrument Melody").notes.size() == 3);
+    assert(!native_exports.melody.empty() && !native_exports.vocal.empty() &&
+           !native_exports.instrumental.empty() && !native_exports.chords.empty());
+
+    bool rejected_partial_bar = false;
+    try {
+        (void)yue2::serialize_yue2_abc_midis(
+            "X:1\nM:4/4\nL:1/32\nQ:1/4=95\nV: Vocal\nC8|\nV: Ins\nZ|\n");
+    } catch (const std::invalid_argument &) {
+        rejected_partial_bar = true;
+    }
+    assert(rejected_partial_bar);
+
+    bool rejected_missing_barline = false;
+    try {
+        (void)yue2::serialize_yue2_abc_midis(
+            "X:1\nM:4/4\nL:1/32\nQ:1/4=95\nV: Vocal\nC32D32|\nV: Ins\nZ2|\n");
+    } catch (const std::invalid_argument &) {
+        rejected_missing_barline = true;
+    }
+    assert(rejected_missing_barline);
+
+    bool rejected_broken_tie = false;
+    try {
+        (void)yue2::serialize_yue2_abc_midis(
+            "X:1\nM:4/4\nL:1/32\nQ:1/4=95\nV: Vocal\nC16-D16|\nV: Ins\nZ|\n");
+    } catch (const std::invalid_argument &) {
+        rejected_broken_tie = true;
+    }
+    assert(rejected_broken_tie);
+
+    std::cout << "format-1 MIDI tracks, grid timing, native ABC, meter changes, pickups, and inversions: ok\n";
     return 0;
 }

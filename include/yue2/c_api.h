@@ -173,6 +173,19 @@ typedef struct {
     uint64_t seed;
     int32_t abc_truncated;
     int32_t semantic_truncated;
+
+    /* Complete format-1 MIDI files derived from the final generated ABC.
+     * Appended for source and binary compatibility with earlier callers. */
+    uint8_t * midi;
+    uint64_t midi_size;
+    uint8_t * melody_midi;
+    uint64_t melody_midi_size;
+    uint8_t * vocal_midi;
+    uint64_t vocal_midi_size;
+    uint8_t * instrumental_midi;
+    uint64_t instrumental_midi_size;
+    uint8_t * chords_midi;
+    uint64_t chords_midi_size;
 } yue2_generation_result;
 
 YUE2_API yue2_transcriber_context * yue2_transcriber_create(

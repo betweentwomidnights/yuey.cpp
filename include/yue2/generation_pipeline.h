@@ -2,6 +2,7 @@
 
 #include "yue2/autoregressive.h"
 #include "yue2/generation.h"
+#include "yue2/transcription.h"
 #include "yue2/vae.h"
 
 #include <cstdint>
@@ -53,6 +54,7 @@ struct GeneratedPlan {
     bool abc_truncated = false;
     std::uint32_t score_bars = 0;
     double score_duration_seconds = 0.0;
+    TranscriptionMidiExports midi_exports;
 };
 
 struct GeneratedSong {
@@ -65,6 +67,7 @@ struct GeneratedSong {
     std::uint32_t score_bars = 0;
     double score_duration_seconds = 0.0;
     std::uint32_t semantic_budget = 0;
+    TranscriptionMidiExports midi_exports;
     std::vector<float> latents;
     DecodedAudio audio;
 };

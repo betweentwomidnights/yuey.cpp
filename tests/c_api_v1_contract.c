@@ -123,14 +123,26 @@ int main(void) {
     future_result.known.abc_token_ids = (int32_t *)malloc(sizeof(int32_t));
     future_result.known.semantic_codec_ids = (int32_t *)malloc(sizeof(int32_t));
     future_result.known.latents = (float *)malloc(sizeof(float));
+    future_result.known.midi = (uint8_t *)malloc(1);
+    future_result.known.melody_midi = (uint8_t *)malloc(1);
+    future_result.known.vocal_midi = (uint8_t *)malloc(1);
+    future_result.known.instrumental_midi = (uint8_t *)malloc(1);
+    future_result.known.chords_midi = (uint8_t *)malloc(1);
     CHECK(future_result.known.samples && future_result.known.abc &&
           future_result.known.abc_token_ids && future_result.known.semantic_codec_ids &&
-          future_result.known.latents);
+          future_result.known.latents && future_result.known.midi &&
+          future_result.known.melody_midi && future_result.known.vocal_midi &&
+          future_result.known.instrumental_midi && future_result.known.chords_midi);
     api->generation_result_free(&future_result.known);
     api->generation_result_free(&future_result.known);
     CHECK(future_result.known.size == sizeof future_result);
     CHECK(future_result.known.samples == NULL);
     CHECK(future_result.known.abc == NULL);
+    CHECK(future_result.known.midi == NULL);
+    CHECK(future_result.known.melody_midi == NULL);
+    CHECK(future_result.known.vocal_midi == NULL);
+    CHECK(future_result.known.instrumental_midi == NULL);
+    CHECK(future_result.known.chords_midi == NULL);
     for (size_t i = 0; i < sizeof future_result.tail; ++i) {
         CHECK(future_result.tail[i] == 0x3C);
     }
@@ -153,7 +165,24 @@ int main(void) {
     api->plan_result_init(&plan_result);
     CHECK(plan_result.abc == NULL);
     CHECK(plan_result.abc_token_ids == NULL);
+    CHECK(plan_result.midi == NULL);
+    CHECK(plan_result.melody_midi == NULL);
+    CHECK(plan_result.vocal_midi == NULL);
+    CHECK(plan_result.instrumental_midi == NULL);
+    CHECK(plan_result.chords_midi == NULL);
+    plan_result.midi = (uint8_t *)malloc(1);
+    plan_result.melody_midi = (uint8_t *)malloc(1);
+    plan_result.vocal_midi = (uint8_t *)malloc(1);
+    plan_result.instrumental_midi = (uint8_t *)malloc(1);
+    plan_result.chords_midi = (uint8_t *)malloc(1);
+    CHECK(plan_result.midi && plan_result.melody_midi && plan_result.vocal_midi &&
+          plan_result.instrumental_midi && plan_result.chords_midi);
     api->plan_result_free(&plan_result);
+    CHECK(plan_result.midi == NULL);
+    CHECK(plan_result.melody_midi == NULL);
+    CHECK(plan_result.vocal_midi == NULL);
+    CHECK(plan_result.instrumental_midi == NULL);
+    CHECK(plan_result.chords_midi == NULL);
 
     /* No weights are needed to verify typed validation and error reporting. */
     yue2_transcriber_context * transcriber = (yue2_transcriber_context *)(uintptr_t)1;

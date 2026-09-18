@@ -579,6 +579,32 @@ struct Job {
     bool done() const { return status == "completed" || status == "failed"; }
 };
 
+void set_midi_exports(Job & job, const yue2::TranscriptionMidiExports & exports) {
+    const auto encode = [](const std::vector<std::uint8_t> & data) {
+        return data.empty()
+            ? std::string{}
+            : yue2::server::base64_encode(data.data(), data.size());
+    };
+    job.midi_data = encode(exports.transcription);
+    job.melody_midi_data = encode(exports.melody);
+    job.vocal_midi_data = encode(exports.vocal);
+    job.instrumental_midi_data = encode(exports.instrumental);
+    job.chords_midi_data = encode(exports.chords);
+}
+
+void append_midi_json(std::string & body, const Job & job) {
+    if (job.midi_data.empty()) return;
+    body += ",\"midi_data\":\"" + job.midi_data +
+        "\",\"midi_files\":{\"transcription.mid\":\"" + job.midi_data +
+        "\",\"melody.mid\":\"" + job.melody_midi_data +
+        "\",\"melody_vocal.mid\":\"" + job.vocal_midi_data +
+        "\",\"melody_instrumental.mid\":\"" + job.instrumental_midi_data + "\"";
+    if (!job.chords_midi_data.empty()) {
+        body += ",\"chords.mid\":\"" + job.chords_midi_data + "\"";
+    }
+    body += "}";
+}
+
 class ServerState {
 public:
     explicit ServerState(Configuration configuration)
@@ -1074,15 +1100,10 @@ private:
         }
         if (job.status == "completed") {
             if (job.kind == JobKind::transcribe) {
-                body += ",\"abc\":" + json::quote(job.abc) + ",\"midi_data\":\"" + job.midi_data +
-                    "\",\"midi_files\":{\"transcription.mid\":\"" + job.midi_data +
-                    "\",\"melody.mid\":\"" + job.melody_midi_data +
-                    "\",\"melody_vocal.mid\":\"" + job.vocal_midi_data +
-                    "\",\"melody_instrumental.mid\":\"" + job.instrumental_midi_data + "\"";
-                if (!job.chords_midi_data.empty()) {
-                    body += ",\"chords.mid\":\"" + job.chords_midi_data + "\"";
-                }
-                body += "},\"duration\":" + real(job.duration_seconds) + ",\"events\":" + job.events_json;
+                body += ",\"abc\":" + json::quote(job.abc);
+                append_midi_json(body, job);
+                body += ",\"duration\":" + real(job.duration_seconds) +
+                    ",\"events\":" + job.events_json;
             } else if (job.kind == JobKind::plan) {
                 body += ",\"abc\":" + json::quote(job.abc) +
                     ",\"meta\":{\"seed\":" + std::to_string(job.song.seed) +
@@ -1092,6 +1113,7 @@ private:
                     ",\"instrumental_adapter\":" + json_bool(job.instrumental_adapter) +
                     ",\"continuation_adapter\":" + json_bool(job.continuation_adapter) +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) + "}";
+                append_midi_json(body, job);
             } else {
                 // Base64 needs no JSON escaping.
                 body += ",\"audio_data\":\"" + job.audio_data + "\",\"abc\":" + json::quote(job.abc) +
@@ -1111,17 +1133,7 @@ private:
                     ",\"continuation_adapter\":" + json_bool(job.continuation_adapter) +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) +
                     ",\"semantic_truncated\":" + json_bool(job.semantic_truncated) + "}";
-                if (job.kind == JobKind::continue_audio && !job.midi_data.empty()) {
-                    body += ",\"midi_files\":{\"transcription.mid\":\"" + job.midi_data +
-                        "\",\"melody.mid\":\"" + job.melody_midi_data +
-                        "\",\"melody_vocal.mid\":\"" + job.vocal_midi_data +
-                        "\",\"melody_instrumental.mid\":\"" +
-                        job.instrumental_midi_data + "\"";
-                    if (!job.chords_midi_data.empty()) {
-                        body += ",\"chords.mid\":\"" + job.chords_midi_data + "\"";
-                    }
-                    body += "}";
-                }
+                append_midi_json(body, job);
             }
         }
         if (job.status == "failed") {
@@ -1258,20 +1270,7 @@ private:
                 job.song.abc = result.abc;
                 job.input = {};
             } else {
-                job.midi_data = yue2::server::base64_encode(
-                    result.midi.data(), result.midi.size());
-                job.melody_midi_data = yue2::server::base64_encode(
-                    result.midi_exports.melody.data(), result.midi_exports.melody.size());
-                job.vocal_midi_data = yue2::server::base64_encode(
-                    result.midi_exports.vocal.data(), result.midi_exports.vocal.size());
-                job.instrumental_midi_data = yue2::server::base64_encode(
-                    result.midi_exports.instrumental.data(),
-                    result.midi_exports.instrumental.size());
-                if (!result.midi_exports.chords.empty()) {
-                    job.chords_midi_data = yue2::server::base64_encode(
-                        result.midi_exports.chords.data(),
-                        result.midi_exports.chords.size());
-                }
+                set_midi_exports(job, result.midi_exports);
                 job.events_json = yue2::serialize_transcription_json(result);
                 if (result.abc.back() != '\n') result.abc.push_back('\n');
                 job.song.abc_prefix = result.abc;
@@ -1290,17 +1289,7 @@ private:
             }
             return;
         }
-        job.midi_data = yue2::server::base64_encode(result.midi.data(), result.midi.size());
-        job.melody_midi_data = yue2::server::base64_encode(
-            result.midi_exports.melody.data(), result.midi_exports.melody.size());
-        job.vocal_midi_data = yue2::server::base64_encode(
-            result.midi_exports.vocal.data(), result.midi_exports.vocal.size());
-        job.instrumental_midi_data = yue2::server::base64_encode(
-            result.midi_exports.instrumental.data(), result.midi_exports.instrumental.size());
-        if (!result.midi_exports.chords.empty()) {
-            job.chords_midi_data = yue2::server::base64_encode(
-                result.midi_exports.chords.data(), result.midi_exports.chords.size());
-        }
+        set_midi_exports(job, result.midi_exports);
         job.events_json = yue2::serialize_transcription_json(result);
         job.duration_seconds = result.duration_seconds;
         complete_locked(job);
@@ -1375,6 +1364,7 @@ private:
         std::lock_guard<std::mutex> lock(jobs_mutex_);
         job.audio_data = std::move(encoded);
         job.abc = song.abc;
+        set_midi_exports(job, song.midi_exports);
         job.semantic_frames = song.semantic_codec_ids.size();
         job.semantic_prefix_frames = song.semantic_prefix_frames;
         job.abc_truncated = song.abc_truncated;
@@ -1410,6 +1400,7 @@ private:
 
         std::lock_guard<std::mutex> lock(jobs_mutex_);
         job.abc = std::move(result.abc);
+        set_midi_exports(job, result.midi_exports);
         job.abc_truncated = result.abc_truncated;
         job.score_bars = result.score_bars;
         job.score_duration_seconds = result.score_duration_seconds;

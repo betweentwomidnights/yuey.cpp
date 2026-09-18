@@ -139,6 +139,11 @@ TranscriptionMidiExports serialize_sheetsage2_midis(
     bool melody_only = false,
     double duration_seconds = 0.0);
 
+// Convert YuE2's constrained native two-lane ABC score into the same combined
+// and component Standard MIDI files returned by transcription. This performs
+// structural and rhythmic validation and does not require model weights.
+TranscriptionMidiExports serialize_yue2_abc_midis(const std::string & abc);
+
 // Lossless JSON form used by the CLI and C ABI. It includes raw per-window
 // tokens, typed events, notes, timing provenance, and warnings.
 std::string serialize_transcription_json(const TranscriptionResult & result);

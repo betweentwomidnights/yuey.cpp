@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int main(void) {
@@ -34,8 +35,21 @@ int main(void) {
     yue2_generation_result generation;
     memset(&generation, 0, sizeof generation);
     generation.size = (uint32_t)sizeof generation;
+    generation.midi = (uint8_t *)malloc(1);
+    generation.melody_midi = (uint8_t *)malloc(1);
+    generation.vocal_midi = (uint8_t *)malloc(1);
+    generation.instrumental_midi = (uint8_t *)malloc(1);
+    generation.chords_midi = (uint8_t *)malloc(1);
+    assert(generation.midi && generation.melody_midi && generation.vocal_midi &&
+           generation.instrumental_midi && generation.chords_midi);
     yue2_free_generation_result(&generation);
     assert(generation.size == sizeof generation);
+    assert(generation.midi == NULL && generation.midi_size == 0);
+    assert(generation.melody_midi == NULL && generation.melody_midi_size == 0);
+    assert(generation.vocal_midi == NULL && generation.vocal_midi_size == 0);
+    assert(generation.instrumental_midi == NULL &&
+           generation.instrumental_midi_size == 0);
+    assert(generation.chords_midi == NULL && generation.chords_midi_size == 0);
 
     yue2_transcription_result transcription;
     memset(&transcription, 0, sizeof transcription);

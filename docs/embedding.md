@@ -83,6 +83,7 @@ request.instrumental = 1;
 yue2_plan_result_v1 plan = { sizeof plan };
 api->plan_result_init(&plan);
 if (api->plan(generator, &request, &plan, &error) == YUE2_STATUS_OK_V1) {
+    offer_midi_drag(plan.midi, plan.midi_size);
     const char *edited_abc = edit_score(plan.abc);
     request.abc = edited_abc;
 }
@@ -92,11 +93,16 @@ api->generation_result_init(&song);
 if (api->generate(generator, &request, &song, &error) == YUE2_STATUS_OK_V1) {
     play_interleaved(song.samples, song.frame_count,
                      song.channels, song.sample_rate);
+    offer_midi_drag(song.midi, song.midi_size);
 }
 api->generation_result_free(&song);
 api->plan_result_free(&plan);
 api->generator_destroy(generator);
 ```
+
+Planning and generation return the same combined, melody, vocal, instrumental,
+and chord MIDI family as transcription. Generation MIDI is rebuilt from the
+final ABC, so an outro fit or continuation is reflected in the dragged file.
 
 All returned strings, MIDI buffers, token arrays, latents, and PCM are owned by
 the shared library. Always use the matching result-free function, including on

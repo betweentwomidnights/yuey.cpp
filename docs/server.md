@@ -280,10 +280,15 @@ same inferred tempo and meter as ABC, key-signature changes, and section
 markers. Musical subbeats—not wall-clock seconds—place notes, so the result
 lands on the DAW bar grid and remains correct through pickups and meter changes.
 
-The completed response keeps `midi_data` as the combined compatibility file.
-It also returns `midi_files`, whose base64 values are keyed by
+Every completed score-bearing operation (`/plan`, `/generate`, `/cover`,
+`/continue`, and `/transcribe`) keeps `midi_data` as the combined compatibility
+file. It also returns `midi_files`, whose base64 values are keyed by
 `transcription.mid`, `melody.mid`, `melody_vocal.mid`,
 `melody_instrumental.mid`, and, in full mode, `chords.mid`.
+
+For generation and continuation, these files are derived from the final ABC
+used for the render—not merely the source transcription—so their bars and notes
+match the completed result.
 
 ### Polling
 
@@ -306,8 +311,11 @@ It also returns `midi_files`, whose base64 values are keyed by
   first 15 of a cover; for semantic generation, `total_steps` is the token
   budget, and generation normally stops before it.
 - **A completed generation** adds `audio_data`, `abc` (the exact score used),
-  and `meta:{seed, duration, score_bars, score_duration, sample_rate, channels,
-  semantic_frames, semantic_budget, abc_truncated, semantic_truncated}`.
+  `midi_data`, `midi_files`, and `meta:{seed, duration, score_bars,
+  score_duration, sample_rate, channels, semantic_frames, semantic_budget,
+  abc_truncated, semantic_truncated}`.
+- **A completed plan** adds `abc`, `midi_data`, `midi_files`, and score metadata
+  without rendering audio.
 - **A completed transcription** adds `abc`, `midi_data` (the combined base64
   Standard MIDI), `midi_files` (combined and component MIDIs), `duration`, and
   `events` (the lossless events document).

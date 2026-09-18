@@ -200,6 +200,7 @@ public:
         const auto score = inspect_abc_score(result.abc);
         result.score_bars = score.bars;
         result.score_duration_seconds = score.duration_seconds;
+        result.midi_exports = serialize_yue2_abc_midis(result.abc);
         return result;
     }
 
@@ -227,6 +228,7 @@ public:
             result.abc_truncated = plan.abc_truncated;
             result.score_bars = plan.score_bars;
             result.score_duration_seconds = plan.score_duration_seconds;
+            result.midi_exports = std::move(plan.midi_exports);
             if (effective.instrumental) {
                 effective.lyrics = make_instrumental_lyrics(result.abc);
             }

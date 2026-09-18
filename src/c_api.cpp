@@ -94,12 +94,13 @@ bool initialize(
     yue2_generation_result * result,
     char * error,
     int32_t error_size) {
-    if (!result || result->size < sizeof(*result)) {
+    constexpr std::size_t original_size = offsetof(yue2_generation_result, midi);
+    if (!result || result->size < original_size) {
         set_error(error, error_size, "generation result is null or too small");
         return false;
     }
     const auto caller_size = result->size;
-    std::memset(result, 0, sizeof(*result));
+    std::memset(result, 0, std::min<std::size_t>(caller_size, sizeof(*result)));
     result->size = caller_size;
     return true;
 }
@@ -452,6 +453,18 @@ YUE2_API int32_t yue2_generate(
         result->seed = song.seed;
         result->abc_truncated = native.abc_truncated ? 1 : 0;
         result->semantic_truncated = native.semantic_truncated ? 1 : 0;
+#define YUE2_COPY_LEGACY_MIDI(field, source) \
+        if (result->size >= offsetof(yue2_generation_result, field##_size) + \
+            sizeof(result->field##_size)) { \
+            result->field = copy_vector(native.midi_exports.source); \
+            result->field##_size = native.midi_exports.source.size(); \
+        }
+        YUE2_COPY_LEGACY_MIDI(midi, transcription);
+        YUE2_COPY_LEGACY_MIDI(melody_midi, melody);
+        YUE2_COPY_LEGACY_MIDI(vocal_midi, vocal);
+        YUE2_COPY_LEGACY_MIDI(instrumental_midi, instrumental);
+        YUE2_COPY_LEGACY_MIDI(chords_midi, chords);
+#undef YUE2_COPY_LEGACY_MIDI
         set_error(error, error_size, "");
         return 0;
     } catch (const std::exception & exception) {
@@ -482,6 +495,15 @@ YUE2_API void yue2_free_generation_result(yue2_generation_result * result) {
     if (caller_size >= offsetof(yue2_generation_result, latents) + sizeof(result->latents)) {
         std::free(result->latents);
     }
+#define YUE2_FREE_LEGACY_MIDI(field) \
+    if (caller_size >= offsetof(yue2_generation_result, field) + \
+        sizeof(result->field)) std::free(result->field)
+    YUE2_FREE_LEGACY_MIDI(midi);
+    YUE2_FREE_LEGACY_MIDI(melody_midi);
+    YUE2_FREE_LEGACY_MIDI(vocal_midi);
+    YUE2_FREE_LEGACY_MIDI(instrumental_midi);
+    YUE2_FREE_LEGACY_MIDI(chords_midi);
+#undef YUE2_FREE_LEGACY_MIDI
     std::memset(result, 0, std::min<std::size_t>(caller_size, sizeof(*result)));
     result->size = caller_size;
 }
@@ -992,6 +1014,15 @@ void YUE2_CALL v1_plan_result_free(yue2_plan_result_v1 * result) {
         sizeof(result->abc_token_ids)) {
         std::free(result->abc_token_ids);
     }
+#define YUE2_FREE_PLAN_MIDI_V1(field) \
+    if (caller_size >= offsetof(yue2_plan_result_v1, field) + \
+        sizeof(result->field)) std::free(result->field)
+    YUE2_FREE_PLAN_MIDI_V1(midi);
+    YUE2_FREE_PLAN_MIDI_V1(melody_midi);
+    YUE2_FREE_PLAN_MIDI_V1(vocal_midi);
+    YUE2_FREE_PLAN_MIDI_V1(instrumental_midi);
+    YUE2_FREE_PLAN_MIDI_V1(chords_midi);
+#undef YUE2_FREE_PLAN_MIDI_V1
     std::memset(result, 0, std::min<std::size_t>(caller_size, sizeof(*result)));
     result->size = caller_size;
 }
@@ -1007,7 +1038,12 @@ yue2_status_v1 YUE2_CALL v1_plan(
         return fail_v1(error, YUE2_STATUS_INVALID_ARGUMENT_V1,
                        "invalid planning request or result");
     }
-    if (result->abc || result->abc_token_ids) {
+    if (result->abc || result->abc_token_ids ||
+        (result->size >= offsetof(yue2_plan_result_v1, midi) + sizeof(result->midi) && result->midi) ||
+        (result->size >= offsetof(yue2_plan_result_v1, melody_midi) + sizeof(result->melody_midi) && result->melody_midi) ||
+        (result->size >= offsetof(yue2_plan_result_v1, vocal_midi) + sizeof(result->vocal_midi) && result->vocal_midi) ||
+        (result->size >= offsetof(yue2_plan_result_v1, instrumental_midi) + sizeof(result->instrumental_midi) && result->instrumental_midi) ||
+        (result->size >= offsetof(yue2_plan_result_v1, chords_midi) + sizeof(result->chords_midi) && result->chords_midi)) {
         return fail_v1(error, YUE2_STATUS_INVALID_ARGUMENT_V1,
                        "plan result still owns data");
     }
@@ -1022,6 +1058,18 @@ yue2_status_v1 YUE2_CALL v1_plan(
         result->score_bars = native.score_bars;
         result->score_duration_seconds = native.score_duration_seconds;
         result->abc_truncated = native.abc_truncated ? 1 : 0;
+#define YUE2_COPY_PLAN_MIDI_V1(field, source) \
+        if (result->size >= offsetof(yue2_plan_result_v1, field##_size) + \
+            sizeof(result->field##_size)) { \
+            result->field = copy_vector(native.midi_exports.source); \
+            result->field##_size = native.midi_exports.source.size(); \
+        }
+        YUE2_COPY_PLAN_MIDI_V1(midi, transcription);
+        YUE2_COPY_PLAN_MIDI_V1(melody_midi, melody);
+        YUE2_COPY_PLAN_MIDI_V1(vocal_midi, vocal);
+        YUE2_COPY_PLAN_MIDI_V1(instrumental_midi, instrumental);
+        YUE2_COPY_PLAN_MIDI_V1(chords_midi, chords);
+#undef YUE2_COPY_PLAN_MIDI_V1
         return YUE2_STATUS_OK_V1;
     } catch (const std::bad_alloc &) {
         v1_plan_result_free(result);
@@ -1048,6 +1096,11 @@ void YUE2_CALL v1_generation_result_free(yue2_generation_result_v1 * result) {
     YUE2_FREE_GENERATION_V1_FIELD(abc_token_ids);
     YUE2_FREE_GENERATION_V1_FIELD(semantic_codec_ids);
     YUE2_FREE_GENERATION_V1_FIELD(latents);
+    YUE2_FREE_GENERATION_V1_FIELD(midi);
+    YUE2_FREE_GENERATION_V1_FIELD(melody_midi);
+    YUE2_FREE_GENERATION_V1_FIELD(vocal_midi);
+    YUE2_FREE_GENERATION_V1_FIELD(instrumental_midi);
+    YUE2_FREE_GENERATION_V1_FIELD(chords_midi);
 #undef YUE2_FREE_GENERATION_V1_FIELD
     std::memset(result, 0, std::min<std::size_t>(caller_size, sizeof(*result)));
     result->size = caller_size;
@@ -1065,7 +1118,12 @@ yue2_status_v1 YUE2_CALL v1_generate(
                        "invalid generation request or result");
     }
     if (result->samples || result->abc || result->abc_token_ids ||
-        result->semantic_codec_ids || result->latents) {
+        result->semantic_codec_ids || result->latents ||
+        (result->size >= offsetof(yue2_generation_result_v1, midi) + sizeof(result->midi) && result->midi) ||
+        (result->size >= offsetof(yue2_generation_result_v1, melody_midi) + sizeof(result->melody_midi) && result->melody_midi) ||
+        (result->size >= offsetof(yue2_generation_result_v1, vocal_midi) + sizeof(result->vocal_midi) && result->vocal_midi) ||
+        (result->size >= offsetof(yue2_generation_result_v1, instrumental_midi) + sizeof(result->instrumental_midi) && result->instrumental_midi) ||
+        (result->size >= offsetof(yue2_generation_result_v1, chords_midi) + sizeof(result->chords_midi) && result->chords_midi)) {
         return fail_v1(error, YUE2_STATUS_INVALID_ARGUMENT_V1,
                        "generation result still owns data");
     }
@@ -1091,6 +1149,18 @@ yue2_status_v1 YUE2_CALL v1_generate(
         result->semantic_budget = native.semantic_budget;
         result->abc_truncated = native.abc_truncated ? 1 : 0;
         result->semantic_truncated = native.semantic_truncated ? 1 : 0;
+#define YUE2_COPY_GENERATION_MIDI_V1(field, source) \
+        if (result->size >= offsetof(yue2_generation_result_v1, field##_size) + \
+            sizeof(result->field##_size)) { \
+            result->field = copy_vector(native.midi_exports.source); \
+            result->field##_size = native.midi_exports.source.size(); \
+        }
+        YUE2_COPY_GENERATION_MIDI_V1(midi, transcription);
+        YUE2_COPY_GENERATION_MIDI_V1(melody_midi, melody);
+        YUE2_COPY_GENERATION_MIDI_V1(vocal_midi, vocal);
+        YUE2_COPY_GENERATION_MIDI_V1(instrumental_midi, instrumental);
+        YUE2_COPY_GENERATION_MIDI_V1(chords_midi, chords);
+#undef YUE2_COPY_GENERATION_MIDI_V1
         return YUE2_STATUS_OK_V1;
     } catch (const std::bad_alloc &) {
         v1_generation_result_free(result);
