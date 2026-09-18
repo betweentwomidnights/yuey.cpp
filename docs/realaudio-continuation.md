@@ -7,9 +7,12 @@ YuE2's optional Mothersuperior adapter pair adds two distinct capabilities:
 - the real-audio package maps source audio into YuE2 semantic codec IDs and
   supplies the matching NAR adapter needed to reconstruct those IDs.
 
-The weights are not bundled. Their upstream license is CC BY-NC 4.0; downstream
-products must evaluate that license independently before distributing or
-hosting them. yue2.cpp only supplies generic conversion and runtime support.
+The weights are not bundled in Git. Converted releases are available from
+[`thepatch/YuE2-3B-GGUF`](https://huggingface.co/thepatch/YuE2-3B-GGUF), while
+the conversion recipes below remain reproducible. Their upstream license is CC
+BY-NC 4.0; downstream products must evaluate that license independently before
+distributing or hosting them. yue2.cpp supplies generic conversion and runtime
+support.
 
 ## Convert the adapters
 

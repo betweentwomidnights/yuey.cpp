@@ -56,16 +56,28 @@ With Visual Studio 2022 C++ tools and the CUDA toolkit installed:
 builds, runs the tests, and writes the environment helper. Use `cpu` or
 `vulkan` instead of `cuda` for another Windows backend.
 
-Until the public GGUF download is available, place a complete tier under
-`models/`. The Q4_K_M laptop layout is:
+Download the complete Q4_K_M laptop set:
+
+```powershell
+.\models.cmd --profile full
+```
+
+Use `--profile core` for generation only, or `transcribe` for generation plus
+SheetSage2 transcription. Linux and macOS can run `./models.sh`; the faster SDK
+path is `python tools/download_models.py --profile full` after installing
+`huggingface_hub[hf_xet]`.
+
+The resulting layout is:
 
 ```text
 models/
-  YuE2-3B-GGUF/
-    yue2-3.6B-v1.0-Q4_K_M.gguf
-    yue2-vae-v1.0-F16.gguf
-    sidecars/yue2-qwen.tiktoken
-  sheetsage2-mert2-0.7B-v1.0-F16.gguf  # needed for transcription/covers
+  yue2-3.6B-v1.0-Q4_K_M.gguf
+  yue2-vae-v1.0-F16.gguf
+  yue2-qwen.tiktoken
+  sheetsage2-mert2-0.7B-v1.0-F16.gguf
+  yue2-instrumental-cot-full-v1.0-F16-LoRA.gguf
+  yue2-realaudio-nar-v9-v1.0-F16-LoRA.gguf
+  yue2-semantic-tokenizer-0.7B-v1.0-F16.gguf
 ```
 
 Start the local app:
@@ -117,12 +129,8 @@ Copy the same model directory to the Mac before testing
 
 ## TODO
 
-- [ ] Publish the GGUFs using the same convention as sa3.cpp: one Hugging Face
-  repository per model family containing all required components and quant
-  tiers, with model cards, source provenance, checksums, and a clear “download
-  one complete tier” table.
-- [ ] Add `models.sh`, `models.cmd`, and a cross-platform downloader so a fresh
-  checkout can install a complete tier directly into `models/`.
+- [ ] Publish and evaluate the remaining BF16, Q8_0, and Q5_K_M tiers in the
+  existing Hugging Face model-family repository.
 - [ ] Fully validate the Vulkan and Metal backends.
 - [ ] Produce useful benchmarks on hardware beyond our RTX 5070 Laptop GPU and
   DGX Spark.

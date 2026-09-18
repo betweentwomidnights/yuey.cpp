@@ -111,3 +111,23 @@ done
 
 Validation still required before publication is listed in
 [validation.md](validation.md).
+
+## Hugging Face repository and download profiles
+
+All components and encodings live in one model-family repository:
+[`thepatch/YuE2-3B-GGUF`](https://huggingface.co/thepatch/YuE2-3B-GGUF).
+This follows the sa3.cpp convention: a quantization tier is a file selection,
+not a separate repository.
+
+`models.sh`, `models.cmd`, and `tools/download_models.py` resolve the same three
+profiles from `tools/model_artifacts.py`:
+
+| profile | files |
+|---|---|
+| `core` | generation model, VAE, Qwen tokenizer |
+| `transcribe` | core plus SheetSage2/MERT2 |
+| `full` | transcribe plus the instrumental adapter and matched real-audio tokenizer/NAR pair |
+
+The published default is `full` at Q4_K_M. A requested encoding is accepted by
+the downloaders only after that tier has actually been published, preventing a
+documented command from resolving to missing files.

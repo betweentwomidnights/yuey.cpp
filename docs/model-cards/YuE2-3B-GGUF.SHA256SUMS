@@ -1,0 +1,7 @@
+cca9ab2fc8efca09ddc04d68da63ae6c6e535848bb3b39dc52cb820857281ba9  yue2-3.6B-v1.0-Q4_K_M.gguf
+b6d8d30e69ce997b50f25dbbdd610e9ac7e118bbda91af336550862a6d1aab1f  yue2-vae-v1.0-F16.gguf
+b2b1b8dfb5cc5f024bafc373121c6aba3f66f9a5a0269e243470a1de16a33186  yue2-qwen.tiktoken
+29902ab4c24a5dd4571673210af4c93f9e70f3ad9fcd18dc5b923a839d4bcad0  sheetsage2-mert2-0.7B-v1.0-F16.gguf
+45a6ec461c968916bdd4d87269cff1324bb925e7ead35290524dfa82bf3f9c23  yue2-instrumental-cot-full-v1.0-F16-LoRA.gguf
+4b7bad23fd1e52b9a9540dde568b6226afc37229b756a4c2024f551be8a2557c  yue2-realaudio-nar-v9-v1.0-F16-LoRA.gguf
+e0005d6ea838e444c83561609624f85a0c0f6fc703bade2e477eb034a327a0cc  yue2-semantic-tokenizer-0.7B-v1.0-F16.gguf

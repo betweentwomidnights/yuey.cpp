@@ -234,6 +234,11 @@ dragging even when the user does not want generated audio.
   paired with the configured real-audio tokenizer. `/continue` refuses to run
   without one, preventing real-audio tokens from being decoded with incompatible
   stock NAR weights. Explicit request adapters still compose with it.
+
+When the standard published filenames are present in `--adapters-dir` (the
+models directory by default), the server discovers both official optional
+adapters automatically. Explicit flags or environment variables take priority.
+
 - **`audio_format`**: `wav` is 16-bit PCM, which gary4juce reads; `wav_float`
   keeps the model's float output.
 

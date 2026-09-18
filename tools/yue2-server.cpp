@@ -408,6 +408,22 @@ fs::path resolve_adapter(const Configuration & configuration, const std::string 
     throw std::invalid_argument("unknown LoRA adapter: " + reference);
 }
 
+void discover_published_adapters(Configuration & configuration) {
+    for (const auto & [name, path] : list_adapters(configuration.adapters_dir)) {
+        if (name == "yue2-instrumental-cot-full" &&
+            configuration.instrumental_loras.empty()) {
+            configuration.instrumental_loras.push_back({path.string(), 1.0F});
+            std::cerr << "[yue2-server] discovered instrumental adapter: "
+                      << path.string() << '\n';
+        } else if (name == "yue2-realaudio-nar-v9" &&
+                   configuration.continuation_loras.empty()) {
+            configuration.continuation_loras.push_back({path.string(), 1.0F});
+            std::cerr << "[yue2-server] discovered continuation adapter: "
+                      << path.string() << '\n';
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Request parsing helpers
 
@@ -1491,6 +1507,7 @@ int main(int argc, char ** argv) {
             return 0;
         }
         auto configuration = parse_configuration(argc, argv);
+        discover_published_adapters(configuration);
         const auto host = configuration.http.host;
         const auto http = configuration.http;
         if (host != "127.0.0.1") {
