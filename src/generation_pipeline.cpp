@@ -158,19 +158,20 @@ public:
                 initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
             }
             auto planning_control = ar_control(control, GenerationStage::abc);
-            if (effective.target_bars != 0) {
-                planning_control.allow_stop = [this, &seeded_abc_ids, target = effective.target_bars](
-                                                  const std::vector<std::int32_t> & generated) {
-                    try {
-                        auto ids = seeded_abc_ids;
-                        ids.insert(ids.end(), generated.begin(), generated.end());
-                        return inspect_abc_score(tokenizer.decode(ids)).bars >= target;
-                    } catch (const std::exception &) {
-                        // An incomplete score cannot satisfy the requested bar floor.
-                        return false;
-                    }
-                };
-            }
+            planning_control.allow_stop = [this, &seeded_abc_ids, target = effective.target_bars](
+                                              const std::vector<std::int32_t> & generated) {
+                try {
+                    auto ids = seeded_abc_ids;
+                    ids.insert(ids.end(), generated.begin(), generated.end());
+                    const auto score = inspect_abc_score(tokenizer.decode(ids));
+                    // Natural-length planning has no requested bar floor, but
+                    // ABC_END must still land after a structurally complete bar.
+                    return score.bars >= std::max(1U, target);
+                } catch (const std::exception &) {
+                    // Keep sampling until both native lanes end on a barline.
+                    return false;
+                }
+            };
             const auto planned = autoregressive.generate(
                 initial, run_options.generation.abc,
                 AutoregressivePhase::abc, effective.seed,
