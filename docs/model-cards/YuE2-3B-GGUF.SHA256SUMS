@@ -1,3 +1,5 @@
+9e1e3bb89dce35703345cd39c57a43f996d62e5ca87afb6784ff5ecfcad27a55  yue2-3.6B-v1.0-BF16.gguf
+db3fa40df040288a41802f2af6df62e63a7e985b026ea60d1e0cdfc36469ad79  yue2-3.6B-v1.0-Q8_0.gguf
 cca9ab2fc8efca09ddc04d68da63ae6c6e535848bb3b39dc52cb820857281ba9  yue2-3.6B-v1.0-Q4_K_M.gguf
 b6d8d30e69ce997b50f25dbbdd610e9ac7e118bbda91af336550862a6d1aab1f  yue2-vae-v1.0-F16.gguf
 b2b1b8dfb5cc5f024bafc373121c6aba3f66f9a5a0269e243470a1de16a33186  yue2-qwen.tiktoken

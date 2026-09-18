@@ -2,7 +2,7 @@
 
 VERSION = "v1.0"
 REPO = "YuE2-3B-GGUF"
-PUBLISHED_ENCODINGS = ("Q4_K_M",)
+PUBLISHED_ENCODINGS = ("BF16", "Q8_0", "Q4_K_M")
 PROFILES = ("core", "transcribe", "full")
 
 

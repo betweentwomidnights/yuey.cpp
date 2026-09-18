@@ -62,6 +62,10 @@ Download the complete Q4_K_M laptop set:
 .\models.cmd --profile full
 ```
 
+Use `--encoding q8_0` for the high-quality quantized tier or `--encoding bf16`
+for the reference-precision model. Q4_K_M remains the default for 8 GB laptop
+GPUs.
+
 Use `--profile core` for generation only, or `transcribe` for generation plus
 SheetSage2 transcription. Linux and macOS can run `./models.sh`; the faster SDK
 path is `python tools/download_models.py --profile full` after installing
@@ -129,8 +133,7 @@ Copy the same model directory to the Mac before testing
 
 ## TODO
 
-- [ ] Publish and evaluate the remaining BF16, Q8_0, and Q5_K_M tiers in the
-  existing Hugging Face model-family repository.
+- [ ] Publish the remaining Q5_K_M tier after release listening tests.
 - [ ] Fully validate the Vulkan and Metal backends.
 - [ ] Produce useful benchmarks on hardware beyond our RTX 5070 Laptop GPU and
   DGX Spark.

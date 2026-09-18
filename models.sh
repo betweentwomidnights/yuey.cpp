@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Download yuey.cpp GGUFs with curl. Use models.cmd on Windows without Git Bash.
-# Usage: ./models.sh [--encoding q4_k_m] [--profile core|transcribe|full]
+# Usage: ./models.sh [--encoding bf16|q8_0|q4_k_m] [--profile core|transcribe|full]
 #                    [--namespace HF_USER] [--out DIR] [--dry-run]
 set -eu
 
@@ -23,7 +23,12 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-case "$ENCODING" in q4_k_m|Q4_K_M) ENC="Q4_K_M" ;; *) echo "unpublished encoding: $ENCODING (currently q4_k_m)" >&2; exit 2 ;; esac
+case "$ENCODING" in
+  bf16|BF16) ENC="BF16" ;;
+  q8_0|Q8_0) ENC="Q8_0" ;;
+  q4_k_m|Q4_K_M) ENC="Q4_K_M" ;;
+  *) echo "unpublished encoding: $ENCODING (available: bf16|q8_0|q4_k_m)" >&2; exit 2 ;;
+esac
 case "$PROFILE" in core|transcribe|full) ;; *) echo "unknown profile: $PROFILE (core|transcribe|full)" >&2; exit 2 ;; esac
 
 case "$OUT" in

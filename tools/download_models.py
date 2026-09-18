@@ -41,7 +41,7 @@ def main():
     parser.add_argument(
         "--encoding", default="q4_k_m",
         choices=[value.lower() for value in PUBLISHED_ENCODINGS],
-        help="generation-model encoding (currently q4_k_m)",
+        help="generation-model encoding (bf16, q8_0, or q4_k_m)",
     )
     parser.add_argument(
         "--profile", default="full", choices=list(PROFILES),

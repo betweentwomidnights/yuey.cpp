@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 rem Download yuey.cpp GGUFs with curl.exe, without Python.
-rem Usage: models.cmd [--encoding q4_k_m] [--profile core^|transcribe^|full] [--namespace HF_USER] [--out DIR] [--dry-run]
+rem Usage: models.cmd [--encoding bf16^|q8_0^|q4_k_m] [--profile core^|transcribe^|full] [--namespace HF_USER] [--out DIR] [--dry-run]
 
 set "ENCODING=q4_k_m"
 set "PROFILE=full"
@@ -21,8 +21,10 @@ if /I "%~1"=="--help" goto help
 echo unknown option: %~1 1>&2 & exit /b 1
 
 :parsed
+if /I "%ENCODING%"=="bf16"  ( set "ENC=BF16" & goto encoding_ok )
+if /I "%ENCODING%"=="q8_0"  ( set "ENC=Q8_0" & goto encoding_ok )
 if /I "%ENCODING%"=="q4_k_m" ( set "ENC=Q4_K_M" & goto encoding_ok )
-echo unpublished encoding: %ENCODING% ^(currently q4_k_m^) 1>&2 & exit /b 2
+echo unpublished encoding: %ENCODING% ^(available: bf16^|q8_0^|q4_k_m^) 1>&2 & exit /b 2
 :encoding_ok
 if /I "%PROFILE%"=="core" goto profile_ok
 if /I "%PROFILE%"=="transcribe" goto profile_ok
@@ -54,7 +56,7 @@ echo [done] Yuey %PROFILE% ^(%ENC%^) -^> %OUT%\
 exit /b 0
 
 :help
-echo Usage: models.cmd [--encoding q4_k_m] [--profile core^|transcribe^|full] [--namespace HF_USER] [--out DIR] [--dry-run]
+echo Usage: models.cmd [--encoding bf16^|q8_0^|q4_k_m] [--profile core^|transcribe^|full] [--namespace HF_USER] [--out DIR] [--dry-run]
 exit /b 0
 
 :dl

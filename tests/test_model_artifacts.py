@@ -38,6 +38,14 @@ class ModelArtifactsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unpublished encoding"):
             generation_filename("q5_k_m")
 
+    def test_published_precision_tiers(self):
+        self.assertEqual(
+            generation_filename("bf16"), "yue2-3.6B-v1.0-BF16.gguf"
+        )
+        self.assertEqual(
+            generation_filename("q8_0"), "yue2-3.6B-v1.0-Q8_0.gguf"
+        )
+
     def test_python_dry_run(self):
         result = subprocess.run(
             [sys.executable, "tools/download_models.py", "--profile", "core", "--dry-run"],

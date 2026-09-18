@@ -26,15 +26,20 @@ score-conditioned remixing, instrumental planning, and real-audio continuation.
 
 ## Download one complete set
 
-The repository is one multi-file model family. The current laptop tier is
-Q4_K_M; BF16, Q8_0, and Q5_K_M will be added after their release evaluation is
-complete.
+The repository is one multi-file model family. Choose BF16 for reference
+precision, Q8_0 for a high-quality quantized model, or Q4_K_M for an 8 GB-class
+laptop GPU. Q4_K_M remains the downloader default.
 
-| profile | contents | approximate download |
-|---|---|---:|
-| `core` | Q4 generation + F16 VAE + text tokenizer | 2.61 GiB |
-| `transcribe` | core + F16 SheetSage2/MERT2 | 3.87 GiB |
-| `full` | transcribe + instrumental and real-audio adapters + semantic tokenizer | 5.32 GiB |
+| encoding | generation model | `core` | `transcribe` | `full` |
+|---|---:|---:|---:|---:|
+| BF16 | 6.76 GiB | 7.01 GiB | 8.27 GiB | 9.73 GiB |
+| Q8_0 | 3.64 GiB | 3.89 GiB | 5.15 GiB | 6.61 GiB |
+| Q4_K_M | 2.36 GiB | 2.60 GiB | 3.87 GiB | 5.32 GiB |
+
+`core` contains generation, the F16 VAE, and the text tokenizer. `transcribe`
+adds F16 SheetSage2/MERT2. `full` adds the instrumental and real-audio adapters
+plus the semantic tokenizer. Runtime memory also includes activations and
+backend overhead, so model download size is not a VRAM requirement.
 
 Use the repository downloader rather than selecting files manually:
 
@@ -43,6 +48,10 @@ git clone --recurse-submodules https://github.com/betweentwomidnights/yuey.cpp.g
 cd yuey.cpp
 ./models.sh --profile full
 # Windows: models.cmd --profile full
+
+# Higher-precision alternatives:
+./models.sh --encoding q8_0 --profile full
+./models.sh --encoding bf16 --profile full
 ```
 
 The faster Python path uses `huggingface_hub` and `hf_xet`:
@@ -56,7 +65,9 @@ python tools/download_models.py --profile full
 
 | file | role |
 |---|---|
-| `yue2-3.6B-v1.0-Q4_K_M.gguf` | YuE2 AR, NAR/flow generation model |
+| `yue2-3.6B-v1.0-BF16.gguf` | reference-precision YuE2 AR, NAR/flow generation model |
+| `yue2-3.6B-v1.0-Q8_0.gguf` | high-quality quantized generation model |
+| `yue2-3.6B-v1.0-Q4_K_M.gguf` | laptop-oriented quantized generation model |
 | `yue2-vae-v1.0-F16.gguf` | audio VAE decoder |
 | `yue2-qwen.tiktoken` | text and score tokenizer |
 | `sheetsage2-mert2-0.7B-v1.0-F16.gguf` | audio-to-score transcription and MIDI |

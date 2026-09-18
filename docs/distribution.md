@@ -128,6 +128,7 @@ profiles from `tools/model_artifacts.py`:
 | `transcribe` | core plus SheetSage2/MERT2 |
 | `full` | transcribe plus the instrumental adapter and matched real-audio tokenizer/NAR pair |
 
-The published default is `full` at Q4_K_M. A requested encoding is accepted by
-the downloaders only after that tier has actually been published, preventing a
+The published encodings are BF16, Q8_0, and Q4_K_M; `full` at Q4_K_M remains
+the laptop-friendly default. A requested encoding is accepted by the
+downloaders only after that tier has actually been published, preventing a
 documented command from resolving to missing files.
