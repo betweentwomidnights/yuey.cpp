@@ -153,20 +153,33 @@ public:
         } else {
             auto initial = make_positive_prefix(effective, tokenizer);
             std::vector<std::int32_t> seeded_abc_ids;
+            std::uint32_t minimum_complete_bars = effective.target_bars;
             if (effective.abc_prefix) {
+                const auto prefix_score = inspect_abc_score(*effective.abc_prefix);
+                if (effective.target_bars == 0) {
+                    if (prefix_score.bars == std::numeric_limits<std::uint32_t>::max()) {
+                        throw std::invalid_argument(
+                            "YuE2 continuation score has too many bars to extend");
+                    }
+                    // A complete transcribed prefix already satisfies a natural
+                    // plan's old one-bar floor. Require one newly completed
+                    // paired Voice/Ins bar so score continuation cannot stop
+                    // at its input or a malformed partial continuation tail.
+                    minimum_complete_bars = prefix_score.bars + 1;
+                }
                 seeded_abc_ids = tokenizer.encode(*effective.abc_prefix);
                 initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
             }
             auto planning_control = ar_control(control, GenerationStage::abc);
-            planning_control.allow_stop = [this, &seeded_abc_ids, target = effective.target_bars](
+            planning_control.allow_stop = [this, &seeded_abc_ids, minimum_complete_bars](
                                               const std::vector<std::int32_t> & generated) {
                 try {
                     auto ids = seeded_abc_ids;
                     ids.insert(ids.end(), generated.begin(), generated.end());
                     const auto score = inspect_abc_score(tokenizer.decode(ids));
-                    // Natural-length planning has no requested bar floor, but
-                    // ABC_END must still land after a structurally complete bar.
-                    return score.bars >= std::max(1U, target);
+                    // ABC_END must land after a structurally complete bar. A
+                    // natural continuation must also extend the source score.
+                    return score.bars >= std::max(1U, minimum_complete_bars);
                 } catch (const std::exception &) {
                     // Keep sampling until both native lanes end on a barline.
                     return false;
