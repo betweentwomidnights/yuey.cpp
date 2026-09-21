@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -346,10 +348,8 @@ public:
             }
         }
 
-        const std::size_t context_bytes = ggml_tensor_overhead() * kGraphSize +
-            ggml_graph_overhead_custom(kGraphSize, false);
-        std::vector<std::uint8_t> storage(context_bytes);
-        const ggml_init_params params = {context_bytes, storage.data(), true};
+        auto & storage = graph_storage();
+        const ggml_init_params params = {storage.size(), storage.data(), true};
         std::unique_ptr<ggml_context, decltype(&ggml_free)> context(
             ggml_init(params), ggml_free);
         if (!context) throw ar_error("could not create graph context");
@@ -451,10 +451,8 @@ public:
             }
         }
 
-        const std::size_t context_bytes = ggml_tensor_overhead() * kGraphSize +
-            ggml_graph_overhead_custom(kGraphSize, false);
-        std::vector<std::uint8_t> storage(context_bytes);
-        const ggml_init_params params = {context_bytes, storage.data(), true};
+        auto & storage = graph_storage();
+        const ggml_init_params params = {storage.size(), storage.data(), true};
         std::unique_ptr<ggml_context, decltype(&ggml_free)> context(
             ggml_init(params), ggml_free);
         if (!context) throw ar_error("could not create cached graph context");
@@ -499,6 +497,15 @@ public:
             context.get(), loras, last_hidden, model.get("lm_head.weight"));
         ggml_set_name(output, "yue2.ar.cached_logits");
         ggml_build_forward_expand(graph, output);
+        static const bool report_nodes = std::getenv("YUE2_DEBUG_GRAPH_NODES") != nullptr;
+        if (report_nodes) {
+            static bool reported = false;
+            if (!reported) {
+                reported = true;
+                std::fprintf(stderr, "[yue2] decode graph nodes: %d of %zu capacity\n",
+                             ggml_graph_n_nodes(graph), kGraphSize);
+            }
+        }
 
         ggml_backend_sched_reset(scheduler);
         if (!ggml_backend_sched_alloc_graph(scheduler, graph)) {
@@ -549,12 +556,28 @@ public:
         return logits;
     }
 
+
+
     std::vector<float> solve_flow_chunk(
         const std::vector<std::int32_t> & ar_tokens,
         const std::vector<float> & noise,
         std::uint32_t ode_steps,
         const AutoregressiveControl & control);
 
+    // Scratch for the per-call ggml context. Building a graph needs room for
+    // every tensor struct it might create, which at kGraphSize is about 13MB.
+    // Decode builds one of these per token, so allocating and zero-filling it
+    // each time cost more than some of the work it was describing. Every
+    // builder holds the mutex, so one buffer serves them all; ggml bump
+    // allocates from it and does not require it to be cleared.
+    std::vector<std::uint8_t> & graph_storage() {
+        const std::size_t needed = ggml_tensor_overhead() * kGraphSize +
+            ggml_graph_overhead_custom(kGraphSize, false);
+        if (graph_storage_.size() < needed) graph_storage_.resize(needed);
+        return graph_storage_;
+    }
+
+    std::vector<std::uint8_t> graph_storage_;
     detail::GgufModel model;
     detail::LoraStack loras;
     ggml_backend_t cpu_backend = nullptr;
