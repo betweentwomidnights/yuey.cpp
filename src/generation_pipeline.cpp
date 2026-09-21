@@ -148,10 +148,9 @@ public:
         if (effective.instrumental) {
             effective.style = "Instrumental, no vocals, no singing, no humming. " +
                 effective.style;
-            const auto kept_bars = expected_kept_bars(effective);
             effective.lyrics = effective.abc
-                ? make_instrumental_lyrics(*effective.abc, kept_bars)
-                : make_instrumental_lyrics({}, kept_bars);
+                ? make_instrumental_lyrics(*effective.abc)
+                : make_instrumental_lyrics({});
         }
         return effective;
     }

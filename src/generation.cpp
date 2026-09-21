@@ -610,32 +610,7 @@ std::string make_vocal_rest_abc(const std::string & abc) {
     return output;
 }
 
-// Bars the request will actually keep, which is what the lyric scaffold should
-// be sized against. A fixed bar count says so directly; a natural-length
-// request is bounded by its ceiling instead, which only converts to bars once
-// the planning header's tempo and meter are known. Zero means unbounded, and
-// an unbounded request really does want a whole song.
-std::uint32_t expected_kept_bars(const SongRequest & request) {
-    if (request.target_bars != 0) return request.target_bars;
-    if (!(request.natural_max_seconds > 0.0) || !request.abc_prefix) return 0;
-    try {
-        const auto header = inspect_abc_score(*request.abc_prefix, true);
-        if (header.bpm == 0 || header.meter_denominator == 0) return 0;
-        const double seconds_per_bar =
-            static_cast<double>(header.meter_numerator) * 60.0 * 4.0 /
-            (static_cast<double>(header.bpm) *
-             static_cast<double>(header.meter_denominator));
-        if (!(seconds_per_bar > 0.0)) return 0;
-        const double bars = std::floor(request.natural_max_seconds / seconds_per_bar);
-        if (!(bars >= 1.0)) return 1;
-        return static_cast<std::uint32_t>(std::min(
-            bars, static_cast<double>(std::numeric_limits<std::uint32_t>::max())));
-    } catch (const std::exception &) {
-        return 0;
-    }
-}
-
-std::string make_instrumental_lyrics(const std::string & abc, std::uint32_t kept_bars) {
+std::string make_instrumental_lyrics(const std::string & abc) {
     std::vector<std::string> sections;
     for (const auto & raw_line : abc_lines(abc)) {
         const auto line = trim(raw_line);
@@ -662,26 +637,7 @@ std::string make_instrumental_lyrics(const std::string & abc, std::uint32_t kept
     }
 
     if (sections.empty()) {
-        // The scaffold is the form we are asking the model to compose, and it
-        // composes the whole of it before anything is fitted. Asking for six
-        // sections when four bars will be kept spends most of a minute writing
-        // a ten minute song to keep eight seconds of it.
-        //
-        // Every scaffold still ends on an outro, because the fit keeps the
-        // planner's real tail and that is where a composed ending comes from.
-        if (kept_bars == 0 || kept_bars > 96) {
-            sections = {"Intro", "Verse", "Chorus", "Verse", "Chorus", "Outro"};
-        } else if (kept_bars > 48) {
-            sections = {"Intro", "Verse", "Chorus", "Verse", "Outro"};
-        } else if (kept_bars > 24) {
-            sections = {"Intro", "Verse", "Chorus", "Outro"};
-        } else if (kept_bars > 16) {
-            sections = {"Intro", "Verse", "Outro"};
-        } else if (kept_bars > 8) {
-            sections = {"Verse", "Outro"};
-        } else {
-            sections = {"Outro"};
-        }
+        sections = {"Intro", "Verse", "Chorus", "Verse", "Chorus", "Outro"};
     }
     std::string output;
     for (const auto & section : sections) {

@@ -65,11 +65,7 @@ std::string make_vocal_rest_abc(const std::string & abc);
 // instrumental rendering. Section markers are read from native ABC comments
 // such as "% intro" and "% chorus" and retained in score order. A score
 // without usable markers receives the conventional default song form.
-// kept_bars sizes the default scaffold when the score carries no sections of
-// its own: the model composes the whole form before any of it is fitted, so a
-// short request should not ask for a full song. Zero means unbounded.
-std::string make_instrumental_lyrics(const std::string & abc, std::uint32_t kept_bars = 0);
-
+std::string make_instrumental_lyrics(const std::string & abc);
 
 struct AbcScoreInfo {
     std::uint32_t bars = 0;
@@ -158,9 +154,6 @@ struct SongRequest {
     // locally and a poor idea on a shared backend.
     double natural_max_seconds = 180.0;
 };
-// Bars a request will keep once fitting is done, from its bar count or from
-// its natural-length ceiling and the planning header's tempo.
-std::uint32_t expected_kept_bars(const SongRequest & request);
 
 struct GenerationSampling {
     float temperature = 1.0F;
