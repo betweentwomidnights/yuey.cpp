@@ -36,7 +36,6 @@ void usage(const char * argv0) {
         << "  --ending MODE        natural or outro (default outro with --bars)\n"
         << "  --outro-bars N       Planner-tail bars retained by outro mode (default 4)\n"
         << "  --natural-max-seconds N  Ceiling on planner-chosen length (default 180, 0 = off)\n"
-        << "  --planning-bar-limit N   Stop planning at N complete bars (0 = off)\n"
         << "  --max-seconds N      Advanced hard cut; can stop mid-music.\n"
         << "                       For ordinary length use --bars or --natural-max-seconds.\n"
         << "  --duration/--seconds N  Deprecated aliases for --max-seconds\n"
@@ -344,10 +343,6 @@ int main(int argc, char ** argv) {
             request.ending_mode = yue2::EndingMode::outro;
         } else {
             throw std::runtime_error("--ending must be natural or outro");
-        }
-        const auto bar_limit = value_after(argc, argv, "--planning-bar-limit", false);
-        if (!bar_limit.empty()) {
-            request.planning_bar_limit = parse_u32(bar_limit, "--planning-bar-limit");
         }
         const auto natural_max = value_after(argc, argv, "--natural-max-seconds", false);
         if (!natural_max.empty()) {

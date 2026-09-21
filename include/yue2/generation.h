@@ -100,11 +100,6 @@ std::uint32_t score_aligned_semantic_budget(const AbcScoreInfo & score);
 // The unfinished trailing block is dropped so a plan that was cut off mid-bar
 // still renders, rather than failing the job outright. A score that already
 // parses, or that has no complete block at all, is returned unchanged.
-// Remove trailing lines that do not end on a barline. A planner stopped on
-// demand can leave a partly written voice header behind, which validates as
-// a field and would otherwise survive into the fitted score.
-std::string drop_dangling_tail(const std::string & abc);
-
 std::string trim_to_complete_score(const std::string & abc);
 
 // Hold a planner-chosen score to a wall-clock ceiling. The bar allowance comes
@@ -158,13 +153,6 @@ struct SongRequest {
     // the ceiling and lets the model run to its own end, which is reasonable
     // locally and a poor idea on a shared backend.
     double natural_max_seconds = 180.0;
-    // Stop symbolic planning once the score holds this many complete bars,
-    // whatever the model would rather do. Zero lets it compose to its own
-    // ending, which is what gives the fit a real tail to lift an outro from
-    // and is also why a four bar request can spend minutes writing a song it
-    // will not keep. The stop lands on a bar boundary, so the score stays
-    // complete; it just was not finished on the model's terms.
-    std::uint32_t planning_bar_limit = 0;
 };
 
 struct GenerationSampling {

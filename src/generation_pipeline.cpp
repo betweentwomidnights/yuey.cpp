@@ -201,35 +201,6 @@ public:
                 initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
             }
             auto planning_control = ar_control(control, GenerationStage::abc);
-            bool planning_was_forced = false;
-            if (effective.planning_bar_limit != 0) {
-                // Parsing the score is not free, so only look once the plan
-                // could plausibly hold the limit, and then only every so
-                // often. Overshooting by a few tokens is harmless: the score
-                // is cut back to its last complete bar either way.
-                const auto limit = effective.planning_bar_limit;
-                const std::size_t check_floor =
-                    static_cast<std::size_t>(limit) * 8;
-                planning_control.force_stop =
-                    [this, &seeded_abc_ids, limit, check_floor,
-                     &planning_was_forced](
-                        const std::vector<std::int32_t> & generated) {
-                        if (generated.size() < check_floor) return false;
-                        if (generated.size() % 16 != 0) return false;
-                        try {
-                            auto ids = seeded_abc_ids;
-                            ids.insert(ids.end(), generated.begin(), generated.end());
-                            if (inspect_abc_score(tokenizer.decode(ids), true).bars
-                                < limit) {
-                                return false;
-                            }
-                            planning_was_forced = true;
-                            return true;
-                        } catch (const std::exception &) {
-                            return false;
-                        }
-                    };
-            }
             planning_control.allow_stop = [this, &seeded_abc_ids, minimum_complete_bars](
                                               const std::vector<std::int32_t> & generated) {
                 try {
@@ -254,15 +225,6 @@ public:
                 result.abc_token_ids.end(), planned.tokens.begin(), planned.tokens.end());
             result.abc = tokenizer.decode(result.abc_token_ids);
             result.abc_truncated = !planned.reached_end;
-            if (planning_was_forced) {
-                // The stop landed wherever the token stream was, which can be
-                // part way through the next voice header.
-                auto trimmed = drop_dangling_tail(result.abc);
-                if (trimmed != result.abc) {
-                    result.abc = std::move(trimmed);
-                    result.abc_token_ids = tokenizer.encode(result.abc);
-                }
-            }
             if (result.abc_truncated) {
                 // Planning reached its token budget part way through a bar. The
                 // score before that point is still real music, so keep it rather

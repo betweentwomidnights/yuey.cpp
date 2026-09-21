@@ -14,7 +14,6 @@ yue2-server --models-dir models --encoding Q4_K_M
 # --semantic-tokenizer-model PATH
 # --adapters-dir DIR  --lora PATH[=SCALE]  --threads N  --max-body-mb N
 # --natural-max-seconds N  ceiling on planner-chosen length (default 180, 0 = off)
-# --planning-bar-limit N   stop planning at N complete bars (default 0 = off)
 # --instrumental-lora REF[=SCALE]
 # --continuation-lora REF[=SCALE]
 ```
@@ -277,45 +276,6 @@ knows the transcribed source length. `use_continuation_adapter` defaults to
 true. Setting it false rejects `/continue`, because those semantic tokens cannot
 be decoded safely with stock NAR weights; clients should use the composed score
 continuation workflow instead.
-
-### Planning cost
-
-Planning composes a whole song before anything is fitted. A request for a few
-bars still pays for all of it: with the instrumental adapter loaded, four bars
-took 252 seconds of planning to write 481 bars and keep 4.
-
-`planning_bar_limit`, or `--planning-bar-limit` and
-`YUE2_PLANNING_BAR_LIMIT` for the server default, stops planning once the
-score holds that many complete bars. The stop lands on a structural boundary
-rather than mid-bar, so the score stays valid; in practice that is the end of
-a paired Vocal/Ins block, so the real stopping point is the first block at or
-past the limit. A limit below `target_bars` is raised to it, since the fit
-cannot keep more bars than were planned.
-
-It is off by default, because the cost it removes is also where the music
-comes from. `fit_abc_score_to_bars` keeps the planner's tail, and when the
-planner ran to its own ending that tail is a composed ending. Stop it early
-and the tail is wherever it happened to be:
-
-```text
-% outro
-V: Vocal
-"Cm"z32|"Cm"z32|"Cm"z32|"Cm"z32|
-V: Ins
-c'8c'8c'8c'8|c'8c'8c'8c'8|c'8c'8c'8c'8|c'8c'8c'8c'8|
-```
-
-That is the four bars a limit of 4 produced: a static chord under an
-ostinato, valid and fast and much plainer than the same request allowed to
-finish. Measured on the same prompt and seed with the adapter loaded:
-
-| limit | planning | planned bars | whole render |
-|---|---|---|---|
-| off | 252s | 481 | ~270s |
-| 4 | 17s | 35 | 23s |
-
-Worth setting when throughput matters more than the ending, and worth leaving
-off when it does not.
 
 ### Natural length
 
