@@ -33,7 +33,16 @@ constexpr int kKvHeads = 8;
 constexpr int kHeadDim = 128;
 constexpr float kNormEpsilon = 1.0e-6F;
 constexpr float kRopeTheta = 1000000.0F;
-constexpr std::size_t kGraphSize = 32768;
+// Decode and the NAR flow step both build about 1090 nodes, and every graph
+// here shares one scheduler, whose per-run reset memsets three arrays sized by
+// this. At 32768 that was most of a megabyte of clearing per decode token to
+// describe a graph thirty times smaller.
+//
+// The headroom is for adapters: a LoRA adds nodes to each of its ~196 targets,
+// so roughly 600 per stacked adapter. This leaves room for several at once.
+// Overflowing it aborts inside ggml rather than failing gracefully, so check
+// with YUE2_DEBUG_GRAPH_NODES before trimming it further.
+constexpr std::size_t kGraphSize = 8192;
 
 std::runtime_error ar_error(const std::string & message) {
     return std::runtime_error("[yue2:ar] " + message);
@@ -736,6 +745,16 @@ public:
         ggml_set_name(output_, "yue2.nar.velocity");
         ggml_build_forward_expand(graph_, output_);
 
+        static const bool report_flow_nodes =
+            std::getenv("YUE2_DEBUG_GRAPH_NODES") != nullptr;
+        if (report_flow_nodes) {
+            static bool reported = false;
+            if (!reported) {
+                reported = true;
+                std::fprintf(stderr, "[yue2] flow graph nodes: %d of %zu capacity\n",
+                             ggml_graph_n_nodes(graph_), kGraphSize);
+            }
+        }
         ggml_backend_sched_reset(state_.scheduler);
         if (!ggml_backend_sched_alloc_graph(state_.scheduler, graph_)) {
             throw ar_error("could not allocate NAR graph");
