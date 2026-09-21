@@ -408,7 +408,7 @@ VoiceMusic split_voice_music(const std::vector<std::string> & lines) {
     return result;
 }
 
-NativeScore parse_native_score(const std::string & abc) {
+NativeScore parse_native_score(const std::string & abc, bool allow_empty_score = false) {
     const auto lines = abc_lines(abc);
     NativeScore score;
     score.trailing_newline = !abc.empty() && abc.back() == '\n';
@@ -419,13 +419,15 @@ NativeScore parse_native_score(const std::string & abc) {
         if (!section.empty()) pending_section = section;
         score.header.push_back(lines[offset++]);
     }
-    if (offset == lines.size()) {
+    const bool has_lanes = offset < lines.size();
+    if (!has_lanes && !allow_empty_score) {
         throw std::invalid_argument("YuE2 score fitting requires native Vocal and Ins lanes");
     }
     if (!pending_section.empty()) {
         while (!score.header.empty() && trim(score.header.back()).empty()) score.header.pop_back();
         if (!score.header.empty() && !section_name(score.header.back()).empty()) score.header.pop_back();
     }
+    if (!has_lanes) return score;
 
     while (offset < lines.size()) {
         while (offset < lines.size() && trim(lines[offset]) != "V: Vocal") {
@@ -472,7 +474,7 @@ NativeScore parse_native_score(const std::string & abc) {
             score.bars.push_back(std::move(bar));
         }
     }
-    if (score.bars.empty()) {
+    if (score.bars.empty() && !allow_empty_score) {
         throw std::invalid_argument("YuE2 score contains no complete bars");
     }
     return score;
@@ -645,7 +647,7 @@ std::string make_instrumental_lyrics(const std::string & abc) {
     return output;
 }
 
-AbcScoreInfo inspect_abc_score(const std::string & abc) {
+AbcScoreInfo inspect_abc_score(const std::string & abc, bool allow_empty_score) {
     AbcScoreInfo result;
     for (const auto & raw_line : abc_lines(abc)) {
         const auto line = trim(raw_line);
@@ -662,7 +664,7 @@ AbcScoreInfo inspect_abc_score(const std::string & abc) {
             }
         }
     }
-    const auto score = parse_native_score(abc);
+    const auto score = parse_native_score(abc, allow_empty_score);
     if (score.bars.size() > std::numeric_limits<std::uint32_t>::max()) {
         throw std::invalid_argument("YuE2 ABC score contains too many bars");
     }

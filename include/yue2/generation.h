@@ -77,7 +77,12 @@ struct AbcScoreInfo {
 
 // Inspect YuE2's native ABC score without loading model weights. Bar count is
 // per musical timeline rather than the sum of the Vocal and Ins lanes.
-AbcScoreInfo inspect_abc_score(const std::string & abc);
+//
+// Set allow_empty_score for a score that may legitimately carry no bars yet,
+// such as the header-only planning prefix the typed controls build. It reports
+// zero bars instead of failing for want of Vocal and Ins body blocks. Leave it
+// false for a completed plan, where missing lanes are a real fault.
+AbcScoreInfo inspect_abc_score(const std::string & abc, bool allow_empty_score = false);
 
 // Fit a completed native two-voice plan to an exact bar count. The beginning
 // is retained and the final outro_bars are taken from the planner's real tail,

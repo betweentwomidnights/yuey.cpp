@@ -155,7 +155,11 @@ public:
             std::vector<std::int32_t> seeded_abc_ids;
             std::uint32_t minimum_complete_bars = effective.target_bars;
             if (effective.abc_prefix) {
-                const auto prefix_score = inspect_abc_score(*effective.abc_prefix);
+                // A planning prefix is a header with no bars yet; a score
+                // continuation prefix is a complete transcription. Both arrive
+                // here, so an empty score is a legitimate answer rather than a
+                // fault, and a planning prefix then keeps the old one-bar floor.
+                const auto prefix_score = inspect_abc_score(*effective.abc_prefix, true);
                 if (effective.target_bars == 0) {
                     if (prefix_score.bars == std::numeric_limits<std::uint32_t>::max()) {
                         throw std::invalid_argument(

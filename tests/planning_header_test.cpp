@@ -33,6 +33,24 @@ int main() {
         "K:C#m\n% intro\n");
     assert(prefix.back() == '\n');
 
+    // A Create request sends typed planning controls, which become this
+    // header-only prefix. Planning inspects its prefix before sampling, so an
+    // empty score has to be a legitimate answer or every planned song fails
+    // before the model runs. A completed plan still requires both lanes.
+    const auto prefix_info = yue2::inspect_abc_score(prefix, true);
+    assert(prefix_info.bars == 0);
+    assert(prefix_info.bpm == 95);
+    assert(prefix_info.meter_numerator == 4 && prefix_info.meter_denominator == 4);
+    assert(prefix_info.duration_seconds == 0.0);
+
+    bool strict_prefix_rejected = false;
+    try {
+        (void)yue2::inspect_abc_score(prefix);
+    } catch (const std::invalid_argument &) {
+        strict_prefix_rejected = true;
+    }
+    assert(strict_prefix_rejected);
+
     const std::string score =
         "X:1\nM:4/4\nL:1/32\nQ:1/4=95\n"
         "V: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\"\n"
