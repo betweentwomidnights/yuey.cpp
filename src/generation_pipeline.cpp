@@ -204,6 +204,18 @@ public:
                 result.abc_token_ids.end(), planned.tokens.begin(), planned.tokens.end());
             result.abc = tokenizer.decode(result.abc_token_ids);
             result.abc_truncated = !planned.reached_end;
+            if (result.abc_truncated) {
+                // Planning reached its token budget part way through a bar. The
+                // score before that point is still real music, so keep it rather
+                // than failing the job: a full symbolic plan is dense enough that
+                // a long instrumental one can run out of room. abc_truncated
+                // stays set so callers can still see it was cut short.
+                auto complete = trim_to_complete_score(result.abc);
+                if (complete != result.abc) {
+                    result.abc = std::move(complete);
+                    result.abc_token_ids = tokenizer.encode(result.abc);
+                }
+            }
             if (control.on_progress) {
                 const auto completed = static_cast<std::uint32_t>(
                     planned.tokens.size() + (planned.reached_end ? 1 : 0));

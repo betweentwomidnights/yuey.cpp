@@ -719,6 +719,41 @@ std::string fit_abc_score_to_bars(
     return output;
 }
 
+std::string trim_to_complete_score(const std::string & abc) {
+    // A plan that ran out of token budget stops wherever it happened to be,
+    // usually part way through a bar, which leaves an unpaired Vocal block or
+    // music outside a barline. Everything before that point is still a real
+    // score, so drop the unfinished tail rather than failing the whole job.
+    try {
+        (void)inspect_abc_score(abc);
+        return abc;
+    } catch (const std::invalid_argument &) {
+    }
+
+    const auto lines = abc_lines(abc);
+    std::vector<std::size_t> cuts;
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        const auto value = trim(lines[index]);
+        if (value == "V: Vocal" || (!value.empty() && value.front() == '%')) {
+            cuts.push_back(index);
+        }
+    }
+
+    // Walk block boundaries backwards and keep the longest prefix that parses.
+    for (auto cut = cuts.rbegin(); cut != cuts.rend(); ++cut) {
+        std::string candidate;
+        for (std::size_t index = 0; index < *cut; ++index) {
+            candidate += lines[index];
+            candidate += '\n';
+        }
+        try {
+            if (inspect_abc_score(candidate).bars > 0) return candidate;
+        } catch (const std::invalid_argument &) {
+        }
+    }
+    return abc;
+}
+
 std::string fit_natural_plan_to_ceiling(
     const std::string & abc,
     double max_seconds,

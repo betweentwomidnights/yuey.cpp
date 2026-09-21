@@ -96,6 +96,12 @@ std::string fit_abc_score_to_bars(
 // It is a safety ceiling, not a requested audio duration.
 std::uint32_t score_aligned_semantic_budget(const AbcScoreInfo & score);
 
+// Recover the complete part of a score whose planning ran out of token budget.
+// The unfinished trailing block is dropped so a plan that was cut off mid-bar
+// still renders, rather than failing the job outright. A score that already
+// parses, or that has no complete block at all, is returned unchanged.
+std::string trim_to_complete_score(const std::string & abc);
+
 // Hold a planner-chosen score to a wall-clock ceiling. The bar allowance comes
 // from the score's own tempo and meter, so the ceiling means the same thing at
 // any tempo. Returns the score unchanged when it already fits, when the
@@ -156,7 +162,11 @@ struct GenerationSampling {
 };
 
 struct GenerationDefaults {
-    GenerationSampling abc{0.7F, 0.9F, 30, 1.005F, 100, 32, 4096};
+    // A full symbolic plan carries a chord annotation on every Vocal bar, so it
+    // spends several times the tokens a melody plan does and can reach its budget
+    // mid-bar. This is a cap, not a target: a plan that ends naturally costs the
+    // same whatever the ceiling is, so a generous one only helps the dense case.
+    GenerationSampling abc{0.7F, 0.9F, 30, 1.005F, 100, 32, 16384};
     GenerationSampling semantic{};
 };
 

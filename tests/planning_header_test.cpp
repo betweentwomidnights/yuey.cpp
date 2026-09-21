@@ -122,6 +122,39 @@ int main() {
     const auto floor_bar = yue2::fit_natural_plan_to_ceiling(long_score, 0.5);
     assert(yue2::inspect_abc_score(floor_bar).bars == 1);
 
+    // A plan that runs out of token budget stops part way through a bar and
+    // leaves an unpaired Vocal block. This is the shape a dense full-mode
+    // instrumental plan actually produced against the model; everything before
+    // the cut is still real music.
+    const std::string truncated = long_score +
+        "% verse\n"
+        "V: Vocal\n\"Cm\"z32|\"Cm\"z32|\n"
+        "V: Ins\nc12c12e8|d12B12c8|\n"
+        "V: Vocal\n\"Cm\"z32|\"Cm\"z32|\"Cm";
+    bool truncated_rejected = false;
+    try {
+        (void)yue2::inspect_abc_score(truncated);
+    } catch (const std::invalid_argument &) {
+        truncated_rejected = true;
+    }
+    assert(truncated_rejected);
+
+    // The complete Vocal/Ins pair that did finish is kept, the unfinished one
+    // is dropped, and the result parses and renders.
+    const auto salvaged = yue2::trim_to_complete_score(truncated);
+    const auto salvaged_info = yue2::inspect_abc_score(salvaged);
+    assert(salvaged_info.bars == 10);
+    assert(salvaged.find("% verse") != std::string::npos);
+    assert(salvaged.find("c12c12e8|d12B12c8|") != std::string::npos);
+
+    // A score that already parses is handed back untouched.
+    assert(yue2::trim_to_complete_score(long_score) == long_score);
+
+    // Nothing salvageable is returned as-is, so the caller still sees the
+    // original failure rather than a silent empty score.
+    const std::string headerless = "X:1\nM:4/4\nL:1/32\nQ:1/4=120\nK:C\n% intro\nV: Vocal\nc4";
+    assert(yue2::trim_to_complete_score(headerless) == headerless);
+
     bool bad_instrumental = false;
     try {
         (void)yue2::make_vocal_rest_abc("X:1\nM:4/4\nK:C\nC4|\n");
