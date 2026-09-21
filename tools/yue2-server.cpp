@@ -584,6 +584,7 @@ struct Job {
     bool instrumental_adapter = false;
     bool continuation_adapter = false;
     bool abc_truncated = false;
+    bool abc_repaired = false;
     bool semantic_truncated = false;
     std::uint32_t score_bars = 0;
     double score_duration_seconds = 0.0;
@@ -1125,6 +1126,11 @@ private:
                 warnings.emplace_back(
                     "semantic safety budget was exhausted before MUSIC_END");
             }
+            if (job.status == "completed" && job.abc_repaired) {
+                warnings.emplace_back(
+                    "the planned score had a bar that would not render and was "
+                    "shortened to the last complete section");
+            }
             if (!warnings.empty()) {
                 body += ",\"warnings\":[";
                 for (std::size_t index = 0; index < warnings.size(); ++index) {
@@ -1404,6 +1410,7 @@ private:
         job.semantic_frames = song.semantic_codec_ids.size();
         job.semantic_prefix_frames = song.semantic_prefix_frames;
         job.abc_truncated = song.abc_truncated;
+        job.abc_repaired = song.abc_repaired;
         job.semantic_truncated = song.semantic_truncated;
         job.score_bars = song.score_bars;
         job.score_duration_seconds = song.score_duration_seconds;
@@ -1438,6 +1445,7 @@ private:
         job.abc = std::move(result.abc);
         set_midi_exports(job, result.midi_exports);
         job.abc_truncated = result.abc_truncated;
+        job.abc_repaired = result.abc_repaired;
         job.score_bars = result.score_bars;
         job.score_duration_seconds = result.score_duration_seconds;
         complete_locked(job);

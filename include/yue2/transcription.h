@@ -144,6 +144,14 @@ TranscriptionMidiExports serialize_sheetsage2_midis(
 // structural and rhythmic validation and does not require model weights.
 TranscriptionMidiExports serialize_yue2_abc_midis(const std::string & abc);
 
+// The same structural and rhythmic validation serialize_yue2_abc_midis
+// performs, without building any MIDI, reported rather than thrown. A planned
+// score can end cleanly and still contain a bar whose notes do not fill its
+// meter; nothing else on the generation path looks at bar durations, so
+// without this the first thing to notice is the MIDI exporter, after the whole
+// plan has been paid for.
+bool yue2_abc_score_is_renderable(const std::string & abc, std::string * reason = nullptr);
+
 // Lossless JSON form used by the CLI and C ABI. It includes raw per-window
 // tokens, typed events, notes, timing provenance, and warnings.
 std::string serialize_transcription_json(const TranscriptionResult & result);

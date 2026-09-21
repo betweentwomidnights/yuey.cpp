@@ -1,5 +1,6 @@
 #include "yue2/generation.h"
 #include "yue2/tokenizer.h"
+#include "yue2/transcription.h"
 
 #include "ggml.h"
 #include "gguf.h"
@@ -741,16 +742,27 @@ std::string fit_abc_score_to_bars(
     return output;
 }
 
+// Structure alone is not enough: a block can split into bars cleanly and still
+// hold a bar whose notes do not fill the meter, which only the MIDI exporter
+// notices. Both have to pass for a prefix to be worth keeping.
+namespace {
+bool score_prefix_is_usable(const std::string & abc) {
+    try {
+        if (inspect_abc_score(abc).bars == 0) return false;
+    } catch (const std::invalid_argument &) {
+        return false;
+    }
+    return yue2_abc_score_is_renderable(abc);
+}
+}  // namespace
+
 std::string trim_to_complete_score(const std::string & abc) {
     // A plan that ran out of token budget stops wherever it happened to be,
     // usually part way through a bar, which leaves an unpaired Vocal block or
-    // music outside a barline. Everything before that point is still a real
-    // score, so drop the unfinished tail rather than failing the whole job.
-    try {
-        (void)inspect_abc_score(abc);
-        return abc;
-    } catch (const std::invalid_argument &) {
-    }
+    // music outside a barline. A plan that ended cleanly can still contain a
+    // bar the model simply mis-counted. Everything before either point is real
+    // music, so drop the unusable tail rather than failing the whole job.
+    if (score_prefix_is_usable(abc)) return abc;
 
     const auto lines = abc_lines(abc);
     std::vector<std::size_t> cuts;
@@ -768,10 +780,7 @@ std::string trim_to_complete_score(const std::string & abc) {
             candidate += lines[index];
             candidate += '\n';
         }
-        try {
-            if (inspect_abc_score(candidate).bars > 0) return candidate;
-        } catch (const std::invalid_argument &) {
-        }
+        if (score_prefix_is_usable(candidate)) return candidate;
     }
     return abc;
 }

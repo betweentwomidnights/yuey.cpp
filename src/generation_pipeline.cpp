@@ -225,17 +225,22 @@ public:
                 result.abc_token_ids.end(), planned.tokens.begin(), planned.tokens.end());
             result.abc = tokenizer.decode(result.abc_token_ids);
             result.abc_truncated = !planned.reached_end;
-            if (result.abc_truncated) {
-                // Planning reached its token budget part way through a bar. The
-                // score before that point is still real music, so keep it rather
-                // than failing the job: a full symbolic plan is dense enough that
-                // a long instrumental one can run out of room. abc_truncated
-                // stays set so callers can still see it was cut short.
-                auto complete = trim_to_complete_score(result.abc);
-                if (complete != result.abc) {
-                    result.abc = std::move(complete);
-                    result.abc_token_ids = tokenizer.encode(result.abc);
-                }
+            // Two ways a plan arrives unusable, both recovered the same way:
+            // keep the longest prefix that still renders.
+            //
+            // Planning can reach its token budget part way through a bar, and a
+            // full symbolic plan is dense enough that a long instrumental one
+            // can run out of room. But a plan that ended cleanly can equally
+            // hold a bar whose notes do not fill the meter, and nothing on this
+            // path looks at bar durations, so the first thing to notice was the
+            // MIDI exporter - which failed the whole job after the entire plan
+            // had been paid for. Two of five instrumental planning runs died
+            // that way, each after more than four minutes.
+            auto complete = trim_to_complete_score(result.abc);
+            if (complete != result.abc) {
+                result.abc_repaired = !result.abc_truncated;
+                result.abc = std::move(complete);
+                result.abc_token_ids = tokenizer.encode(result.abc);
             }
             if (control.on_progress) {
                 const auto completed = static_cast<std::uint32_t>(
@@ -245,9 +250,10 @@ public:
             }
         }
         if (std::getenv("YUE2_DEBUG_TIMING") != nullptr) {
-            std::fprintf(stderr, "[yue2] planned %u bars, keeping %u, abc_truncated=%d\n",
+            std::fprintf(stderr, "[yue2] planned %u bars, keeping %u, abc_truncated=%d, abc_repaired=%d\n",
                          inspect_abc_score(result.abc, true).bars,
-                         effective.target_bars, result.abc_truncated ? 1 : 0);
+                         effective.target_bars, result.abc_truncated ? 1 : 0,
+                         result.abc_repaired ? 1 : 0);
         }
         if (effective.target_bars != 0) {
             result.abc = fit_abc_score_to_bars(
@@ -302,6 +308,7 @@ public:
             result.abc = std::move(plan.abc);
             result.abc_token_ids = std::move(plan.abc_token_ids);
             result.abc_truncated = plan.abc_truncated;
+            result.abc_repaired = plan.abc_repaired;
             result.score_bars = plan.score_bars;
             result.score_duration_seconds = plan.score_duration_seconds;
             result.midi_exports = std::move(plan.midi_exports);

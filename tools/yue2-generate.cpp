@@ -431,6 +431,10 @@ int main(int argc, char ** argv) {
             if (result.abc_truncated) {
                 std::cerr << "warning: ABC generation reached its token limit\n";
             }
+            if (result.abc_repaired) {
+                std::cerr << "warning: the planned score had a bar that would not "
+                             "render and was shortened to the last complete section\n";
+            }
             return 0;
         }
         const auto result = pipeline.generate(request, run);

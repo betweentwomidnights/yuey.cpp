@@ -52,6 +52,10 @@ struct GeneratedPlan {
     std::string abc;
     std::vector<std::int32_t> abc_token_ids;
     bool abc_truncated = false;
+    // The planned score held a bar that would not render and was shortened to
+    // the last block that does. Distinct from abc_truncated, which means
+    // planning hit its token limit.
+    bool abc_repaired = false;
     std::uint32_t score_bars = 0;
     double score_duration_seconds = 0.0;
     TranscriptionMidiExports midi_exports;
@@ -61,6 +65,7 @@ struct GeneratedSong {
     std::string abc;
     std::vector<std::int32_t> abc_token_ids;
     bool abc_truncated = false;
+    bool abc_repaired = false;
     std::vector<std::int32_t> semantic_codec_ids;
     std::uint32_t semantic_prefix_frames = 0;
     bool semantic_truncated = false;

@@ -528,6 +528,16 @@ ParsedScore parse_score(const std::string & abc) {
 
 } // namespace
 
+bool yue2_abc_score_is_renderable(const std::string & abc, std::string * reason) {
+    try {
+        (void)parse_score(abc);
+        return true;
+    } catch (const std::invalid_argument & error) {
+        if (reason != nullptr) *reason = error.what();
+        return false;
+    }
+}
+
 TranscriptionMidiExports serialize_yue2_abc_midis(const std::string & abc) {
     const auto score = parse_score(abc);
     std::array<std::vector<TimedEvent>, 2> melody_events;
