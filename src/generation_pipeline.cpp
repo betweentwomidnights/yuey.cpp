@@ -246,9 +246,9 @@ public:
             }
         }
         if (std::getenv("YUE2_DEBUG_TIMING") != nullptr) {
-            std::fprintf(stderr, "[yue2] planned %u bars, keeping %u\n",
+            std::fprintf(stderr, "[yue2] planned %u bars, keeping %u, abc_truncated=%d\n",
                          inspect_abc_score(result.abc, true).bars,
-                         effective.target_bars);
+                         effective.target_bars, result.abc_truncated ? 1 : 0);
         }
         if (effective.target_bars != 0) {
             result.abc = fit_abc_score_to_bars(
