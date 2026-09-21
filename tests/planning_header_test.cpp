@@ -155,6 +155,47 @@ int main() {
     const std::string headerless = "X:1\nM:4/4\nL:1/32\nQ:1/4=120\nK:C\n% intro\nV: Vocal\nc4";
     assert(yue2::trim_to_complete_score(headerless) == headerless);
 
+    // The margin past the final bar is absolute, not proportional. It used to
+    // be max(1.75x, +30s), which meant the delivered audio grew without bound
+    // because generation spends the whole budget rather than stopping at
+    // MUSIC_END: a 180s score rendered 315s and a 460s one rendered 805s.
+    {
+        yue2::AbcScoreInfo timed;
+        timed.bars = 8;
+        timed.duration_seconds = 16.0;
+        // Short scores are untouched: +30s already won there.
+        assert(yue2::score_aligned_semantic_budget(timed) == 1150);
+
+        timed.bars = 90;
+        timed.duration_seconds = 180.0;
+        assert(yue2::score_aligned_semantic_budget(timed) == 5250); // was 7875
+
+        timed.bars = 230;
+        timed.duration_seconds = 460.0;
+        assert(yue2::score_aligned_semantic_budget(timed) == 12250); // was 20125
+    }
+
+    // A continuation is measured by what it adds, so its prefix is retained
+    // whatever the ceiling says and the result is never shorter than its source.
+    {
+        // long_score is 8 bars of 4/4 at 120bpm: 2 seconds a bar.
+        // Six bars of prefix plus a four second allowance keeps eight bars, so
+        // the score is already within its budget and comes back untouched.
+        assert(yue2::fit_natural_plan_to_ceiling(long_score, 4.0, 4, 6) == long_score);
+
+        // The same six-bar prefix with a two second allowance keeps seven.
+        const auto extended = yue2::fit_natural_plan_to_ceiling(long_score, 2.0, 2, 6);
+        assert(yue2::inspect_abc_score(extended).bars == 7);
+
+        // A prefix at or beyond the score is handed back whole rather than cut.
+        assert(yue2::fit_natural_plan_to_ceiling(long_score, 2.0, 2, 8) == long_score);
+        assert(yue2::fit_natural_plan_to_ceiling(long_score, 2.0, 2, 99) == long_score);
+
+        // With no prefix the ceiling still governs the whole score.
+        assert(yue2::inspect_abc_score(
+            yue2::fit_natural_plan_to_ceiling(long_score, 10.0, 2, 0)).bars == 5);
+    }
+
     bool bad_instrumental = false;
     try {
         (void)yue2::make_vocal_rest_abc("X:1\nM:4/4\nK:C\nC4|\n");

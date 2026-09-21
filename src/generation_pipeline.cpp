@@ -227,15 +227,17 @@ public:
             result.abc = fit_abc_score_to_bars(
                 result.abc, effective.target_bars, effective.outro_bars);
             result.abc_token_ids = tokenizer.encode(result.abc);
-        } else if (planner_chose_the_score && supplied_prefix_bars == 0) {
+        } else if (planner_chose_the_score) {
             // Natural length is the one path with no bound but the context
             // window: the score sets the semantic floor, so a plan that runs
             // long forces a render that runs long. A supplied score is the
-            // caller's own decision and is left alone, and so is a continuation,
-            // whose length is mostly its source's. Holding one to this ceiling
-            // could cut the result shorter than the audio it continues.
+            // caller's own decision and is left alone. A continuation is held
+            // too, but by what it adds: its prefix bars are retained whatever
+            // the ceiling says, so the result never comes back shorter than the
+            // audio it extends.
             auto held = fit_natural_plan_to_ceiling(
-                result.abc, effective.natural_max_seconds, effective.outro_bars);
+                result.abc, effective.natural_max_seconds, effective.outro_bars,
+                supplied_prefix_bars);
             if (held != result.abc) {
                 result.abc = std::move(held);
                 result.abc_token_ids = tokenizer.encode(result.abc);

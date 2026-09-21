@@ -106,10 +106,14 @@ std::string trim_to_complete_score(const std::string & abc);
 // from the score's own tempo and meter, so the ceiling means the same thing at
 // any tempo. Returns the score unchanged when it already fits, when the
 // ceiling is zero, or when the score carries no bars to measure.
+// retained_bars are bars the caller already supplied, as a continuation
+// prefix. They do not count against the ceiling: a continuation is measured by
+// what it adds, and must never come back shorter than the source it extends.
 std::string fit_natural_plan_to_ceiling(
     const std::string & abc,
     double max_seconds,
-    std::uint32_t outro_bars = 4);
+    std::uint32_t outro_bars = 4,
+    std::uint32_t retained_bars = 0);
 
 struct SongRequest {
     std::string style;

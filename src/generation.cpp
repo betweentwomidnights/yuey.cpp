@@ -757,11 +757,12 @@ std::string trim_to_complete_score(const std::string & abc) {
 std::string fit_natural_plan_to_ceiling(
     const std::string & abc,
     double max_seconds,
-    std::uint32_t outro_bars) {
+    std::uint32_t outro_bars,
+    std::uint32_t retained_bars) {
     if (!(max_seconds > 0.0) || !std::isfinite(max_seconds)) return abc;
     const auto score = inspect_abc_score(abc);
     if (score.bars == 0 || !std::isfinite(score.duration_seconds)) return abc;
-    if (score.duration_seconds <= max_seconds) return abc;
+    if (retained_bars == 0 && score.duration_seconds <= max_seconds) return abc;
 
     const double seconds_per_bar =
         score.duration_seconds / static_cast<double>(score.bars);
@@ -773,6 +774,16 @@ std::string fit_natural_plan_to_ceiling(
         ? 1U
         : static_cast<std::uint32_t>(std::min(
               allowance, static_cast<double>(std::numeric_limits<std::uint32_t>::max())));
+
+    // A continuation is measured by what it adds. Its source is already as long
+    // as it is, and cutting below that would hand back less than was given.
+    if (retained_bars != 0) {
+        if (retained_bars >= score.bars) return abc;
+        allowed = retained_bars
+            > std::numeric_limits<std::uint32_t>::max() - allowed
+            ? std::numeric_limits<std::uint32_t>::max()
+            : retained_bars + allowed;
+    }
     if (allowed >= score.bars) return abc;
 
     // Keep an ending even when the ceiling is tighter than the outro we would
@@ -786,12 +797,17 @@ std::uint32_t score_aligned_semantic_budget(const AbcScoreInfo & score) {
         score.duration_seconds <= 0.0) {
         throw std::invalid_argument("YuE2 semantic alignment requires a timed score");
     }
-    // Short scores have proportionally more learned intro/outro overhead. This
-    // covers the observed 8-bar 1.70x case while retaining ample headroom for
-    // full arrangements. MUSIC_END normally stops generation before the cap.
-    const double seconds = std::max(
-        score.duration_seconds * 1.75,
-        score.duration_seconds + 30.0);
+    // The overhead past the final bar is roughly absolute: the model finishes
+    // its phrase and decays. It does not grow with the song.
+    //
+    // This used to take the larger of 1.75x and +30s. The multiplier was
+    // calibrated on an 8-bar score, where +30s already wins, so it never
+    // applied to the case that justified it; above 40s it took over and the
+    // margin grew without bound. Since generation routinely spends the whole
+    // budget rather than stopping at MUSIC_END, that margin was not headroom,
+    // it was the delivered length: a 180s score rendered 315s, and a 460s
+    // continuation rendered 805s. Both are exactly 1.75x their score.
+    const double seconds = score.duration_seconds + 30.0;
     const double tokens = std::ceil(seconds * 25.0);
     if (tokens > static_cast<double>(std::numeric_limits<std::uint32_t>::max())) {
         throw std::invalid_argument("YuE2 score-aligned semantic budget is too large");
