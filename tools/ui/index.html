@@ -278,6 +278,13 @@
             <label class="adapter-setting"><input id="use-instrumental-adapter" type="checkbox"><span><b>instrumental planner</b><small>applies the instrumental AR LoRA only when an instrumental request is enabled.</small></span><span class="pill" id="instrumental-adapter-state">checking</span></label>
             <label class="adapter-setting"><input id="use-continuation-adapter" type="checkbox"><span><b>real-audio continuation</b><small>enables the matching semantic-tokenizer NAR decoder. turning it off keeps score continuation available.</small></span><span class="pill" id="continuation-adapter-state">checking</span></label>
           </div>
+          <div class="card"><h2>song length</h2><p>when you let yuey choose the form, this is the longest score it may keep. an over-long plan is fitted back to this before any audio is rendered, so the song still ends rather than stopping.</p>
+            <div class="row">
+              <div><label for="natural-max">ceiling (seconds)</label><input id="natural-max" type="number" min="0" max="900" step="5"><div class="help">0 means no limit</div></div>
+              <div><label>backend limit</label><div><span class="pill" id="natural-max-state">checking</span></div><div class="help" id="natural-max-help"></div></div>
+            </div>
+            <div class="notice">this only applies to <b>let yuey choose</b>. a chosen bar count, a remix, and a continuation all take their length from what you gave them.</div>
+          </div>
           <div class="card"><h2>model installation</h2><p id="model-folder"></p><div class="notice" id="download-note">automatic downloads are waiting on a stable published model manifest. for now, place converted gguf files in the model folder and refresh.</div><div class="actions"><button class="secondary" id="refresh-models">rescan folder</button></div></div>
         </div>
       </div>
@@ -287,7 +294,7 @@
 <div class="roll-menu" id="roll-menu"><div class="roll-menu-row"><button data-transpose="-12">−12</button><button data-transpose="-1">−1</button><button data-transpose="1">+1</button><button data-transpose="12">+12</button></div><button id="menu-duplicate">duplicate selected bars</button><button id="menu-delete">delete selected notes</button></div>
 <script>
   const $ = id => document.getElementById(id);
-  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreContext: null, transformMode: 'remix', continuationMethod: 'score', instrumentalAdapterEnabled: null, audioContinuationAdapterEnabled: null, rollZoom: 1, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend' };
+  const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreContext: null, transformMode: 'remix', continuationMethod: 'score', instrumentalAdapterEnabled: null, audioContinuationAdapterEnabled: null, rollZoom: 1, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend', naturalMaxSeconds: null };
   const titles = { create: 'create with yuey', transform: 'remix or continue', models: 'models and runtime' };
   const chordRoots = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
   const chordQualities = [
@@ -885,6 +892,34 @@
     return data;
   }
 
+  // The backend's ceiling is a maximum, not a default: a request may ask for
+  // less, but never for more than the server is willing to render. Mirroring
+  // that here keeps the control honest instead of silently clamped.
+  function serverNaturalMax() {
+    const value = Number(state.props?.defaults?.natural_max_seconds);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  function renderNaturalMax() {
+    const backend = serverNaturalMax();
+    const input = $('natural-max');
+    if (state.naturalMaxSeconds == null) state.naturalMaxSeconds = backend;
+    if (backend > 0) state.naturalMaxSeconds = Math.min(state.naturalMaxSeconds, backend);
+    input.max = backend > 0 ? backend : 900;
+    input.value = state.naturalMaxSeconds;
+    const pill = $('natural-max-state');
+    pill.textContent = backend > 0 ? `${clock(backend)} max` : 'unlimited';
+    pill.className = `pill ${backend > 0 ? '' : 'good'}`;
+    $('natural-max-help').textContent = backend > 0
+      ? 'set by the backend; requests cannot ask for longer'
+      : 'this backend accepts any length you set here';
+  }
+
+  function clock(seconds) {
+    const whole = Math.round(seconds);
+    return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+  }
+
   function renderProps() {
     const p = state.props;
     const accelerator = p.devices.find(d => d.type === 'gpu' || d.type === 'integrated_gpu');
@@ -897,6 +932,7 @@
     if (state.audioContinuationAdapterEnabled == null) state.audioContinuationAdapterEnabled = continuationAvailable;
     if (!instrumentalAvailable) state.instrumentalAdapterEnabled = false;
     if (!continuationAvailable) state.audioContinuationAdapterEnabled = false;
+    renderNaturalMax();
     $('use-instrumental-adapter').disabled = !instrumentalAvailable;
     $('use-instrumental-adapter').checked = state.instrumentalAdapterEnabled;
     $('instrumental-adapter-state').textContent = instrumentalAvailable ? (state.instrumentalAdapterEnabled ? 'enabled' : 'bypassed') : 'not installed';
@@ -987,7 +1023,8 @@
     return { style: $('prompt').value, lyrics: $('lyrics').value, instrumental: $('instrumental').checked,
       use_instrumental_adapter: state.instrumentalAdapterEnabled !== false,
       target_bars: fitted ? Number($('bars').value) : 0, ending: $('ending').value,
-      outro_bars: 4, seed: seed('seed'), planning: planningHeader(), encoding: state.encoding };
+      outro_bars: 4, seed: seed('seed'), planning: planningHeader(), encoding: state.encoding,
+      natural_max_seconds: state.naturalMaxSeconds ?? serverNaturalMax() };
   }
   function renderAudio(result, destination = 'create', transformKind = 'remix', preserveScoreControls = false) {
     if (state.wavUrls[destination]) URL.revokeObjectURL(state.wavUrls[destination]);
@@ -1152,6 +1189,14 @@
   $('score-generate').onclick = () => renderEditedScore(
     state.scoreContext === 'transform' && state.transformMode === 'continue');
   $('export-abc').onclick = () => { const url = URL.createObjectURL(new Blob([$('abc').value], { type: 'text/plain' })); const a = document.createElement('a'); a.href = url; a.download = 'yuey-score.abc'; a.click(); URL.revokeObjectURL(url); };
+  $('natural-max').onchange = event => {
+    const backend = serverNaturalMax();
+    let value = Number(event.target.value);
+    if (!Number.isFinite(value) || value < 0) value = backend;
+    if (backend > 0) value = Math.min(value || backend, backend);
+    state.naturalMaxSeconds = value;
+    renderNaturalMax();
+  };
   $('use-instrumental-adapter').onchange = event => {
     state.instrumentalAdapterEnabled = event.target.checked;
     if (state.props) renderProps();
