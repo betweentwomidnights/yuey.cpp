@@ -678,6 +678,17 @@ AbcScoreInfo inspect_abc_score(const std::string & abc, bool allow_empty_score) 
     return result;
 }
 
+void strip_trailing_tie(std::string & bar) {
+    // A tie promises that the next note continues this one. Where the score is
+    // spliced, or at its very end, that note is gone, and the MIDI exporter
+    // refuses a tie it cannot resolve: it fails the whole job rather than the
+    // bar. Dropping the tie leaves the note sounding its own length.
+    auto end = bar.size();
+    while (end > 0 && std::isspace(static_cast<unsigned char>(bar[end - 1]))) --end;
+    if (end > 0 && bar[end - 1] == '|') --end;
+    if (end > 0 && bar[end - 1] == '-') bar.erase(end - 1, 1);
+}
+
 std::string fit_abc_score_to_bars(
     const std::string & abc,
     std::uint32_t target_bars,
@@ -701,6 +712,17 @@ std::string fit_abc_score_to_bars(
     selected.insert(selected.end(), score.bars.begin() + tail_begin, score.bars.end());
     for (std::size_t index = head_count; index < selected.size(); ++index) {
         selected[index].section = "outro";
+    }
+
+    // The head no longer leads into the bars that used to follow it, and
+    // nothing at all follows the last bar, so neither may end on a tie.
+    if (head_count > 0 && head_count < selected.size()) {
+        strip_trailing_tie(selected[head_count - 1].vocal);
+        strip_trailing_tie(selected[head_count - 1].instrumental);
+    }
+    if (!selected.empty()) {
+        strip_trailing_tie(selected.back().vocal);
+        strip_trailing_tie(selected.back().instrumental);
     }
 
     std::string output;

@@ -1,4 +1,5 @@
 #include "yue2/generation.h"
+#include "yue2/transcription.h"
 
 #include <cassert>
 #include <cmath>
@@ -195,6 +196,37 @@ int main() {
         assert(yue2::inspect_abc_score(
             yue2::fit_natural_plan_to_ceiling(long_score, 10.0, 2, 0)).bars == 5);
     }
+
+    // A bar ending on a tie promises the next note continues it. Fitting
+    // splices the head onto the tail, so the bar before the splice no longer
+    // leads anywhere and its tie cannot resolve. The MIDI exporter rejects a
+    // tie it cannot resolve and fails the whole job, which is how a natural
+    // length instrumental create died on a guitar prompt.
+    const std::string tied_score =
+        "X:1\nM:4/4\nL:1/32\nQ:1/4=120\n"
+        "V: Vocal clef=treble\nV: Ins clef=treble\nK:C\n% intro\n"
+        "V: Vocal\n\"C\"C32|\"F\"D32|\"G\"E32|\"C\"F32|\n"
+        "V: Ins\nC,32|F,16F,16-|F,32|C,32|\n% outro\n"
+        "V: Vocal\n\"Am\"G32|\"F\"A32|\"G\"B32|\"C\"c32|\n"
+        "V: Ins\nA,32|F,32|G,32|C,32|\n";
+
+    // Untouched it is valid: the tie in bar 2 is followed by its own note.
+    assert(tied_score.find("-|") != std::string::npos);
+    (void)yue2::serialize_yue2_abc_midis(tied_score);
+
+    // Keeping two head bars and two tail bars cuts between bar 2 and bar 3,
+    // stranding that tie. It has to go, or the export throws.
+    const auto spliced = yue2::fit_abc_score_to_bars(tied_score, 4, 2);
+    assert(yue2::inspect_abc_score(spliced).bars == 4);
+    assert(spliced.find("-|") == std::string::npos);
+    (void)yue2::serialize_yue2_abc_midis(spliced);
+
+    // A fit that keeps every bar splices nothing, so the tie is still resolved
+    // and must survive: the repair has to be confined to the actual cut.
+    const auto whole = yue2::fit_abc_score_to_bars(tied_score, 8, 2);
+    assert(yue2::inspect_abc_score(whole).bars == 8);
+    assert(whole.find("-|") != std::string::npos);
+    (void)yue2::serialize_yue2_abc_midis(whole);
 
     bool bad_instrumental = false;
     try {
