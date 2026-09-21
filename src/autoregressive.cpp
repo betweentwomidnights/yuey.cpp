@@ -9,6 +9,7 @@
 #include "ggml.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -833,9 +834,29 @@ std::vector<float> AutoregressiveState::solve_flow_chunk(
     if (ar_tokens.size() + frames + 2 > 24576) {
         throw std::invalid_argument("YuE2 NAR chunk exceeds model context");
     }
+    // Everything here runs before the first ODE step, so it is what a caller
+    // experiences as the delay before DiT appears to start.
+    static const bool report_timing = std::getenv("YUE2_DEBUG_TIMING") != nullptr;
+    const auto clock_now = []() { return std::chrono::steady_clock::now(); };
+    const auto elapsed_ms = [](auto from, auto to) {
+        return std::chrono::duration<double, std::milli>(to - from).count();
+    };
+    const auto preamble_started = clock_now();
     KvCache ar_cache(model.backend(), ar_tokens.size());
+    const auto cache_ready = clock_now();
     (void)append_locked(ar_cache, ar_tokens);
+    const auto prefill_done = clock_now();
     FlowGraph graph(*this, ar_cache, frames);
+    const auto graph_ready = clock_now();
+    if (report_timing) {
+        std::fprintf(stderr,
+            "[yue2] flow preamble: kv-cache %.0fms, prefill %.0fms, graph %.0fms"
+            " (%zu ar tokens, %zu frames)\n",
+            elapsed_ms(preamble_started, cache_ready),
+            elapsed_ms(cache_ready, prefill_done),
+            elapsed_ms(prefill_done, graph_ready),
+            ar_tokens.size(), frames);
+    }
     auto state = noise;
     const double dt = 1.0 / static_cast<double>(ode_steps);
     for (std::uint32_t step = 0; step < ode_steps; ++step) {

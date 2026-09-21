@@ -3,6 +3,8 @@
 #include "yue2/tokenizer.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -90,6 +92,24 @@ void check_cancelled(const GenerationControl & control) {
         throw std::runtime_error("YuE2 generation cancelled");
     }
 }
+
+// Stage wall-clock reporting, so a slow run can be attributed rather than
+// guessed at. Enabled with YUE2_DEBUG_TIMING.
+class StageTimer {
+public:
+    explicit StageTimer(const char * name)
+        : name_(name), started_(std::chrono::steady_clock::now()) {}
+    ~StageTimer() {
+        static const bool report = std::getenv("YUE2_DEBUG_TIMING") != nullptr;
+        if (!report) return;
+        const auto ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started_).count();
+        std::fprintf(stderr, "[yue2] stage %-9s %8.0f ms\n", name_, ms);
+    }
+private:
+    const char * name_;
+    std::chrono::steady_clock::time_point started_;
+};
 
 AutoregressiveControl ar_control(
     const GenerationControl & control,
@@ -195,6 +215,7 @@ public:
                     return false;
                 }
             };
+            StageTimer plan_timer("plan");
             const auto planned = autoregressive.generate(
                 initial, run_options.generation.abc,
                 AutoregressivePhase::abc, effective.seed,
@@ -222,6 +243,11 @@ public:
                 control.on_progress(
                     GenerationStage::abc, completed, std::max(1U, completed));
             }
+        }
+        if (std::getenv("YUE2_DEBUG_TIMING") != nullptr) {
+            std::fprintf(stderr, "[yue2] planned %u bars, keeping %u\n",
+                         inspect_abc_score(result.abc, true).bars,
+                         effective.target_bars);
         }
         if (effective.target_bars != 0) {
             result.abc = fit_abc_score_to_bars(
@@ -339,6 +365,7 @@ public:
         result.semantic_budget = semantic_sampling.max_tokens;
         AutoregressiveResult semantic;
         if (guidance == 1.0F) {
+            StageTimer semantic_timer("semantic");
             semantic = autoregressive.generate(
                 positive, semantic_sampling,
                 AutoregressivePhase::semantic, effective.seed,
@@ -363,6 +390,7 @@ public:
                     semantic_sampling.min_tokens, semantic_sampling.max_tokens);
                 result.semantic_budget = semantic_sampling.max_tokens;
             }
+            StageTimer semantic_timer("semantic");
             semantic = autoregressive.generate_cfg(
                 positive, negative, semantic_sampling,
                 AutoregressivePhase::semantic, guidance, effective.seed,
@@ -388,9 +416,12 @@ public:
         if (result.semantic_codec_ids.empty()) {
             throw std::runtime_error("YuE2 semantic generation produced no audio codes");
         }
-        result.latents = autoregressive.synthesize_latents(
-            generation_prefix, result.semantic_codec_ids, effective.seed, run_options.flow,
-            ar_control(control, GenerationStage::flow));
+        {
+            StageTimer flow_timer("flow");
+            result.latents = autoregressive.synthesize_latents(
+                generation_prefix, result.semantic_codec_ids, effective.seed, run_options.flow,
+                ar_control(control, GenerationStage::flow));
+        }
         VaeDecodeControl decode_control;
         decode_control.should_cancel = control.should_cancel;
         if (control.on_progress) {
