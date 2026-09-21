@@ -719,6 +719,25 @@ std::string fit_abc_score_to_bars(
     return output;
 }
 
+std::string drop_dangling_tail(const std::string & abc) {
+    // A forced stop lands wherever the token stream was, which can be part way
+    // through the next voice header. A half written "V: Vocal" is left as a
+    // bare "V:", and that parses as an ABC field rather than as music, so the
+    // score still validates and the fit carries the junk into its output.
+    // Every line of a complete score body ends on a barline, so drop anything
+    // trailing that does not.
+    auto lines = abc_lines(abc);
+    while (!lines.empty()) {
+        const auto line = trim(lines.back());
+        if (line.empty()) { lines.pop_back(); continue; }
+        if (!line.empty() && line.back() == '|') break;
+        lines.pop_back();
+    }
+    std::string output;
+    for (const auto & line : lines) { output += line; output += '\n'; }
+    return output;
+}
+
 std::string trim_to_complete_score(const std::string & abc) {
     // A plan that ran out of token budget stops wherever it happened to be,
     // usually part way through a bar, which leaves an unpaired Vocal block or

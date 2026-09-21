@@ -100,6 +100,11 @@ std::uint32_t score_aligned_semantic_budget(const AbcScoreInfo & score);
 // The unfinished trailing block is dropped so a plan that was cut off mid-bar
 // still renders, rather than failing the job outright. A score that already
 // parses, or that has no complete block at all, is returned unchanged.
+// Remove trailing lines that do not end on a barline. A planner stopped on
+// demand can leave a partly written voice header behind, which validates as
+// a field and would otherwise survive into the fitted score.
+std::string drop_dangling_tail(const std::string & abc);
+
 std::string trim_to_complete_score(const std::string & abc);
 
 // Hold a planner-chosen score to a wall-clock ceiling. The bar allowance comes
