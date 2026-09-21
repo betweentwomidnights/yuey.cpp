@@ -127,6 +127,9 @@ struct Configuration {
     int threads = 0;
     bool keep_models = false;
     bool force_unload = false;
+    // Ceiling on planner-chosen length. Zero lets a request run to the model's
+    // own ending, which suits a local install and not a shared backend.
+    double natural_max_seconds = 180.0;
     std::vector<yue2::LoraAdapterSpec> loras;
     std::vector<yue2::LoraAdapterSpec> instrumental_loras;
     std::vector<yue2::LoraAdapterSpec> continuation_loras;
@@ -248,6 +251,18 @@ Configuration parse_configuration(int argc, char ** argv) {
     result.force_unload = has(argc, argv, "--force-unload") ||
         force_unload == "1" || force_unload == "TRUE";
     if (result.force_unload) result.keep_models = false;
+    {
+        auto value = option(argc, argv, "--natural-max-seconds");
+        if (value.empty()) value = environment("YUE2_NATURAL_MAX_SECONDS");
+        if (!value.empty()) {
+            result.natural_max_seconds = std::stod(value);
+            if (!(result.natural_max_seconds >= 0.0) ||
+                result.natural_max_seconds > 900.0) {
+                throw std::invalid_argument(
+                    "--natural-max-seconds must be in [0, 900] seconds");
+            }
+        }
+    }
     for (const auto & value : options(argc, argv, "--lora")) result.loras.push_back(lora_spec(value));
     for (const auto & value : options(argc, argv, "--instrumental-lora")) {
         result.instrumental_loras.push_back(lora_spec(value));
@@ -709,6 +724,7 @@ private:
             ",\"models_dir\":" + json_path(configuration_.models_dir) +
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
             ",\"force_unload\":" + json_bool(configuration_.force_unload) +
+            ",\"natural_max_seconds\":" + std::to_string(configuration_.natural_max_seconds) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
             ",\"generation\":" + generation + ",\"transcription\":" + transcription +
             ",\"continuation\":" + continuation + "}");
@@ -791,7 +807,8 @@ private:
         body += "]},\"defaults\":{\"encoding\":" + json::quote(configuration_.encoding) +
             ",\"device\":" + json::quote(configuration_.device.empty() ? "auto" : configuration_.device) +
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
-            ",\"force_unload\":" + json_bool(configuration_.force_unload) + "}}";
+            ",\"force_unload\":" + json_bool(configuration_.force_unload) +
+            ",\"natural_max_seconds\":" + std::to_string(configuration_.natural_max_seconds) + "}}";
         return yue2::server::json_response(std::move(body));
     }
 
@@ -885,6 +902,25 @@ private:
             }
         }
         song.outro_bars = json::u32(root, "outro_bars", 4);
+        // The operator ceiling is a maximum, not a default: a request may ask
+        // for less, or for none when the operator allows none, but it can
+        // never buy itself more than the backend is willing to render.
+        song.natural_max_seconds = configuration_.natural_max_seconds;
+        if (present(root, "natural_max_seconds")) {
+            const double requested = json::number(root, "natural_max_seconds", 0.0);
+            if (!(requested >= 0.0) || requested > 900.0) {
+                throw std::invalid_argument(
+                    "natural_max_seconds must be in [0, 900] seconds");
+            }
+            if (configuration_.natural_max_seconds <= 0.0) {
+                song.natural_max_seconds = requested;
+            } else if (requested <= 0.0) {
+                song.natural_max_seconds = configuration_.natural_max_seconds;
+            } else {
+                song.natural_max_seconds =
+                    std::min(requested, configuration_.natural_max_seconds);
+            }
+        }
         const auto ending = json::string(
             root, "ending", song.target_bars == 0 ? "natural" : "outro");
         if (ending == "natural") song.ending_mode = yue2::EndingMode::natural;

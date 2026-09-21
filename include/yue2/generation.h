@@ -96,6 +96,15 @@ std::string fit_abc_score_to_bars(
 // It is a safety ceiling, not a requested audio duration.
 std::uint32_t score_aligned_semantic_budget(const AbcScoreInfo & score);
 
+// Hold a planner-chosen score to a wall-clock ceiling. The bar allowance comes
+// from the score's own tempo and meter, so the ceiling means the same thing at
+// any tempo. Returns the score unchanged when it already fits, when the
+// ceiling is zero, or when the score carries no bars to measure.
+std::string fit_natural_plan_to_ceiling(
+    const std::string & abc,
+    double max_seconds,
+    std::uint32_t outro_bars = 4);
+
 struct SongRequest {
     std::string style;
     std::string lyrics;
@@ -125,6 +134,15 @@ struct SongRequest {
     std::uint32_t target_bars = 0;
     EndingMode ending_mode = EndingMode::natural;
     std::uint32_t outro_bars = 4;
+    // Safety ceiling for planner-chosen length, in seconds of score. It only
+    // applies when target_bars is zero and the planner wrote the score itself,
+    // because that is the one case where nothing else bounds the result: the
+    // score's duration becomes the semantic floor, so an overlong plan forces
+    // an overlong render. An exceeded plan is fitted to the ceiling through
+    // fit_abc_score_to_bars, so it still ends rather than stopping. Zero lifts
+    // the ceiling and lets the model run to its own end, which is reasonable
+    // locally and a poor idea on a shared backend.
+    double natural_max_seconds = 180.0;
 };
 
 struct GenerationSampling {

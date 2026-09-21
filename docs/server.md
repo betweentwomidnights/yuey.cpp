@@ -13,6 +13,7 @@ yue2-server --models-dir models --encoding Q4_K_M
 # --model/--vae/--tokenizer/--transcription-model PATH  explicit files
 # --semantic-tokenizer-model PATH
 # --adapters-dir DIR  --lora PATH[=SCALE]  --threads N  --max-body-mb N
+# --natural-max-seconds N  ceiling on planner-chosen length (default 180, 0 = off)
 # --instrumental-lora REF[=SCALE]
 # --continuation-lora REF[=SCALE]
 ```
@@ -28,6 +29,8 @@ runtime/VRAM status, and installed quantization-tier selection.
 `YUE2_CONTINUATION_LORA` do the same as the flags, so a supervisor can stay
 declarative.
 `YUE2_FORCE_UNLOAD=1` prevents clients from retaining models between jobs.
+`YUE2_NATURAL_MAX_SECONDS` sets the planner-length ceiling described under
+[natural length](#natural-length).
 Port 8007 is the next free port after the services gary4juce already addresses
 (8000, 8002, 8003, 8005, 8006, and 8015).
 
@@ -207,6 +210,11 @@ dragging even when the user does not want generated audio.
   server validates the values and constructs the proven two-voice planning
   prefix before sampling. It is mutually exclusive with `abc` and
   `abc_prefix`. Omit the object entirely for automatic musical planning.
+- **`natural_max_seconds`** lowers this job's natural-length ceiling. It cannot
+  raise it: the server takes the smaller of the request and its own
+  `--natural-max-seconds`, so a shared backend keeps its policy no matter what
+  a client sends. Zero means unbounded and is honored only when the server is
+  itself unbounded. See [natural length](#natural-length).
 - **`seed`**: absent or negative picks a random seed, reported back.
 - **`target_bars`** is the preferred musical-length control. With
   **`ending: "outro"`**, yuey retains the score opening plus `outro_bars` from
@@ -264,6 +272,37 @@ knows the transcribed source length. `use_continuation_adapter` defaults to
 true. Setting it false rejects `/continue`, because those semantic tokens cannot
 be decoded safely with stock NAR weights; clients should use the composed score
 continuation workflow instead.
+
+### Natural length
+
+Omitting `target_bars` lets the planner choose the form and the length. That is
+the only path where nothing but the model's context window bounds the result,
+and the cost is not linear in a way most callers expect: the accepted score's
+duration becomes the semantic *floor*, because `MUSIC_END` is suppressed until
+the score's final bar. A plan that runs long therefore forces a render that
+runs long, and a score can legitimately reach the context limit at roughly
+sixteen minutes of audio.
+
+`--natural-max-seconds` (default 180, `YUE2_NATURAL_MAX_SECONDS`) holds a
+planner-chosen score to a wall-clock ceiling before any audio work begins. The
+bar allowance is derived from the score's own tempo and meter, so the ceiling
+means the same thing at any tempo, and an over-long plan is passed through
+`fit_abc_score_to_bars` rather than truncated: the opening is kept and the
+planner's real tail becomes the outro, so a held song still ends.
+
+The ceiling applies only when yuey wrote the whole score itself:
+
+| Request | Held to the ceiling |
+|---|---|
+| `/plan` and `/generate` with `planning` or nothing | yes |
+| `/generate` with `abc` | no, the score is the caller's |
+| `/cover` | no, the length comes from the source audio |
+| `/continue`, or `/generate` with a transcribed `abc_prefix` | no, holding a continuation to this could cut it shorter than the audio it extends |
+| anything with `target_bars` | no, the explicit bar fit already governs |
+
+Set it to `0` for a local install where a fifteen-minute render is the user's
+own time to spend. Leave it on for anything shared: a request may lower the
+ceiling with `natural_max_seconds`, but never raise it past the server's.
 
 ### Transcription requests
 

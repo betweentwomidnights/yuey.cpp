@@ -144,6 +144,11 @@ public:
                 "YuE2 planner-only mode requires melody or full symbolic planning");
         }
         GeneratedPlan result;
+        const bool planner_chose_the_score = !effective.abc.has_value();
+        // Bars the caller supplied as a continuation prefix. A planning header
+        // contributes none, so this separates "yuey wrote all of this" from
+        // "yuey extended something the caller already had".
+        std::uint32_t supplied_prefix_bars = 0;
         if (effective.abc) {
             result.abc = *effective.abc;
             result.abc_token_ids = tokenizer.encode(result.abc);
@@ -160,6 +165,7 @@ public:
                 // here, so an empty score is a legitimate answer rather than a
                 // fault, and a planning prefix then keeps the old one-bar floor.
                 const auto prefix_score = inspect_abc_score(*effective.abc_prefix, true);
+                supplied_prefix_bars = prefix_score.bars;
                 if (effective.target_bars == 0) {
                     if (prefix_score.bars == std::numeric_limits<std::uint32_t>::max()) {
                         throw std::invalid_argument(
@@ -209,6 +215,19 @@ public:
             result.abc = fit_abc_score_to_bars(
                 result.abc, effective.target_bars, effective.outro_bars);
             result.abc_token_ids = tokenizer.encode(result.abc);
+        } else if (planner_chose_the_score && supplied_prefix_bars == 0) {
+            // Natural length is the one path with no bound but the context
+            // window: the score sets the semantic floor, so a plan that runs
+            // long forces a render that runs long. A supplied score is the
+            // caller's own decision and is left alone, and so is a continuation,
+            // whose length is mostly its source's. Holding one to this ceiling
+            // could cut the result shorter than the audio it continues.
+            auto held = fit_natural_plan_to_ceiling(
+                result.abc, effective.natural_max_seconds, effective.outro_bars);
+            if (held != result.abc) {
+                result.abc = std::move(held);
+                result.abc_token_ids = tokenizer.encode(result.abc);
+            }
         }
         if (effective.experimental_vocal_rest || effective.instrumental) {
             result.abc = make_vocal_rest_abc(result.abc);

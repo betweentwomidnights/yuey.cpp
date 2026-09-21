@@ -102,6 +102,26 @@ int main() {
     assert(fitted.find("\"G\"E32|") == std::string::npos);
     assert(fitted.find("% outro") != std::string::npos);
 
+    // long_score is 8 bars of 4/4 at 120bpm, so 2 seconds a bar, 16 total.
+    // A ceiling above it leaves the plan alone; zero and a negative lift it.
+    assert(yue2::fit_natural_plan_to_ceiling(long_score, 16.0) == long_score);
+    assert(yue2::fit_natural_plan_to_ceiling(long_score, 100.0) == long_score);
+    assert(yue2::fit_natural_plan_to_ceiling(long_score, 0.0) == long_score);
+
+    // A ten second ceiling allows five bars, and the score still ends: the
+    // planner's real tail is lifted in as the outro rather than cut off.
+    const auto held = yue2::fit_natural_plan_to_ceiling(long_score, 10.0);
+    const auto held_info = yue2::inspect_abc_score(held);
+    assert(held_info.bars == 5);
+    assert(held_info.duration_seconds <= 10.0);
+    assert(held.find("% outro") != std::string::npos);
+    assert(held.find("\"C\"C32|") != std::string::npos);
+
+    // A ceiling tighter than one bar still yields a renderable bar rather than
+    // an empty score, and a tiny allowance shrinks the outro to fit.
+    const auto floor_bar = yue2::fit_natural_plan_to_ceiling(long_score, 0.5);
+    assert(yue2::inspect_abc_score(floor_bar).bars == 1);
+
     bool bad_instrumental = false;
     try {
         (void)yue2::make_vocal_rest_abc("X:1\nM:4/4\nK:C\nC4|\n");

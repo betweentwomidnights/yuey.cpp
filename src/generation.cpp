@@ -719,6 +719,33 @@ std::string fit_abc_score_to_bars(
     return output;
 }
 
+std::string fit_natural_plan_to_ceiling(
+    const std::string & abc,
+    double max_seconds,
+    std::uint32_t outro_bars) {
+    if (!(max_seconds > 0.0) || !std::isfinite(max_seconds)) return abc;
+    const auto score = inspect_abc_score(abc);
+    if (score.bars == 0 || !std::isfinite(score.duration_seconds)) return abc;
+    if (score.duration_seconds <= max_seconds) return abc;
+
+    const double seconds_per_bar =
+        score.duration_seconds / static_cast<double>(score.bars);
+    if (!(seconds_per_bar > 0.0)) return abc;
+
+    // Floor, so the kept score is at or under the ceiling rather than over it.
+    const double allowance = std::floor(max_seconds / seconds_per_bar);
+    auto allowed = allowance < 1.0
+        ? 1U
+        : static_cast<std::uint32_t>(std::min(
+              allowance, static_cast<double>(std::numeric_limits<std::uint32_t>::max())));
+    if (allowed >= score.bars) return abc;
+
+    // Keep an ending even when the ceiling is tighter than the outro we would
+    // normally lift from the tail.
+    const auto outro = std::min(outro_bars == 0 ? 1U : outro_bars, allowed);
+    return fit_abc_score_to_bars(abc, allowed, outro);
+}
+
 std::uint32_t score_aligned_semantic_budget(const AbcScoreInfo & score) {
     if (score.bars == 0 || !std::isfinite(score.duration_seconds) ||
         score.duration_seconds <= 0.0) {

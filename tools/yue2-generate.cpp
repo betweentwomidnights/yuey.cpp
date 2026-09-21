@@ -35,6 +35,7 @@ void usage(const char * argv0) {
         << "  --bars N             Fit the planned score to N bars\n"
         << "  --ending MODE        natural or outro (default outro with --bars)\n"
         << "  --outro-bars N       Planner-tail bars retained by outro mode (default 4)\n"
+        << "  --natural-max-seconds N  Ceiling on planner-chosen length (default 180, 0 = off)\n"
         << "  --max-seconds N      Advanced hard semantic safety ceiling\n"
         << "  --duration/--seconds N  Deprecated aliases for --max-seconds\n"
         << "  --lyrics TEXT | --lyrics-file PATH  Optional vocal lyrics\n"
@@ -341,6 +342,13 @@ int main(int argc, char ** argv) {
             request.ending_mode = yue2::EndingMode::outro;
         } else {
             throw std::runtime_error("--ending must be natural or outro");
+        }
+        const auto natural_max = value_after(argc, argv, "--natural-max-seconds", false);
+        if (!natural_max.empty()) {
+            request.natural_max_seconds = std::stod(natural_max);
+            if (!(request.natural_max_seconds >= 0.0)) {
+                throw std::runtime_error("--natural-max-seconds must be zero or positive");
+            }
         }
         const auto outro_bars = value_after(argc, argv, "--outro-bars", false);
         if (!outro_bars.empty()) {
