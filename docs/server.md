@@ -228,6 +228,10 @@ dragging even when the user does not want generated audio.
   and then stops naturally. `max_seconds`, legacy `duration`,
   and `semantic_max_tokens` are advanced hard-ceiling overrides; they may cut
   active audio and should not be used as ordinary musical-length controls.
+  They are easy to confuse with `natural_max_seconds`, which is not the same
+  thing: that one bounds the *score* before any audio is rendered, so the
+  result still ends musically. Reach for `target_bars` or
+  `natural_max_seconds` to set length, and for these only as a hard stop.
 - **`loras`** entries name an adapter in `--adapters-dir` or give a `path`.
   Adapters are bound when the model loads, so a different set reloads it.
   Omitting `loras` uses the `--lora` defaults.
