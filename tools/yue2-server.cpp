@@ -130,6 +130,9 @@ struct Configuration {
     // Ceiling on planner-chosen length. Zero lets a request run to the model's
     // own ending, which suits a local install and not a shared backend.
     double natural_max_seconds = 180.0;
+    // Default planning bar limit for jobs that do not set their own. Zero
+    // keeps the model composing to its own ending.
+    std::uint32_t planning_bar_limit = 0;
     std::vector<yue2::LoraAdapterSpec> loras;
     std::vector<yue2::LoraAdapterSpec> instrumental_loras;
     std::vector<yue2::LoraAdapterSpec> continuation_loras;
@@ -251,6 +254,18 @@ Configuration parse_configuration(int argc, char ** argv) {
     result.force_unload = has(argc, argv, "--force-unload") ||
         force_unload == "1" || force_unload == "TRUE";
     if (result.force_unload) result.keep_models = false;
+    {
+        auto value = option(argc, argv, "--planning-bar-limit");
+        if (value.empty()) value = environment("YUE2_PLANNING_BAR_LIMIT");
+        if (!value.empty()) {
+            const auto bars = std::stol(value);
+            if (bars < 0 || bars > 4096) {
+                throw std::invalid_argument(
+                    "--planning-bar-limit must be in [0, 4096] bars");
+            }
+            result.planning_bar_limit = static_cast<std::uint32_t>(bars);
+        }
+    }
     {
         auto value = option(argc, argv, "--natural-max-seconds");
         if (value.empty()) value = environment("YUE2_NATURAL_MAX_SECONDS");
@@ -725,6 +740,7 @@ private:
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
             ",\"force_unload\":" + json_bool(configuration_.force_unload) +
             ",\"natural_max_seconds\":" + std::to_string(configuration_.natural_max_seconds) +
+            ",\"planning_bar_limit\":" + std::to_string(configuration_.planning_bar_limit) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
             ",\"generation\":" + generation + ",\"transcription\":" + transcription +
             ",\"continuation\":" + continuation + "}");
@@ -902,6 +918,15 @@ private:
             }
         }
         song.outro_bars = json::u32(root, "outro_bars", 4);
+        // Stops planning once the score holds enough bars instead of letting
+        // the model compose to its own ending. It can never ask for fewer
+        // bars than the fit will keep, or the fit would have nothing to cut.
+        song.planning_bar_limit = json::u32(root, "planning_bar_limit",
+                                            configuration_.planning_bar_limit);
+        if (song.planning_bar_limit != 0 && song.target_bars != 0) {
+            song.planning_bar_limit =
+                std::max(song.planning_bar_limit, song.target_bars);
+        }
         // The operator ceiling is a maximum, not a default: a request may ask
         // for less, or for none when the operator allows none, but it can
         // never buy itself more than the backend is willing to render.

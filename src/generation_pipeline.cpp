@@ -201,6 +201,29 @@ public:
                 initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
             }
             auto planning_control = ar_control(control, GenerationStage::abc);
+            if (effective.planning_bar_limit != 0) {
+                // Parsing the score is not free, so only look once the plan
+                // could plausibly hold the limit, and then only every so
+                // often. Overshooting by a few tokens is harmless: the score
+                // is cut back to its last complete bar either way.
+                const auto limit = effective.planning_bar_limit;
+                const std::size_t check_floor =
+                    static_cast<std::size_t>(limit) * 8;
+                planning_control.force_stop =
+                    [this, &seeded_abc_ids, limit, check_floor](
+                        const std::vector<std::int32_t> & generated) {
+                        if (generated.size() < check_floor) return false;
+                        if (generated.size() % 16 != 0) return false;
+                        try {
+                            auto ids = seeded_abc_ids;
+                            ids.insert(ids.end(), generated.begin(), generated.end());
+                            return inspect_abc_score(tokenizer.decode(ids), true).bars
+                                >= limit;
+                        } catch (const std::exception &) {
+                            return false;
+                        }
+                    };
+            }
             planning_control.allow_stop = [this, &seeded_abc_ids, minimum_complete_bars](
                                               const std::vector<std::int32_t> & generated) {
                 try {
