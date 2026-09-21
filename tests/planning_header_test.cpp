@@ -22,7 +22,13 @@ bool rejected(const yue2::PlanningHeader & header) {
 int main() {
     assert(yue2::normalize_abc_key("C# minor") == "C#m");
     assert(yue2::normalize_abc_key(" c#:MINOR ") == "C#m");
-    assert(yue2::normalize_abc_key("Db major") == "Db");
+    // Flats are accepted but never returned: the plugin, the web UI and this
+    // API all name pitches with sharps, and Db and C# are the same key.
+    assert(yue2::normalize_abc_key("Db major") == "C#");
+    assert(yue2::normalize_abc_key("Eb minor") == "D#m");
+    assert(yue2::normalize_abc_key("Bb major") == "A#");
+    assert(yue2::normalize_abc_key("Cb major") == "B");
+    assert(yue2::normalize_abc_key("Fb minor") == "Em");
     assert(yue2::normalize_abc_key("Am") == "Am");
     assert(yue2::normalize_abc_key("F#maj") == "F#");
 

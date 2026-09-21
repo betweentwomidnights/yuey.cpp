@@ -523,6 +523,19 @@ std::string normalize_abc_key(const std::string & input) {
     if (offset < value.size() && (value[offset] == '#' || value[offset] == 'b')) {
         output.push_back(value[offset++]);
     }
+    // Callers name pitches with sharps everywhere, so a flat spelling is
+    // accepted but not preserved: Eb and D# are the same key and only one of
+    // them should ever come back out of this API.
+    if (output.size() == 2 && output[1] == 'b') {
+        static const char * const naturals = "C D EF G A B";
+        static const char * const sharps[] = {
+            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        int natural = -1;
+        for (int index = 0; index < 12; ++index) {
+            if (naturals[index] == output[0]) { natural = index; break; }
+        }
+        if (natural >= 0) output = sharps[(natural + 11) % 12];
+    }
 
     std::string quality;
     for (; offset < value.size(); ++offset) {
