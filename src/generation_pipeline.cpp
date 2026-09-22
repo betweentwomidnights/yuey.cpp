@@ -426,6 +426,10 @@ public:
         }
         const auto guidance = generation_guidance(effective);
         auto semantic_sampling = run_options.generation.semantic;
+        // Whether the budget was cut to the length the caller's own score asks
+        // for. Reaching that cap is the render finishing, not running out of
+        // room, so it must not be reported as truncation.
+        bool aligned_to_supplied_score = false;
         if (!run_options.semantic_budget_explicit && result.score_bars != 0) {
             AbcScoreInfo score;
             score.bars = result.score_bars;
@@ -437,7 +441,19 @@ public:
             auto budget = total_budget > prefix_frames ? total_budget - prefix_frames : 0;
             const auto minimum = total_minimum > prefix_frames
                 ? total_minimum - prefix_frames : 1U;
-            if (!effective.semantic_prefix.empty()) {
+            // Whose decision the length was. A score the caller supplied - a
+            // cover's transcription of their own audio, or an abc they wrote -
+            // already says how long the result should be, so the budget is that
+            // plus a decay tail. A score yuey planned is its own, and the
+            // margin there is real headroom for it to finish a phrase.
+            //
+            // score_aligned_semantic_budget adds a flat 30s because generation
+            // routinely spends the whole budget instead of stopping at
+            // MUSIC_END, which makes the margin the delivered length rather
+            // than headroom. On a long score that is a tolerable overshoot; on
+            // a short one it dominates, and a 16 second clip sent to /cover
+            // came back as 46 seconds of audio.
+            if (!effective.semantic_prefix.empty() || effective.abc.has_value()) {
                 // With a real-audio prefix the stock AR can otherwise treat
                 // the continuation as a fresh song and run far beyond the
                 // completed score. Keep enough room for two seconds of decay,
@@ -447,6 +463,7 @@ public:
                         std::numeric_limits<std::uint32_t>::max() - continuation_tail_frames
                     ? std::numeric_limits<std::uint32_t>::max()
                     : minimum + continuation_tail_frames;
+                if (aligned_budget < budget) aligned_to_supplied_score = true;
                 budget = std::min(budget, aligned_budget);
             }
             const auto positive_capacity = positive.size() < 24576
@@ -496,7 +513,12 @@ public:
                 AutoregressivePhase::semantic, guidance, effective.seed,
                 ar_control(control, GenerationStage::semantic));
         }
-        result.semantic_truncated = !semantic.reached_end;
+        // Stopping at a budget cut to the caller's own score is the render
+        // being the length they asked for, so it is not truncation. Without
+        // this every short cover warns: the model rarely ends on its own
+        // inside a score it did not choose, and the warning would fire on the
+        // ordinary case rather than the surprising one.
+        result.semantic_truncated = !semantic.reached_end && !aligned_to_supplied_score;
         if (control.on_progress) {
             const auto completed = static_cast<std::uint32_t>(
                 semantic.tokens.size() + (semantic.reached_end ? 1 : 0));
