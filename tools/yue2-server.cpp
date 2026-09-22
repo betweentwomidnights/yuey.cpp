@@ -835,7 +835,9 @@ private:
             ",\"device\":" + json::quote(configuration_.device.empty() ? "auto" : configuration_.device) +
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
             ",\"force_unload\":" + json_bool(configuration_.force_unload) +
-            ",\"natural_max_seconds\":" + std::to_string(configuration_.natural_max_seconds) + "}}";
+            ",\"natural_max_seconds\":" + std::to_string(configuration_.natural_max_seconds) +
+            ",\"planning_overrun\":" + std::to_string(configuration_.planning_overrun) +
+            ",\"planning_loop_bars\":" + std::to_string(configuration_.planning_loop_bars) + "}}";
         return yue2::server::json_response(std::move(body));
     }
 

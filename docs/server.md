@@ -14,6 +14,8 @@ yue2-server --models-dir models --encoding Q4_K_M
 # --semantic-tokenizer-model PATH
 # --adapters-dir DIR  --lora PATH[=SCALE]  --threads N  --max-body-mb N
 # --natural-max-seconds N  ceiling on planner-chosen length (default 180, 0 = off)
+# --planning-overrun N     plan at most N times what is kept (default 2, 0 = off)
+# --planning-loop-bars N   stop after N identical bars (default 16, 0 = off)
 # --instrumental-lora REF[=SCALE]
 # --continuation-lora REF[=SCALE]
 ```
@@ -307,6 +309,35 @@ The ceiling applies only when yuey wrote the whole score itself:
 Set it to `0` for a local install where a fifteen-minute render is the user's
 own time to spend. Leave it on for anything shared: a request may lower the
 ceiling with `natural_max_seconds`, but never raise it past the server's.
+
+### Planning cost
+
+The ceiling above is applied *after* planning, so it bounds the score rather
+than the time spent writing it. These two bound the stage itself. Both are
+per-request, both take a server default and an environment variable, and `0`
+disables either.
+
+`--planning-loop-bars` (default 16, `YUE2_PLANNING_LOOP_BARS`,
+`planning_loop_bars`) stops once that many consecutive bars are byte-identical
+in both lanes. A planner repeating itself is not composing an ending worth
+waiting for, so this costs nothing that would have been kept.
+
+`--planning-overrun` (default 2, `YUE2_PLANNING_OVERRUN`, `planning_overrun`)
+stops at the first structural boundary once the plan is that many times longer
+than what the fit will keep. Unlike the loop stop this is a judgement call: the
+last bars of a finished plan are its composed ending, and stopping exactly at
+the kept length takes whatever the planner happened to be writing instead. The
+margin buys room for an ending to arrive while bounding the runaway case.
+
+A stop can only land where the score parses, which is a balanced Vocal/Ins
+block boundary, so both are block-granular and overshoot the threshold by up
+to one block.
+
+Measured at 16 bars, 80bpm, instrumental: 31.3s planning with both off, 17.8s
+with both on, and no meaningful difference in the variety of the kept score.
+On natural length the two are indistinguishable, because the plan ends on its
+own first. Before the instrumental tag format was corrected these looked far
+more dramatic; that was a broken input making a bound look like a fix.
 
 ### Transcription requests
 
