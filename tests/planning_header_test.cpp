@@ -81,12 +81,15 @@ int main() {
     assert(yue2::make_vocal_rest_abc(score) == instrumental);
     assert(yue2::make_vocal_rest_abc(instrumental) == instrumental);
     assert(yue2::inspect_abc_score(score).bars == 3);
-    assert(yue2::make_instrumental_lyrics(score) == "[Verse]\n\n[Bridge]");
+    // The instrumental LoRA was trained on bare lowercase tags, one per line.
+    assert(yue2::make_instrumental_lyrics(score) == "[verse]\n[bridge]");
     assert(yue2::make_instrumental_lyrics("X:1\nM:4/4\nK:C\nC4|\n") ==
-        "[Intro]\n\n[Verse]\n\n[Chorus]\n\n[Verse]\n\n[Chorus]\n\n[Outro]");
+        "[intro]\n[verse]\n[chorus]\n[verse]\n[chorus]\n[outro]");
+    // pre_chorus reaches the card's "pre-chorus"; "verse 2" is not a tag it
+    // knows, so it is dropped rather than passed through.
     assert(yue2::make_instrumental_lyrics(
         "X:1\n% pre_chorus\n% VERSE 2\n% ignored!\n") ==
-        "[Pre Chorus]\n\n[Verse 2]");
+        "[pre-chorus]");
 
     const std::string long_score =
         "X:1\nM:4/4\nL:1/32\nQ:1/4=120\n"

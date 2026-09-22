@@ -661,7 +661,12 @@ std::string make_instrumental_lyrics(const std::string & abc) {
     std::vector<std::string> tags;
     for (auto & section : sections) {
         for (auto & c : section) {
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            // section_name already turned '_' into a space; the card spells the
+            // two-word tag with a hyphen, so "pre_chorus" has to reach
+            // "pre-chorus" rather than being dropped as unknown.
+            c = c == ' '
+                ? '-'
+                : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         }
         const bool known = std::find_if(
             allowed.begin(), allowed.end(),
