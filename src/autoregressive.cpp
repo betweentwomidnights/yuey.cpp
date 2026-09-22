@@ -1097,6 +1097,10 @@ AutoregressiveResult AutoregressiveModel::generate(
             break;
         }
         result.tokens.push_back(token);
+        if (control.force_stop && control.force_stop(result.tokens)) {
+            result.reached_end = true;
+            break;
+        }
         if (step + 1 < sampling.max_tokens) logits = session->append({token});
     }
     return result;
@@ -1150,6 +1154,10 @@ AutoregressiveResult AutoregressiveModel::generate_cfg(
             break;
         }
         result.tokens.push_back(token);
+        if (control.force_stop && control.force_stop(result.tokens)) {
+            result.reached_end = true;
+            break;
+        }
         if (step + 1 < sampling.max_tokens) {
             positive_logits = positive->append({token});
             negative_logits = negative->append({token});

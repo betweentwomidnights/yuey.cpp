@@ -130,6 +130,8 @@ struct Configuration {
     // Ceiling on planner-chosen length. Zero lets a request run to the model's
     // own ending, which suits a local install and not a shared backend.
     double natural_max_seconds = 180.0;
+    double planning_overrun = 2.0;
+    std::uint32_t planning_loop_bars = 16;
     std::vector<yue2::LoraAdapterSpec> loras;
     std::vector<yue2::LoraAdapterSpec> instrumental_loras;
     std::vector<yue2::LoraAdapterSpec> continuation_loras;
@@ -260,6 +262,28 @@ Configuration parse_configuration(int argc, char ** argv) {
                 result.natural_max_seconds > 900.0) {
                 throw std::invalid_argument(
                     "--natural-max-seconds must be in [0, 900] seconds");
+            }
+        }
+    }
+    {
+        auto value = option(argc, argv, "--planning-loop-bars");
+        if (value.empty()) value = environment("YUE2_PLANNING_LOOP_BARS");
+        if (!value.empty()) {
+            const auto parsed = std::stoul(value);
+            if (parsed > 1024) {
+                throw std::invalid_argument("--planning-loop-bars must be at most 1024; 0 disables it");
+            }
+            result.planning_loop_bars = static_cast<std::uint32_t>(parsed);
+        }
+    }
+    {
+        auto value = option(argc, argv, "--planning-overrun");
+        if (value.empty()) value = environment("YUE2_PLANNING_OVERRUN");
+        if (!value.empty()) {
+            result.planning_overrun = std::stod(value);
+            if (!(result.planning_overrun >= 0.0) || result.planning_overrun > 100.0) {
+                throw std::invalid_argument(
+                    "--planning-overrun must be in [0, 100]; 0 disables the stop");
             }
         }
     }
@@ -725,6 +749,8 @@ private:
             ",\"models_dir\":" + json_path(configuration_.models_dir) +
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
             ",\"force_unload\":" + json_bool(configuration_.force_unload) +
+            ",\"planning_loop_bars\":" + std::to_string(configuration_.planning_loop_bars) +
+            ",\"planning_overrun\":" + std::to_string(configuration_.planning_overrun) +
             ",\"natural_max_seconds\":" + std::to_string(configuration_.natural_max_seconds) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
             ",\"generation\":" + generation + ",\"transcription\":" + transcription +
@@ -906,6 +932,22 @@ private:
         // The operator ceiling is a maximum, not a default: a request may ask
         // for less, or for none when the operator allows none, but it can
         // never buy itself more than the backend is willing to render.
+        song.planning_loop_bars = configuration_.planning_loop_bars;
+        if (present(root, "planning_loop_bars")) {
+            song.planning_loop_bars = json::u32(root, "planning_loop_bars", 0);
+            if (song.planning_loop_bars > 1024) {
+                throw std::invalid_argument("planning_loop_bars must be at most 1024; 0 disables it");
+            }
+        }
+        song.planning_overrun = configuration_.planning_overrun;
+        if (present(root, "planning_overrun")) {
+            const double requested = json::number(root, "planning_overrun", 0.0);
+            if (!(requested >= 0.0) || requested > 100.0) {
+                throw std::invalid_argument(
+                    "planning_overrun must be in [0, 100]; 0 disables the stop");
+            }
+            song.planning_overrun = requested;
+        }
         song.natural_max_seconds = configuration_.natural_max_seconds;
         if (present(root, "natural_max_seconds")) {
             const double requested = json::number(root, "natural_max_seconds", 0.0);

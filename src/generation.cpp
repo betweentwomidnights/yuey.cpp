@@ -712,6 +712,12 @@ AbcScoreInfo inspect_abc_score(const std::string & abc, bool allow_empty_score) 
     result.duration_seconds = static_cast<double>(result.bars) *
         static_cast<double>(result.meter_numerator) * 60.0 * 4.0 /
         (static_cast<double>(result.bpm) * static_cast<double>(result.meter_denominator));
+    for (std::size_t index = score.bars.size(); index-- > 1;) {
+        const auto & bar = score.bars[index];
+        const auto & previous = score.bars[index - 1];
+        if (bar.vocal != previous.vocal || bar.instrumental != previous.instrumental) break;
+        ++result.repeated_tail_bars;
+    }
     return result;
 }
 

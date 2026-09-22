@@ -73,6 +73,12 @@ struct AbcScoreInfo {
     std::uint32_t meter_numerator = 4;
     std::uint32_t meter_denominator = 4;
     double duration_seconds = 0.0;
+    // How many bars at the end of the score are byte-identical to the one
+    // before them, counting both lanes together. A planner that has stopped
+    // composing and started looping runs this up: a measured 441-bar plan held
+    // three distinct bars, one of them repeated 415 times, and cost 260
+    // seconds to write.
+    std::uint32_t repeated_tail_bars = 0;
 };
 
 // Inspect YuE2's native ABC score without loading model weights. Bar count is
@@ -153,6 +159,18 @@ struct SongRequest {
     // the ceiling and lets the model run to its own end, which is reasonable
     // locally and a poor idea on a shared backend.
     double natural_max_seconds = 180.0;
+    // How far past the score the fit will keep planning may run before it is
+    // stopped at the next structural boundary. Planning composes a whole song
+    // and the fit keeps a slice, so the rest is work thrown away; but the last
+    // bars of a finished plan are its composed ending, and stopping exactly at
+    // the kept length takes whatever the planner happened to be writing
+    // instead. The margin buys room for an ending to arrive while bounding the
+    // runaway case. 0 disables the stop and plans to the token limit.
+    double planning_overrun = 2.0;
+    // Stop planning once this many bars in a row are identical. A planner that
+    // is looping is not composing an ending worth waiting for, so unlike the
+    // overrun margin this costs nothing it would not have thrown away. 0 off.
+    std::uint32_t planning_loop_bars = 16;
 };
 
 struct GenerationSampling {

@@ -169,6 +169,7 @@ public:
         // contributes none, so this separates "yuey wrote all of this" from
         // "yuey extended something the caller already had".
         std::uint32_t supplied_prefix_bars = 0;
+        double supplied_prefix_seconds = 0.0;
         if (effective.abc) {
             result.abc = *effective.abc;
             result.abc_token_ids = tokenizer.encode(result.abc);
@@ -186,6 +187,7 @@ public:
                 // fault, and a planning prefix then keeps the old one-bar floor.
                 const auto prefix_score = inspect_abc_score(*effective.abc_prefix, true);
                 supplied_prefix_bars = prefix_score.bars;
+                supplied_prefix_seconds = prefix_score.duration_seconds;
                 if (effective.target_bars == 0) {
                     if (prefix_score.bars == std::numeric_limits<std::uint32_t>::max()) {
                         throw std::invalid_argument(
@@ -201,6 +203,85 @@ public:
                 initial.insert(initial.end(), seeded_abc_ids.begin(), seeded_abc_ids.end());
             }
             auto planning_control = ar_control(control, GenerationStage::abc);
+            // Planning runs until the model composes an ending or hits the
+            // token limit, and only then is the score cut to what we keep. On
+            // a continuation that is the worst case: the prefix is a whole
+            // transcribed score, so the model has plenty to continue and keeps
+            // going, and natural length trims afterwards rather than bounding
+            // anything. Stop once the plan is comfortably past what the fit
+            // will keep.
+            //
+            // The stop can only land where the score parses, which is a
+            // balanced Vocal/Ins block boundary, so it is block-granular. That
+            // is what made an exact bar limit a no-op once
+            // (eb19c73, reverted by 417671a); here overshooting by a block is
+            // the point rather than the flaw.
+            std::uint32_t planning_stop_bars = 0;
+            double planning_stop_seconds = 0.0;
+            if (effective.planning_overrun > 0.0) {
+                if (effective.target_bars != 0) {
+                    const double wanted =
+                        static_cast<double>(effective.target_bars) * effective.planning_overrun;
+                    planning_stop_bars = wanted >= static_cast<double>(
+                        std::numeric_limits<std::uint32_t>::max())
+                        ? std::numeric_limits<std::uint32_t>::max()
+                        : static_cast<std::uint32_t>(wanted);
+                } else if (effective.natural_max_seconds > 0.0) {
+                    // A continuation keeps its prefix whatever the ceiling
+                    // says, so the plan has to clear the prefix before the
+                    // ceiling means anything.
+                    planning_stop_seconds = supplied_prefix_seconds +
+                        effective.natural_max_seconds * effective.planning_overrun;
+                }
+            }
+            const auto planning_loop_bars = effective.planning_loop_bars;
+            if (planning_stop_bars != 0 || planning_stop_seconds > 0.0 ||
+                planning_loop_bars != 0) {
+                planning_control.force_stop =
+                    [this, &seeded_abc_ids, planning_stop_bars, planning_stop_seconds,
+                     planning_loop_bars](
+                        const std::vector<std::int32_t> & generated) {
+                        // A score only parses in a window a token or two wide,
+                        // right after a barline that closes a balanced
+                        // Vocal/Ins block. Sampling every so many tokens misses
+                        // all of them, so test every token but make the common
+                        // answer cheap: decoding is a table lookup, parsing is
+                        // not, so only parse when the text ends on a barline.
+                        if (generated.size() < 64) return false;
+                        std::string text;
+                        try {
+                            text = tokenizer.decode(generated);
+                        } catch (const std::exception &) {
+                            return false;
+                        }
+                        std::size_t end = text.size();
+                        while (end > 0 &&
+                               std::isspace(static_cast<unsigned char>(text[end - 1]))) {
+                            --end;
+                        }
+                        if (end == 0 || text[end - 1] != '|') return false;
+                        try {
+                            auto ids = seeded_abc_ids;
+                            ids.insert(ids.end(), generated.begin(), generated.end());
+                            const auto score = inspect_abc_score(tokenizer.decode(ids), true);
+                            // A planner repeating itself has stopped composing.
+                            // Cutting that short loses nothing, so it does not
+                            // wait for the overrun margin.
+                            if (planning_loop_bars != 0 &&
+                                score.repeated_tail_bars >= planning_loop_bars) {
+                                return true;
+                            }
+                            if (planning_stop_bars != 0 && score.bars >= planning_stop_bars) {
+                                return true;
+                            }
+                            return planning_stop_seconds > 0.0 &&
+                                score.duration_seconds >= planning_stop_seconds;
+                        } catch (const std::exception &) {
+                            // Mid-bar, so not a boundary we may stop on.
+                            return false;
+                        }
+                    };
+            }
             planning_control.allow_stop = [this, &seeded_abc_ids, minimum_complete_bars](
                                               const std::vector<std::int32_t> & generated) {
                 try {

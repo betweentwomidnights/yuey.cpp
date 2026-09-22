@@ -48,6 +48,12 @@ struct AutoregressiveControl {
     // to suppress that token and sample the next-best allowed token instead.
     // The history contains generated tokens, excluding the proposed end.
     std::function<bool(const std::vector<std::int32_t> & history)> allow_stop;
+    // Called after each accepted token. Return true to end generation even
+    // though the model did not propose the end token. The history includes the
+    // token just accepted, so a caller that needs to stop on a structural
+    // boundary can look for one. reached_end is set, because a forced stop at a
+    // boundary leaves a complete result rather than a truncated one.
+    std::function<bool(const std::vector<std::int32_t> & history)> force_stop;
 };
 
 class AutoregressiveSession {

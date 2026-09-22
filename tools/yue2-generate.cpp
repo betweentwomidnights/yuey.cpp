@@ -36,6 +36,8 @@ void usage(const char * argv0) {
         << "  --ending MODE        natural or outro (default outro with --bars)\n"
         << "  --outro-bars N       Planner-tail bars retained by outro mode (default 4)\n"
         << "  --natural-max-seconds N  Ceiling on planner-chosen length (default 180, 0 = off)\n"
+        << "  --planning-overrun N  Plan at most N times what is kept (default 2, 0 = off)\n"
+        << "  --planning-loop-bars N  Stop after N identical bars (default 16, 0 = off)\n"
         << "  --max-seconds N      Advanced hard cut; can stop mid-music.\n"
         << "                       For ordinary length use --bars or --natural-max-seconds.\n"
         << "  --duration/--seconds N  Deprecated aliases for --max-seconds\n"
@@ -401,6 +403,10 @@ int main(int argc, char ** argv) {
             }
             request.abc_prefix = yue2::make_planning_abc_prefix(planning);
         }
+        const auto overrun = value_after(argc, argv, "--planning-overrun", false);
+        if (!overrun.empty()) request.planning_overrun = std::stod(overrun);
+        const auto loop_bars = value_after(argc, argv, "--planning-loop-bars", false);
+        if (!loop_bars.empty()) request.planning_loop_bars = parse_u32(loop_bars, "--planning-loop-bars");
         const auto seed = value_after(argc, argv, "--seed", false);
         if (!seed.empty()) request.seed = std::stoull(seed);
         const auto guidance = value_after(argc, argv, "--guidance", false);
