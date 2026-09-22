@@ -1,0 +1,4 @@
+# ABOUTME: Keeps shell scripts LF so they stay runnable when checked out on
+# ABOUTME: Linux CI from a Windows workstation.
+*.sh text eol=lf
+*.yml text eol=lf
