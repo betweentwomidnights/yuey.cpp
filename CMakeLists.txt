@@ -22,6 +22,7 @@ if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
         tools/server/http.cpp
         tools/server/json.cpp
         tools/server/multipart.cpp
+        tools/server/policy.cpp
     )
     target_include_directories(yue2-server-support PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/tools

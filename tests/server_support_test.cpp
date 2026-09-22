@@ -1,5 +1,6 @@
 #include "server/base64.h"
 #include "server/json.h"
+#include "server/policy.h"
 #include "server/multipart.h"
 
 #include <cassert>
@@ -51,7 +52,42 @@ void check_base64() {
 
 } // namespace
 
+void check_generation_policy() {
+    // /health and /props both advertise how the server bounds a generation.
+    // They were two hand-maintained concatenations and drifted: the planning
+    // bounds reached /health only, so a UI discovering capabilities through
+    // /props could not see them. Both now splice this, and every field the
+    // policy carries has to appear.
+    yue2::server::GenerationPolicy policy;
+    policy.natural_max_seconds = 96.0;
+    policy.planning_overrun = 1.5;
+    policy.planning_loop_bars = 12;
+    const auto body = yue2::server::generation_policy_json(policy);
+
+    for (const char * key : {"natural_max_seconds", "planning_overrun", "planning_loop_bars"}) {
+        assert(body.find(std::string("\"") + key + "\":") != std::string::npos);
+    }
+    // Spliceable into a larger object: no braces, no leading comma.
+    assert(body.front() == '"');
+    assert(body.find('{') == std::string::npos);
+    assert(body.find('}') == std::string::npos);
+
+    const auto parsed = yue2::server::json::parse("{" + body + "}");
+    assert(yue2::server::json::number(parsed, "natural_max_seconds", 0.0) == 96.0);
+    assert(yue2::server::json::number(parsed, "planning_overrun", 0.0) == 1.5);
+    assert(yue2::server::json::u32(parsed, "planning_loop_bars", 0) == 12);
+
+    // A zero disables either bound and still has to be reported, not omitted.
+    yue2::server::GenerationPolicy off;
+    off.planning_overrun = 0.0;
+    off.planning_loop_bars = 0;
+    const auto disabled = yue2::server::generation_policy_json(off);
+    assert(disabled.find("\"planning_overrun\":") != std::string::npos);
+    assert(disabled.find("\"planning_loop_bars\":") != std::string::npos);
+}
+
 int main() {
+    check_generation_policy();
     using namespace yue2::server;
     const auto parsed = json::parse(
         "{\"text\":\"line\\n\\ud83c\\udfb5\",\"seed\":\"18446744073709551615\","

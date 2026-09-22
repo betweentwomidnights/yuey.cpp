@@ -12,6 +12,7 @@
 #include "server/base64.h"
 #include "server/http.h"
 #include "server/json.h"
+#include "server/policy.h"
 #include "yue2_ui_html.h"
 
 #include <algorithm>
@@ -749,9 +750,7 @@ private:
             ",\"models_dir\":" + json_path(configuration_.models_dir) +
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
             ",\"force_unload\":" + json_bool(configuration_.force_unload) +
-            ",\"planning_loop_bars\":" + std::to_string(configuration_.planning_loop_bars) +
-            ",\"planning_overrun\":" + std::to_string(configuration_.planning_overrun) +
-            ",\"natural_max_seconds\":" + std::to_string(configuration_.natural_max_seconds) +
+            "," + yue2::server::generation_policy_json(generation_policy()) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
             ",\"generation\":" + generation + ",\"transcription\":" + transcription +
             ",\"continuation\":" + continuation + "}");
@@ -835,9 +834,7 @@ private:
             ",\"device\":" + json::quote(configuration_.device.empty() ? "auto" : configuration_.device) +
             ",\"keep_models\":" + json_bool(configuration_.keep_models) +
             ",\"force_unload\":" + json_bool(configuration_.force_unload) +
-            ",\"natural_max_seconds\":" + std::to_string(configuration_.natural_max_seconds) +
-            ",\"planning_overrun\":" + std::to_string(configuration_.planning_overrun) +
-            ",\"planning_loop_bars\":" + std::to_string(configuration_.planning_loop_bars) + "}}";
+            "," + yue2::server::generation_policy_json(generation_policy()) + "}}";
         return yue2::server::json_response(std::move(body));
     }
 
@@ -1558,6 +1555,15 @@ private:
                 ++entry;
             }
         }
+    }
+
+
+    yue2::server::GenerationPolicy generation_policy() const {
+        yue2::server::GenerationPolicy policy;
+        policy.natural_max_seconds = configuration_.natural_max_seconds;
+        policy.planning_overrun = configuration_.planning_overrun;
+        policy.planning_loop_bars = configuration_.planning_loop_bars;
+        return policy;
     }
 
     Configuration configuration_;
