@@ -35,11 +35,17 @@ fi
 printf 'yue2.cpp   %s\n' "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 printf 'ggml       %s\n' "$(git -C ggml rev-parse HEAD 2>/dev/null || echo unknown)"
 
+# GGML_METAL has to be turned off rather than merely left alone. ggml defaults
+# it ON for Apple, and YUE2_METAL=OFF only declines to force it ON, so a macOS
+# runner builds and runs Metal while this script claims to be CPU only. It went
+# green here because these twelve tests are mostly pure logic and never reach
+# the backend; the same gap aborted three of audiocraft.cpp's fifteen.
 cmake -S . -B "$build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DYUE2_BUILD_TESTS=ON \
     -DYUE2_BUILD_TOOLS=ON \
-    -DBUILD_TESTING=ON
+    -DBUILD_TESTING=ON \
+    -DGGML_METAL=OFF
 cmake --build "$build" --config Release -j "$jobs"
 
 # --output-on-failure so a red test explains itself in the job log rather than
