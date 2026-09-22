@@ -6,6 +6,7 @@
 #include "gguf.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -650,13 +651,30 @@ std::string make_instrumental_lyrics(const std::string & abc) {
         if (valid) sections.push_back(std::move(section));
     }
 
-    if (sections.empty()) {
-        sections = {"Intro", "Verse", "Chorus", "Verse", "Chorus", "Outro"};
+    // The instrumental LoRA's model card is specific about this field: bare
+    // lowercase tag names from a fixed set, one per line, nothing else. It was
+    // trained on exactly that, and the card warns anything else pulls the
+    // output away from the trained behaviour. A planned score may name a
+    // section whatever it likes, so anything outside the set is dropped.
+    static const std::array<const char *, 6> allowed = {
+        "intro", "verse", "pre-chorus", "chorus", "bridge", "outro"};
+    std::vector<std::string> tags;
+    for (auto & section : sections) {
+        for (auto & c : section) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        const bool known = std::find_if(
+            allowed.begin(), allowed.end(),
+            [&section](const char * name) { return section == name; }) != allowed.end();
+        if (known) tags.push_back(section);
+    }
+    if (tags.empty()) {
+        tags = {"intro", "verse", "chorus", "verse", "chorus", "outro"};
     }
     std::string output;
-    for (const auto & section : sections) {
-        if (!output.empty()) output += "\n\n";
-        output += '[' + section + ']';
+    for (const auto & tag : tags) {
+        if (!output.empty()) output += '\n';
+        output += '[' + tag + ']';
     }
     return output;
 }
