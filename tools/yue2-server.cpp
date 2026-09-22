@@ -1126,6 +1126,11 @@ private:
                 warnings.emplace_back(
                     "semantic safety budget was exhausted before MUSIC_END");
             }
+            if (job.status == "completed" && job.abc_truncated) {
+                warnings.emplace_back(
+                    "planning reached its token limit, so the score may be "
+                    "shorter than the bars requested");
+            }
             if (job.status == "completed" && job.abc_repaired) {
                 warnings.emplace_back(
                     "the planned score had a bar that would not render and was "

@@ -256,9 +256,21 @@ public:
                          result.abc_repaired ? 1 : 0);
         }
         if (effective.target_bars != 0) {
-            result.abc = fit_abc_score_to_bars(
-                result.abc, effective.target_bars, effective.outro_bars);
-            result.abc_token_ids = tokenizer.encode(result.abc);
+            // A plan can come back shorter than what was asked for: planning
+            // hits its token limit, or part of it would not render and is
+            // trimmed. Handing back a shorter score beats failing a job that
+            // already cost minutes, so the target is clamped to what the plan
+            // actually holds. A continuation is where this bites, because its
+            // prefix is a whole transcribed score and the target is that plus
+            // the bars to add. abc_truncated already says the plan was cut
+            // short, and the server reports it.
+            const auto available = inspect_abc_score(result.abc, true).bars;
+            const auto target = std::min(effective.target_bars, available);
+            if (target != 0) {
+                result.abc = fit_abc_score_to_bars(
+                    result.abc, target, std::min(effective.outro_bars, target));
+                result.abc_token_ids = tokenizer.encode(result.abc);
+            }
         } else if (planner_chose_the_score) {
             // Natural length is the one path with no bound but the context
             // window: the score sets the semantic floor, so a plan that runs
