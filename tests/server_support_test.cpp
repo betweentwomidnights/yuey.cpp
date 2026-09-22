@@ -1,6 +1,7 @@
 #include "server/base64.h"
 #include "server/json.h"
 #include "server/policy.h"
+#include "server/prompts.h"
 #include "server/multipart.h"
 
 #include <cassert>
@@ -86,7 +87,88 @@ void check_generation_policy() {
     assert(disabled.find("\"planning_loop_bars\":") != std::string::npos);
 }
 
+void check_dice_prompts() {
+    const auto & pool = yue2::server::dice_prompts();
+    assert(pool.instrumental.size() >= 32);
+    assert(pool.vocal.size() >= 24);
+
+    // The rules the pool is written to, enforced rather than trusted. Tempo and
+    // length are set by the caller through a planning header, a score's Q:
+    // field or a bar count, so a prompt claiming either can only contradict
+    // them, and the score wins.
+    auto contains = [](const std::string & hay, const char * needle) {
+        return hay.find(needle) != std::string::npos;
+    };
+    // Digits are fine and often the point: 808, 303 and 909 name the machines
+    // rather than a speed. What must not appear is a claim about tempo or
+    // length, since the caller sets both and the score wins the disagreement.
+    //
+    // Whole words only. "tempo" sits inside both "downtempo" and
+    // "contemporary", and neither is making a claim about speed.
+    auto whole_word = [](const std::string & hay, const std::string & needle) {
+        auto is_letter = [](char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        };
+        for (std::size_t at = hay.find(needle); at != std::string::npos;
+             at = hay.find(needle, at + 1)) {
+            const bool left = at > 0 && is_letter(hay[at - 1]);
+            const std::size_t after = at + needle.size();
+            const bool right = after < hay.size() && is_letter(hay[after]);
+            if (!left && !right) return true;
+        }
+        return false;
+    };
+    auto claims_time = [&whole_word](const std::string & text) {
+        for (const char * word : {"bpm", "tempo", "second", "seconds",
+                                  "minute", "minutes", "hour", "hours"}) {
+            if (whole_word(text, word)) return true;
+        }
+        return false;
+    };
+
+    std::vector<std::string> all;
+    all.insert(all.end(), pool.instrumental.begin(), pool.instrumental.end());
+    all.insert(all.end(), pool.vocal.begin(), pool.vocal.end());
+    for (const auto & prompt : all) {
+        assert(!prompt.empty());
+        assert(prompt.size() < 200);
+        assert(!claims_time(prompt));
+        assert(prompt.front() != ' ' && prompt.back() != ' ');
+        assert(prompt.back() != ',');
+    }
+
+    // An instrumental job already has "Instrumental, no vocals, no singing, no
+    // humming." prefixed to its style, so a prompt reaching for a voice would
+    // be arguing with its own preamble.
+    // Whole words again: "pulsing" ends in "sing", and a chorus pedal is not a
+    // choir, so "chorus" stays allowed.
+    for (const auto & prompt : pool.instrumental) {
+        for (const char * word : {"vocal", "vocals", "vocalist", "voice", "voices",
+                                  "sing", "sings", "singing", "sung", "choir",
+                                  "choirs", "lyric", "lyrics"}) {
+            assert(!whole_word(prompt, word));
+        }
+    }
+
+    // Duplicates would make the dice land on the same prompt more often than
+    // it looks like it should.
+    for (std::size_t i = 0; i < all.size(); ++i)
+        for (std::size_t j = i + 1; j < all.size(); ++j)
+            assert(all[i] != all[j]);
+
+    const auto body = yue2::server::dice_prompts_json();
+    const auto parsed = yue2::server::json::parse(body);
+    const auto * dice = parsed.find("dice");
+    assert(dice != nullptr && dice->type == yue2::server::json::Type::object);
+    for (const char * bucket : {"instrumental", "vocal"}) {
+        const auto * arr = dice->find(bucket);
+        assert(arr != nullptr && arr->type == yue2::server::json::Type::array);
+        assert(!arr->array.empty());
+    }
+}
+
 int main() {
+    check_dice_prompts();
     check_generation_policy();
     using namespace yue2::server;
     const auto parsed = json::parse(

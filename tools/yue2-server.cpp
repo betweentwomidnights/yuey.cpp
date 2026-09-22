@@ -13,6 +13,7 @@
 #include "server/http.h"
 #include "server/json.h"
 #include "server/policy.h"
+#include "server/prompts.h"
 #include "yue2_ui_html.h"
 
 #include <algorithm>
@@ -677,6 +678,13 @@ public:
             if (path == "/generate") return post ? submit(request, JobKind::generate) : not_allowed();
             if (path == "/cover") return post ? submit(request, JobKind::cover) : not_allowed();
             if (path == "/continue") return post ? submit(request, JobKind::continue_audio) : not_allowed();
+            // Style prompts for a client's dice button. Static, so no job and no
+            // model load: a client may call it before anything is warm.
+            if (path == "/prompts") {
+                if (!get) return not_allowed();
+                return yue2::server::json_response(yue2::server::dice_prompts_json());
+            }
+
             if (path == "/transcribe") return post ? submit(request, JobKind::transcribe) : not_allowed();
             if (path == "/unload") return post ? unload() : not_allowed();
             if (starts_with(path, "/poll_status/")) {

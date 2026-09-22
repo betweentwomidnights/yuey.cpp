@@ -75,6 +75,7 @@ cancellation releases the transcriber and generator before the job finishes.
 | `GET` | `/` | Embedded standalone Yuey UI |
 | `GET` | `/health` | `{status, service, version, device, encoding, busy, queued, generation:{available, loaded, model, vae, tokenizer}, transcription:{available, loaded, model}}` |
 | `GET` | `/props` | Local device/VRAM inventory, installed model tiers, recommendation, defaults, and UI capabilities |
+| `GET` | `/prompts` | `{dice:{instrumental:[...], vocal:[...]}}` style prompts for a client's dice button |
 | `GET` | `/loras` | `{success, adapters_dir, loras:[{index, name, path}]}` for `*-LoRA.gguf` files |
 | `POST` | `/plan` | text to an editable ABC plan without semantic/flow/VAE work |
 | `POST` | `/generate` | text, or text plus ABC, to a song → `{success, session_id, seed, status}` |
@@ -87,6 +88,32 @@ cancellation releases the transcriber and generator before the job finishes.
 
 Errors are `{success:false, error}` with an HTTP status. Unknown sessions
 return `404`, as in sa3-server.
+
+### Style prompts
+
+`GET /prompts` returns a curated pool for a client's dice button, in the shape
+the other services in this family already serve:
+
+```json
+{"dice": {"instrumental": ["..."], "vocal": ["..."]}}
+```
+
+It is static, so it answers before any model is loaded and costs nothing to
+call. Two buckets, because there is one toggle that matters: an instrumental
+job has `Instrumental, no vocals, no singing, no humming.` prefixed to its
+style, so those prompts never mention a voice.
+
+The prompts follow the order YuE2's own guidance sets out -- genre and
+subgenre, mood and energy, lead vocal type where there is one, the instruments
+as an actual band, then how it moves -- with two deliberate omissions.
+
+Neither tempo nor length appears. A caller sets tempo through `planning.bpm` or
+the `Q:` field of a score it supplies, and in a host that tempo is the
+project's; length comes from `target_bars` or the natural ceiling. A prompt
+claiming either can only disagree with the thing that actually decides it, and
+contradictory tags are what the upstream guidance warns degrades output.
+`tests/server_support_test.cpp` enforces both rules, along with no duplicates
+and no vocal words in the instrumental bucket.
 
 ### Local runtime properties
 
