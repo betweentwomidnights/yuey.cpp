@@ -42,11 +42,17 @@ if [ "$backend" = cuda ]; then
     # The toolkit ships a stub for exactly this; point the linker at it, and
     # only when the real one is absent, so this is a no-op on a real GPU host.
     configure_extra="-DYUE2_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75-virtual"
-    if ! ldconfig -p 2>/dev/null | grep -q 'libcuda' && [ -e /usr/local/cuda/lib64/stubs/libcuda.so ]; then
+    # libcuda.so.1 exactly: matching "libcuda" also matches libcudart.so, which
+    # every toolkit image has, so a loose pattern decides a driver is present on
+    # a machine that has none and leaves the link with nothing to resolve
+    # cuMemCreate against.
+    if ! ldconfig -p 2>/dev/null | grep -q 'libcuda\.so\.1' && [ -e /usr/local/cuda/lib64/stubs/libcuda.so ]; then
         stubs="$PWD/${BUILD_DIR:-build-ggml-check}-cuda-stubs"
         mkdir -p "$stubs"
         [ -e "$stubs/libcuda.so.1" ] || ln -s /usr/local/cuda/lib64/stubs/libcuda.so "$stubs/libcuda.so.1"
         configure_extra="$configure_extra -DCMAKE_EXE_LINKER_FLAGS=-Wl,-rpath-link,$stubs"
+        LIBRARY_PATH="/usr/local/cuda/lib64/stubs:${LIBRARY_PATH:-}"
+        export LIBRARY_PATH
     fi
 fi
 
