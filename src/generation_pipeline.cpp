@@ -241,25 +241,28 @@ public:
                     [this, &seeded_abc_ids, planning_stop_bars, planning_stop_seconds,
                      planning_loop_bars](
                         const std::vector<std::int32_t> & generated) {
-                        // A score only parses in a window a token or two wide,
-                        // right after a barline that closes a balanced
-                        // Vocal/Ins block. Sampling every so many tokens misses
-                        // all of them, so test every token but make the common
-                        // answer cheap: decoding is a table lookup, parsing is
-                        // not, so only parse when the text ends on a barline.
+                        // A score only parses just after a barline closing a
+                        // balanced Vocal/Ins block. Check the tail before
+                        // decoding the whole growing plan: doing a full decode
+                        // on every token makes this check quadratic in length.
                         if (generated.size() < 64) return false;
-                        std::string text;
                         try {
-                            text = tokenizer.decode(generated);
+                            bool barline = false;
+                            for (std::size_t index = generated.size(); index > 0;) {
+                                const auto tail = tokenizer.decode({generated[--index]});
+                                auto end = tail.size();
+                                while (end > 0 && std::isspace(
+                                    static_cast<unsigned char>(tail[end - 1]))) {
+                                    --end;
+                                }
+                                if (end == 0) continue;
+                                barline = tail[end - 1] == '|';
+                                break;
+                            }
+                            if (!barline) return false;
                         } catch (const std::exception &) {
                             return false;
                         }
-                        std::size_t end = text.size();
-                        while (end > 0 &&
-                               std::isspace(static_cast<unsigned char>(text[end - 1]))) {
-                            --end;
-                        }
-                        if (end == 0 || text[end - 1] != '|') return false;
                         try {
                             auto ids = seeded_abc_ids;
                             ids.insert(ids.end(), generated.begin(), generated.end());
