@@ -107,7 +107,7 @@ const std::vector<std::string> kVocal = {
     "afrobeats, buoyant and sleek, smooth male lead, syncopated guitar, log drum, airy synth",
     "highlife, sunny and gliding, warm male voice, interlocking guitars, horn section",
     "reggae, laid-back and sun-warmed, weathered male voice, skanking guitar, deep bass, rimshot",
-    "dancehall, punchy, clipped male toast, sparse digital riddim, heavy sub",
+    "dancehall, punchy, rapid male toasting, sparse digital riddim, heavy sub",
     "samba, rolling and bright, layered female voices, cavaquinho, surdo, agogo bells",
     "cumbia, loping and warm, male lead, accordion, guiro, electric bass",
     "city pop, glossy and wistful, clear female voice, slap bass, glassy Rhodes, saxophone fills",
