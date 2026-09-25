@@ -35,6 +35,11 @@ endif()
 
 if(YUE2_CUDA)
     set(GGML_CUDA ON CACHE BOOL "" FORCE)
+    # ggml leaves CUDA graphs off outside llama.cpp. Without them every decode
+    # step launches its ~1000 kernels one at a time: on an RTX 5070, 1000
+    # semantic tokens took 10.8 s instead of 6.9, and 19.6 instead of 9.0 with
+    # the instrumental LoRA bound.
+    set(GGML_CUDA_GRAPHS ON CACHE BOOL "" FORCE)
 endif()
 if(YUE2_VULKAN)
     set(GGML_VULKAN ON CACHE BOOL "" FORCE)
