@@ -135,12 +135,24 @@ public:
         GenerationPipelineOptions options)
         : options(std::move(options)),
           tokenizer(tokenizer_path),
-          autoregressive(model_path, this->options.autoregressive),
+          model_path(model_path),
+          autoregressive(std::make_unique<AutoregressiveModel>(
+              model_path, this->options.autoregressive)),
           vae_path(vae_path),
           vae_options(resolve_vae_options(this->options)) {
         if (this->options.flow.context_length > 24576) {
             throw std::invalid_argument("YuE2 flow context exceeds generation context");
         }
+    }
+
+    // The generator, reloaded if a previous frugal call freed it. Adapters
+    // are part of the stored options, so a reload binds the same ones.
+    AutoregressiveModel & ar() {
+        if (!autoregressive) {
+            autoregressive = std::make_unique<AutoregressiveModel>(
+                model_path, options.autoregressive);
+        }
+        return *autoregressive;
     }
 
     SongRequest effective_request(const SongRequest & request) const {
@@ -300,7 +312,7 @@ public:
                 }
             };
             StageTimer plan_timer("plan");
-            const auto planned = autoregressive.generate(
+            const auto planned = ar().generate(
                 initial, run_options.generation.abc,
                 AutoregressivePhase::abc, effective.seed,
                 planning_control);
@@ -486,7 +498,7 @@ public:
         AutoregressiveResult semantic;
         if (guidance == 1.0F) {
             StageTimer semantic_timer("semantic");
-            semantic = autoregressive.generate(
+            semantic = ar().generate(
                 positive, semantic_sampling,
                 AutoregressivePhase::semantic, effective.seed,
                 ar_control(control, GenerationStage::semantic));
@@ -511,7 +523,7 @@ public:
                 result.semantic_budget = semantic_sampling.max_tokens;
             }
             StageTimer semantic_timer("semantic");
-            semantic = autoregressive.generate_cfg(
+            semantic = ar().generate_cfg(
                 positive, negative, semantic_sampling,
                 AutoregressivePhase::semantic, guidance, effective.seed,
                 ar_control(control, GenerationStage::semantic));
@@ -543,10 +555,14 @@ public:
         }
         {
             StageTimer flow_timer("flow");
-            result.latents = autoregressive.synthesize_latents(
+            result.latents = ar().synthesize_latents(
                 generation_prefix, result.semantic_codec_ids, effective.seed, run_options.flow,
                 ar_control(control, GenerationStage::flow));
         }
+        // The generator's weights and graph buffers are ~3 GB on the Q4 tier,
+        // and the decode needs its own window buffer on top: together they are
+        // what ran an 8 GB card out of memory at the end of a long song.
+        if (!run_options.keep_models) autoregressive.reset();
         VaeDecodeControl decode_control;
         decode_control.should_cancel = control.should_cancel;
         if (control.on_progress) {
@@ -562,7 +578,8 @@ public:
 
     GenerationPipelineOptions options;
     TextTokenizer tokenizer;
-    AutoregressiveModel autoregressive;
+    std::string model_path;
+    std::unique_ptr<AutoregressiveModel> autoregressive;
     std::string vae_path;
     VaeRuntimeOptions vae_options;
     std::unique_ptr<VaeDecoder> vae;

@@ -856,6 +856,11 @@ std::vector<float> AutoregressiveState::solve_flow_chunk(
             elapsed_ms(cache_ready, prefill_done),
             elapsed_ms(prefill_done, graph_ready),
             ar_tokens.size(), frames);
+        std::fprintf(stderr,
+            "[yue2] flow memory: compute buffer %.0f MiB, kv cache %.0f MiB\n",
+            ggml_backend_sched_get_buffer_size(scheduler, model.backend()) / 1048576.0,
+            2.0 * kLayers * kKvHeads * kHeadDim * sizeof(ggml_fp16_t) *
+                static_cast<double>(ar_tokens.size()) / 1048576.0);
     }
     auto state = noise;
     const double dt = 1.0 / static_cast<double>(ode_steps);
