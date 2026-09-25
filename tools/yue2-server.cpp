@@ -376,10 +376,14 @@ GenerationPaths resolve_generation(
     if (!configuration.tokenizer.empty()) {
         paths.tokenizer = configuration.tokenizer;
     } else {
+        // The converter writes sidecars/; the published repo and the models
+        // scripts put yue2-qwen.tiktoken flat beside the GGUFs.
         const auto folder = paths.model.parent_path();
         for (const fs::path & candidate : {
-                 folder / "sidecars" / "yue2-qwen.tiktoken", folder / "qwen.tiktoken",
+                 folder / "sidecars" / "yue2-qwen.tiktoken", folder / "yue2-qwen.tiktoken",
+                 folder / "qwen.tiktoken",
                  configuration.models_dir / "sidecars" / "yue2-qwen.tiktoken",
+                 configuration.models_dir / "yue2-qwen.tiktoken",
                  configuration.models_dir / "qwen.tiktoken"}) {
             std::error_code error;
             if (fs::is_regular_file(candidate, error)) {

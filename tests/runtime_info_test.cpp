@@ -105,6 +105,19 @@ int main() {
     }
   }
 
+  // The published layout, as models.cmd and models.sh download it: every
+  // file flat in one folder, tokenizer included.
+  const auto flat = root / "flat";
+  fs::create_directories(flat);
+  write_gguf(flat / "yue2-3.6B-v1.0-Q4_K_M.gguf", "generation", "Q4_K_M", 15);
+  {
+    std::ofstream published(flat / "yue2-qwen.tiktoken");
+    published << "tokenizer fixture";
+  }
+  const auto flat_files = yue2::inspect_model_files(flat.string());
+  const auto flat_tokenizer = yue2::find_model_file(flat_files, "tokenizer");
+  assert(flat_tokenizer && flat_tokenizer->name == "yue2-qwen.tiktoken");
+
   // This call must remain safe on a CPU-only build; actual device presence is
   // backend/platform dependent and therefore is not asserted.
   (void)yue2::available_devices();

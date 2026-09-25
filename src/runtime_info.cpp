@@ -270,6 +270,8 @@ inspect_model_files(const std::string &models_directory) {
   }
   for (const auto &root : roots) {
     add_tokenizer_if_present(result, root / "sidecars" / "yue2-qwen.tiktoken");
+    // The published repo and models.cmd/models.sh place it flat beside the GGUFs.
+    add_tokenizer_if_present(result, root / "yue2-qwen.tiktoken");
     add_tokenizer_if_present(result, root / "qwen.tiktoken");
   }
   std::sort(result.begin(), result.end(),
