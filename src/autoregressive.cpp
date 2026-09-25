@@ -192,6 +192,7 @@ ggml_tensor * cached_attention(
     ggml_tensor * positions,
     ggml_tensor * cache_rows,
     ggml_tensor * mask,
+    std::int64_t window,
     int layer,
     bool flash) {
     const std::string prefix = "model.layers." + std::to_string(layer) + ".self_attn.";
@@ -199,7 +200,6 @@ ggml_tensor * cached_attention(
     auto * key = linear(context, loras, value, model.get(prefix + "k_proj.weight"));
     auto * projected_value = linear(context, loras, value, model.get(prefix + "v_proj.weight"));
     const auto steps = value->ne[1];
-    const auto total = static_cast<std::int64_t>(cache.position()) + steps;
     query = ggml_reshape_3d(context, query, kHeadDim, kHeads, steps);
     key = ggml_reshape_3d(context, key, kHeadDim, kKvHeads, steps);
     projected_value = ggml_reshape_3d(
@@ -224,10 +224,10 @@ ggml_tensor * cached_attention(
     const auto * key_cache = cache.key(layer);
     const auto * value_cache = cache.value(layer);
     auto * used_key = ggml_view_3d(
-        context, cache.key(layer), kHeadDim, total, kKvHeads,
+        context, cache.key(layer), kHeadDim, window, kKvHeads,
         key_cache->nb[1], key_cache->nb[2], 0);
     auto * used_value = ggml_view_3d(
-        context, cache.value(layer), kHeadDim, total, kKvHeads,
+        context, cache.value(layer), kHeadDim, window, kKvHeads,
         value_cache->nb[1], value_cache->nb[2], 0);
     ggml_tensor * attended = nullptr;
     if (flash) {
@@ -333,6 +333,11 @@ public:
         const bool accelerator =
             device && ggml_backend_dev_type(device) != GGML_BACKEND_DEVICE_TYPE_CPU;
         flash = accelerator && options.flash_attention;
+        if (device) {
+            auto * registration = ggml_backend_dev_backend_reg(device);
+            whole_cache_window = registration &&
+                std::string(ggml_backend_reg_name(registration)) == "CUDA";
+        }
         if (accelerator) {
             cpu_backend = detail::make_backend("cpu", options.threads, false);
             backends[backend_count++] = cpu_backend;
@@ -469,12 +474,13 @@ public:
         auto * graph = ggml_new_graph_custom(context.get(), kGraphSize, false);
         const auto steps = static_cast<std::int64_t>(ids.size());
         const auto cached = static_cast<std::int64_t>(cache.position());
-        const auto total = cached + steps;
+        const auto window = whole_cache_window
+            ? static_cast<std::int64_t>(cache.capacity()) : cached + steps;
         auto * token_ids = ggml_new_tensor_1d(context.get(), GGML_TYPE_I32, steps);
         auto * positions = ggml_new_tensor_1d(context.get(), GGML_TYPE_I32, steps);
         auto * cache_rows = ggml_new_tensor_1d(context.get(), GGML_TYPE_I64, steps);
         auto * mask = ggml_new_tensor_2d(
-            context.get(), flash ? GGML_TYPE_F16 : GGML_TYPE_F32, total, steps);
+            context.get(), flash ? GGML_TYPE_F16 : GGML_TYPE_F32, window, steps);
         for (auto * input : {token_ids, positions, cache_rows, mask}) ggml_set_input(input);
         ggml_set_name(token_ids, "yue2.ar.cached_token_ids");
         ggml_set_name(positions, "yue2.ar.cached_positions");
@@ -491,7 +497,7 @@ public:
                 context.get(), hidden,
                 cached_attention(
                     context.get(), graph, model, loras, cache, normalized, positions,
-                    cache_rows, mask, layer, flash));
+                    cache_rows, mask, window, layer, flash));
             normalized = rms_norm(
                 context.get(), hidden,
                 model.get(prefix + "post_attention_layernorm.weight"));
@@ -534,10 +540,10 @@ public:
         ggml_backend_tensor_set(
             cache_rows, row_data.data(), 0, row_data.size() * sizeof(row_data.front()));
         if (flash) {
-            std::vector<ggml_fp16_t> mask_data(static_cast<std::size_t>(total * steps));
+            std::vector<ggml_fp16_t> mask_data(static_cast<std::size_t>(window * steps));
             for (std::int64_t query = 0; query < steps; ++query) {
-                for (std::int64_t key = 0; key < total; ++key) {
-                    mask_data[static_cast<std::size_t>(query * total + key)] =
+                for (std::int64_t key = 0; key < window; ++key) {
+                    mask_data[static_cast<std::size_t>(query * window + key)] =
                         ggml_fp32_to_fp16(key <= cached + query ? 0.0F :
                             -std::numeric_limits<float>::infinity());
                 }
@@ -545,10 +551,10 @@ public:
             ggml_backend_tensor_set(
                 mask, mask_data.data(), 0, mask_data.size() * sizeof(mask_data.front()));
         } else {
-            std::vector<float> mask_data(static_cast<std::size_t>(total * steps));
+            std::vector<float> mask_data(static_cast<std::size_t>(window * steps));
             for (std::int64_t query = 0; query < steps; ++query) {
-                for (std::int64_t key = 0; key < total; ++key) {
-                    mask_data[static_cast<std::size_t>(query * total + key)] =
+                for (std::int64_t key = 0; key < window; ++key) {
+                    mask_data[static_cast<std::size_t>(query * window + key)] =
                         key <= cached + query ? 0.0F : -std::numeric_limits<float>::infinity();
                 }
             }
@@ -593,6 +599,18 @@ public:
     ggml_backend_t cpu_backend = nullptr;
     ggml_backend_sched_t scheduler = nullptr;
     bool flash = false;
+    // Attend over the whole KV cache, masking the rows past the position,
+    // instead of a window that grows a row per token. The growing window
+    // changes the graph every step, and the CUDA backend only replays a
+    // captured graph when two in a row match, so each decode step launched
+    // its ~1000 kernels one at a time. With the whole cache the shape holds
+    // for a generation; the rows not yet written are zero from allocation, so
+    // the masked tail stays finite. A window rounded up to 256 held the shape
+    // too, but a partial view of the cache replays wrong logits from the first
+    // captured step; the whole cache replays bit for bit. Vulkan has nothing
+    // to replay and pays a few percent for the longer attention on a long
+    // song, so it keeps the growing window.
+    bool whole_cache_window = false;
     std::mutex mutex;
 };
 
