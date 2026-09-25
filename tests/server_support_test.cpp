@@ -150,6 +150,23 @@ void check_dice_prompts() {
         }
     }
 
+    // With instrumental off yuey sings whether or not the prompt names a
+    // singer, so a vocal-bucket prompt needs no voice in it. Keep a real share
+    // of them that way, or every roll reads as a vocal brief and the model
+    // never gets to pick the voice itself.
+    std::size_t voiceless = 0;
+    for (const auto & prompt : pool.vocal) {
+        bool names_a_voice = false;
+        for (const char * word : {"vocal", "vocals", "voice", "voices", "singer", "sing",
+                                  "singing", "sung", "choir", "male", "female", "falsetto",
+                                  "soprano", "tenor", "baritone", "rap", "rapped",
+                                  "toasting", "chant", "chanted", "harmonies", "harmony"}) {
+            if (whole_word(prompt, word)) names_a_voice = true;
+        }
+        if (!names_a_voice) ++voiceless;
+    }
+    assert(voiceless * 4 >= pool.vocal.size());
+
     // Duplicates would make the dice land on the same prompt more often than
     // it looks like it should.
     for (std::size_t i = 0; i < all.size(); ++i)

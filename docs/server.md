@@ -127,13 +127,19 @@ The prompts follow the order YuE2's own guidance sets out -- genre and
 subgenre, mood and energy, lead vocal type where there is one, the instruments
 as an actual band, then how it moves -- with two deliberate omissions.
 
+Dance music has the largest share of both buckets, since most of the people
+rolling are producers. A vocal-bucket prompt names a singer only where the
+voice is the point: with the instrumental toggle off yuey sings anyway, so at
+least a quarter of that bucket leaves the voice to the model.
+
 Neither tempo nor length appears. A caller sets tempo through `planning.bpm` or
 the `Q:` field of a score it supplies, and in a host that tempo is the
 project's; length comes from `target_bars` or the natural ceiling. A prompt
 claiming either can only disagree with the thing that actually decides it, and
 contradictory tags are what the upstream guidance warns degrades output.
-`tests/server_support_test.cpp` enforces both rules, along with no duplicates
-and no vocal words in the instrumental bucket.
+`tests/server_support_test.cpp` enforces both rules, along with no duplicates,
+no vocal words in the instrumental bucket, and the voiceless quarter of the
+vocal bucket.
 
 ### Local runtime properties
 
