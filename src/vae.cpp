@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -328,6 +330,12 @@ private:
         ggml_backend_sched_reset(scheduler);
         if (!ggml_backend_sched_alloc_graph(scheduler, graph)) {
             throw std::runtime_error("[yue2:vae] could not allocate decode graph");
+        }
+        static const bool report_memory = std::getenv("YUE2_DEBUG_TIMING") != nullptr;
+        if (report_memory) {
+            std::fprintf(stderr, "[yue2] vae window: %lld frames, compute buffer %.0f MiB\n",
+                static_cast<long long>(frames),
+                ggml_backend_sched_get_buffer_size(scheduler, model.backend()) / 1048576.0);
         }
         ggml_backend_tensor_set(input, values, 0, value_count * sizeof(float));
         const auto status = ggml_backend_sched_graph_compute(scheduler, graph);

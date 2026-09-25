@@ -1559,7 +1559,7 @@ std::string serialize_transcription_json(const TranscriptionResult & result) {
     return output.str();
 }
 
-const char * version() noexcept { return "0.2.0-dev"; }
+const char * version() noexcept { return "0.2.0"; }
 bool transcription_runtime_available() noexcept { return true; }
 
 } // namespace yue2

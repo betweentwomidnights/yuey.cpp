@@ -21,8 +21,9 @@ struct GenerationPipelineOptions {
     bool semantic_budget_explicit = false;
 };
 
-// Per-call controls that do not affect model residency or backend allocation.
-// A server can vary these without reconstructing GenerationPipeline.
+// Per-call controls. A server can vary these without reconstructing
+// GenerationPipeline; keep_models is the one that affects residency, and a
+// call after a frugal one simply reloads what it freed.
 struct GenerationRunOptions {
     GenerationDefaults generation;
     FlowOptions flow;
@@ -30,6 +31,11 @@ struct GenerationRunOptions {
     // score-based generation prevents MUSIC_END before the final score bar and
     // derives a conservative post-score safety budget after planning.
     bool semantic_budget_explicit = false;
+    // Residency, as in sa3.cpp. true keeps the generator loaded through the
+    // VAE decode and into the next call. false frees it once flow synthesis
+    // is done, so the decode does not share the card with a model nothing
+    // will use again this call; the next call reloads it.
+    bool keep_models = true;
 };
 
 enum class GenerationStage {

@@ -18,7 +18,16 @@ yue2-server --models-dir models --encoding Q4_K_M
 # --planning-loop-bars N   stop after N identical bars (default 16, 0 = off)
 # --instrumental-lora REF[=SCALE]
 # --continuation-lora REF[=SCALE]
+# --vae-tile-frames N      latent frames per VAE decode window (default 512)
+# --props    print the GET /props document and exit, without binding a port
+# --version  print the engine version and exit
 ```
+
+`--props` exists for installers. After unpacking a package, a supervisor runs it
+once to learn which GGML backends actually initialized, what memory they
+report, and which tier fits, before it ever starts the service. A CUDA backend
+that cannot start (for example, a driver older than the toolkit the package was
+built with) simply does not appear in `devices`.
 
 Open `http://127.0.0.1:8007/` after launch. The responsive Yuey SPA is embedded
 in the executable, has no runtime web dependencies, and talks only to the local
@@ -60,9 +69,20 @@ finishes. This is sa3-server's frugal default and keeps a DAW machine's VRAM
 free between requests. A cover transcribes, releases SheetSage2/MERT2, then
 loads generation, so the two models never share the GPU. A continuation also
 loads its separate unmodified-MERT semantic tokenizer, extracts the 25 Hz audio
-prefix, releases it, and only then loads generation. Send
+prefix, releases it, and only then loads generation. Within a generation, a
+frugal job also frees the generator once flow synthesis is done, before the VAE
+loads, so the decode does not share the card with it either. Send
 `"keep_models": true`, or start with `--keep-models`, to stay resident, and
 `POST /unload` to release.
+
+The VAE decodes in windows of `--vae-tile-frames` latent frames (about 20 s of
+audio at the default 512) with a 16-frame halo, and its buffer grows with the
+window: about 3.2 GB at the upstream 1024, 1.7 GB at 512. On an 8 GB RTX 5070
+Laptop GPU, a 32-bar Q4_K_M render peaked at 7.1 GB with 1024-frame windows
+and the generator still loaded, which is what ran out of memory beside a DAW;
+it peaks at 3.3 GB with both changes. The window size changes the output only
+by accumulation order (RMS difference about 58 dB below the signal, spread
+through the song rather than at seams).
 
 Supervisors running Yuey on a shared GPU can start with `--force-unload`. It
 overrides request-level `keep_models:true`, ensuring each success, failure, or
@@ -107,13 +127,19 @@ The prompts follow the order YuE2's own guidance sets out -- genre and
 subgenre, mood and energy, lead vocal type where there is one, the instruments
 as an actual band, then how it moves -- with two deliberate omissions.
 
+Dance music has the largest share of both buckets, since most of the people
+rolling are producers. A vocal-bucket prompt names a singer only where the
+voice is the point: with the instrumental toggle off yuey sings anyway, so at
+least a quarter of that bucket leaves the voice to the model.
+
 Neither tempo nor length appears. A caller sets tempo through `planning.bpm` or
 the `Q:` field of a score it supplies, and in a host that tempo is the
 project's; length comes from `target_bars` or the natural ceiling. A prompt
 claiming either can only disagree with the thing that actually decides it, and
 contradictory tags are what the upstream guidance warns degrades output.
-`tests/server_support_test.cpp` enforces both rules, along with no duplicates
-and no vocal words in the instrumental bucket.
+`tests/server_support_test.cpp` enforces both rules, along with no duplicates,
+no vocal words in the instrumental bucket, and the voiceless quarter of the
+vocal bucket.
 
 ### Local runtime properties
 

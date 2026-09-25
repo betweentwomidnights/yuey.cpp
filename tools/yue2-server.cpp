@@ -132,6 +132,12 @@ struct Configuration {
     // Ceiling on planner-chosen length. Zero lets a request run to the model's
     // own ending, which suits a local install and not a shared backend.
     double natural_max_seconds = 180.0;
+    // Latent frames per VAE decode window. The decode buffer grows with it:
+    // 3.2 GB at the upstream 1024, 1.7 GB at 512. Beside a DAW on an 8 GB card
+    // 1024 is what ran out of memory at the end of a song; 512 keeps the
+    // decode below the generation stages' own peak at no measured cost in
+    // time, and differs from 1024 only by accumulation noise (-58 dB RMS).
+    std::int64_t vae_tile_frames = 512;
     double planning_overrun = 2.0;
     std::uint32_t planning_loop_bars = 16;
     std::vector<yue2::LoraAdapterSpec> loras;
@@ -205,11 +211,15 @@ void usage(const char * executable) {
         << "  --keep-models                Keep models resident between jobs by default\n"
         << "  --force-unload               Ignore per-request keep_models and unload after every job\n"
         << "  --device NAME                cpu, cuda, or another GGML backend (YUE2_DEVICE)\n"
+        << "  --vae-tile-frames N          Latent frames per VAE decode window (default 512, YUE2_VAE_TILE_FRAMES)\n"
         << "  --threads N                  CPU worker threads\n\n"
         << "Server:\n"
         << "  --host IPV4                  Bind address (default 127.0.0.1)\n"
         << "  --port N                     Port (default 8007, YUE2_PORT)\n"
         << "  --max-body-mb N              Upload limit (default 512)\n\n"
+        << "One-shot:\n"
+        << "  --props                      Print the GET /props document and exit without serving\n"
+        << "  --version                    Print the engine version and exit\n\n"
         << "Routes: GET /, GET /health, GET /props, GET /loras, POST /plan, POST /generate, POST /cover, POST /continue, POST /transcribe,\n"
         << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload\n";
 }
@@ -264,6 +274,16 @@ Configuration parse_configuration(int argc, char ** argv) {
                 result.natural_max_seconds > 900.0) {
                 throw std::invalid_argument(
                     "--natural-max-seconds must be in [0, 900] seconds");
+            }
+        }
+    }
+    {
+        auto value = option(argc, argv, "--vae-tile-frames");
+        if (value.empty()) value = environment("YUE2_VAE_TILE_FRAMES");
+        if (!value.empty()) {
+            result.vae_tile_frames = std::stoll(value);
+            if (result.vae_tile_frames < 32 || result.vae_tile_frames > 24576) {
+                throw std::invalid_argument("--vae-tile-frames must be in [32, 24576]");
             }
         }
     }
@@ -373,10 +393,14 @@ GenerationPaths resolve_generation(
     if (!configuration.tokenizer.empty()) {
         paths.tokenizer = configuration.tokenizer;
     } else {
+        // The converter writes sidecars/; the published repo and the models
+        // scripts put yue2-qwen.tiktoken flat beside the GGUFs.
         const auto folder = paths.model.parent_path();
         for (const fs::path & candidate : {
-                 folder / "sidecars" / "yue2-qwen.tiktoken", folder / "qwen.tiktoken",
+                 folder / "sidecars" / "yue2-qwen.tiktoken", folder / "yue2-qwen.tiktoken",
+                 folder / "qwen.tiktoken",
                  configuration.models_dir / "sidecars" / "yue2-qwen.tiktoken",
+                 configuration.models_dir / "yue2-qwen.tiktoken",
                  configuration.models_dir / "qwen.tiktoken"}) {
             std::error_code error;
             if (fs::is_regular_file(candidate, error)) {
@@ -1447,6 +1471,9 @@ private:
                     break;
             }
         };
+        // A frugal job frees the generator before its decode rather than
+        // after it; the whole pipeline goes below either way.
+        job.run.keep_models = job.keep_models;
         auto song = generator_->generate(job.song, job.run, control);
         if (!job.keep_models) {
             generator_.reset();
@@ -1523,6 +1550,7 @@ private:
         options.autoregressive.device = configuration_.device;
         options.autoregressive.threads = configuration_.threads;
         options.autoregressive.lora_adapters = loras;
+        options.vae.decode_core_frames = configuration_.vae_tile_frames;
         generator_ = std::make_unique<yue2::GenerationPipeline>(
             paths.model.string(), paths.vae.string(), paths.tokenizer.string(), options);
         generator_loras_ = loras;
@@ -1604,8 +1632,24 @@ int main(int argc, char ** argv) {
             usage(argv[0]);
             return 0;
         }
+        if (has(argc, argv, "--version")) {
+            std::cout << yue2::version() << '\n';
+            return 0;
+        }
         auto configuration = parse_configuration(argc, argv);
         discover_published_adapters(configuration);
+        if (has(argc, argv, "--props")) {
+            // An installer asks this before it ever starts the service: which
+            // backends actually came up, how much memory they report, and which
+            // tier fits. It goes through the real route so the two cannot drift.
+            ServerState state(std::move(configuration));
+            HttpRequest request;
+            request.method = "GET";
+            request.path = "/props";
+            const auto response = state.handle(request);
+            std::cout << response.body << '\n';
+            return response.status == 200 ? 0 : 1;
+        }
         const auto host = configuration.http.host;
         const auto http = configuration.http;
         if (host != "127.0.0.1") {
