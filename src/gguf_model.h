@@ -112,13 +112,26 @@ inline ggml_backend_t make_backend(
             } else {
                 std::string needle = selector;
                 for (char & c : needle) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                // A backend name matches every device that backend drives. Vulkan
+                // on a hybrid laptop enumerates the integrated GPU first, so taking
+                // the first match put "vulkan" on the iGPU beside an idle RTX card.
+                // Among the matches, prefer a discrete GPU, then the larger one --
+                // the same rule the automatic choice below applies.
+                std::size_t best_memory = 0;
                 for (auto * device : devices) {
                     std::string haystack = std::string(ggml_backend_dev_name(device)) + " " +
                         ggml_backend_dev_description(device);
                     for (char & c : haystack) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    if (haystack.find(needle) != std::string::npos) {
+                    if (haystack.find(needle) == std::string::npos) continue;
+                    std::size_t free = 0, total = 0;
+                    ggml_backend_dev_memory(device, &free, &total);
+                    const bool discrete = ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_GPU;
+                    const bool selected_discrete =
+                        selected && ggml_backend_dev_type(selected) == GGML_BACKEND_DEVICE_TYPE_GPU;
+                    if (!selected || (discrete && !selected_discrete) ||
+                        (discrete == selected_discrete && total > best_memory)) {
                         selected = device;
-                        break;
+                        best_memory = total;
                     }
                 }
             }
