@@ -18,7 +18,15 @@ yue2-server --models-dir models --encoding Q4_K_M
 # --planning-loop-bars N   stop after N identical bars (default 16, 0 = off)
 # --instrumental-lora REF[=SCALE]
 # --continuation-lora REF[=SCALE]
+# --props    print the GET /props document and exit, without binding a port
+# --version  print the engine version and exit
 ```
+
+`--props` exists for installers. After unpacking a package, a supervisor runs it
+once to learn which GGML backends actually initialized, what memory they
+report, and which tier fits, before it ever starts the service. A CUDA backend
+that cannot start (for example, a driver older than the toolkit the package was
+built with) simply does not appear in `devices`.
 
 Open `http://127.0.0.1:8007/` after launch. The responsive Yuey SPA is embedded
 in the executable, has no runtime web dependencies, and talks only to the local

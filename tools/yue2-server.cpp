@@ -210,6 +210,9 @@ void usage(const char * executable) {
         << "  --host IPV4                  Bind address (default 127.0.0.1)\n"
         << "  --port N                     Port (default 8007, YUE2_PORT)\n"
         << "  --max-body-mb N              Upload limit (default 512)\n\n"
+        << "One-shot:\n"
+        << "  --props                      Print the GET /props document and exit without serving\n"
+        << "  --version                    Print the engine version and exit\n\n"
         << "Routes: GET /, GET /health, GET /props, GET /loras, POST /plan, POST /generate, POST /cover, POST /continue, POST /transcribe,\n"
         << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload\n";
 }
@@ -1604,8 +1607,24 @@ int main(int argc, char ** argv) {
             usage(argv[0]);
             return 0;
         }
+        if (has(argc, argv, "--version")) {
+            std::cout << yue2::version() << '\n';
+            return 0;
+        }
         auto configuration = parse_configuration(argc, argv);
         discover_published_adapters(configuration);
+        if (has(argc, argv, "--props")) {
+            // An installer asks this before it ever starts the service: which
+            // backends actually came up, how much memory they report, and which
+            // tier fits. It goes through the real route so the two cannot drift.
+            ServerState state(std::move(configuration));
+            HttpRequest request;
+            request.method = "GET";
+            request.path = "/props";
+            const auto response = state.handle(request);
+            std::cout << response.body << '\n';
+            return response.status == 200 ? 0 : 1;
+        }
         const auto host = configuration.http.host;
         const auto http = configuration.http;
         if (host != "127.0.0.1") {
