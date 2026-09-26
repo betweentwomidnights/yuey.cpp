@@ -40,6 +40,17 @@ int main() {
         "K:C#m\n% intro\n");
     assert(prefix.back() == '\n');
 
+    // No key: the header stops after the voices, and the model writes the K:
+    // and opening section it chooses. Tempo and meter are still fixed.
+    const auto open = yue2::make_planning_abc_prefix({95, 4, 4, ""});
+    assert(open ==
+        "X:1\nT:\nM:4/4\nL:1/32\nQ:1/4=95\n"
+        "V: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\"\n"
+        "V: Ins clef=treble name=\"Ins Melody\" snm=\"Inst.\"\n");
+    assert(yue2::make_planning_abc_prefix({95, 4, 4, "  "}) == open);
+    // Tempo and meter are still validated when the key is left open.
+    assert(rejected({0, 4, 4, ""}));
+
     // A Create request sends typed planning controls, which become this
     // header-only prefix. Planning inspects its prefix before sampling, so an
     // empty score has to be a legitimate answer or every planned song fails

@@ -563,13 +563,15 @@ std::string make_planning_abc_prefix(const PlanningHeader & header) {
     if (denominator == 0 || denominator > 32 || (denominator & (denominator - 1)) != 0) {
         throw std::invalid_argument("planning meter denominator must be a power of two up to 32");
     }
-    const auto key = normalize_abc_key(header.key);
-    return "X:1\nT:\nM:" + std::to_string(header.meter_numerator) + '/' +
+    auto prefix = "X:1\nT:\nM:" + std::to_string(header.meter_numerator) + '/' +
         std::to_string(header.meter_denominator) +
         "\nL:1/32\nQ:1/4=" + std::to_string(header.bpm) +
         "\nV: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\""
-        "\nV: Ins clef=treble name=\"Ins Melody\" snm=\"Inst.\""
-        "\nK:" + key + "\n% intro\n";
+        "\nV: Ins clef=treble name=\"Ins Melody\" snm=\"Inst.\"\n";
+    // Without a key the header stops here, and the model's first line is the
+    // K: it chooses, then its own opening section.
+    if (trim(header.key).empty()) return prefix;
+    return prefix + "K:" + normalize_abc_key(header.key) + "\n% intro\n";
 }
 
 std::string make_vocal_rest_abc(const std::string & abc) {

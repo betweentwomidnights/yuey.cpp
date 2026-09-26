@@ -53,6 +53,7 @@ std::string normalize_abc_key(const std::string & key);
 
 // Emits the YuE2 two-voice header validated by the locked-header listening
 // test, including the initial section marker expected before score notes.
+// An empty key leaves K: and the opening section to the model.
 std::string make_planning_abc_prefix(const PlanningHeader & header);
 
 // Converts YuE2's bounded two-voice ABC dialect into a vocal-rest experiment:
