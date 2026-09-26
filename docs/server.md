@@ -261,10 +261,13 @@ dragging even when the user does not want generated audio.
   the model composes the score body. UI clients should send structured musical
   fields to a trusted header builder rather than assemble arbitrary ABC.
 - **`planning`** is that trusted typed interface. It applies to `/plan` and `/generate`
-  only and requires `bpm` plus a major/minor `key`; meter defaults to 4/4. The
-  server validates the values and constructs the proven two-voice planning
-  prefix before sampling. It is mutually exclusive with `abc` and
-  `abc_prefix`. Omit the object entirely for automatic musical planning.
+  only and requires `bpm`; meter defaults to 4/4. A major/minor `key` locks the
+  key too; leave it empty and the header stops after the voices, so the model
+  writes its own `K:` line and opening section. In 24 test plans it wrote a
+  valid key every time. The server validates the values and constructs the
+  proven two-voice planning prefix before sampling. It is mutually exclusive
+  with `abc` and `abc_prefix`. Omit the object entirely for automatic musical
+  planning: the model then picks tempo and meter as well.
 - **`natural_max_seconds`** lowers this job's natural-length ceiling. It cannot
   raise it: the server takes the smaller of the request and its own
   `--natural-max-seconds`, so a shared backend keeps its policy no matter what
