@@ -605,7 +605,8 @@ std::vector<std::uint8_t> encode_flac_pcm16(
 
 // What `audio_format` accepts, so a client can ask for FLAC only from a server
 // that answers it; older servers reject the value outright.
-const std::string kAudioFormatsJson = "\"audio_formats\":[\"wav\",\"wav_float\",\"flac\"]";
+const std::string kAudioFormatsJson =
+    "\"audio_formats\":[\"wav\",\"wav_float\",\"flac\",\"auto\"]";
 
 HttpResponse failure(int status, const std::string & message) {
     return yue2::server::json_response(
@@ -629,7 +630,8 @@ struct Job {
     yue2::TranscriptionOptions transcription;
     std::uint32_t continuation_bars = 0;
     bool keep_models = false;
-    std::string audio_format = "wav";
+    std::string audio_format = "wav";      // always concrete once parsed
+    std::string inbound_format;             // the upload's container, when there is one
     std::string encoding = "auto";
     std::atomic<bool> cancel{false};
 
@@ -923,12 +925,13 @@ private:
         if (kind == JobKind::cover || kind == JobKind::continue_audio ||
             kind == JobKind::transcribe) {
             const auto encoded = json::string(root, "audio_data");
-            if (encoded.empty()) throw std::invalid_argument("audio_data (base64 WAV) is required");
-            const auto wav = yue2::server::base64_decode(encoded);
+            if (encoded.empty()) throw std::invalid_argument("audio_data (base64 WAV or FLAC) is required");
+            const auto upload = yue2::server::base64_decode(encoded);
+            job->inbound_format = yue2::audio::sniff_audio_container(upload.data(), upload.size());
             try {
-                job->input = yue2::audio::decode_wav_mono(wav.data(), wav.size());
+                job->input = yue2::audio::decode_audio_mono(upload.data(), upload.size());
             } catch (const std::exception & error) {
-                throw std::invalid_argument(std::string("audio_data is not a readable WAV: ") + error.what());
+                throw std::invalid_argument(std::string("audio_data is not a readable WAV or FLAC: ") + error.what());
             }
             if (job->input.samples.empty()) throw std::invalid_argument("audio_data contains no samples");
             job->transcription.melody_only = melody_only(first_string(root, {"transcription_mode", "mode"}));
@@ -1119,11 +1122,15 @@ private:
         run.generation.abc.max_tokens = json::u32(root, "abc_max_tokens", run.generation.abc.max_tokens);
         run.flow.ode_steps = json::u32(root, "ode_steps", run.flow.ode_steps);
 
+        // "wav" stays the default so a client that never asks is never surprised.
+        // "auto" answers in the upload's container, and in WAV for jobs with no
+        // upload, the same contract as the SA3 service.
         const auto format = json::string(root, "audio_format", "wav");
-        if (format != "wav" && format != "wav_float" && format != "flac") {
-            throw std::invalid_argument("audio_format must be wav, wav_float, or flac");
+        if (format != "wav" && format != "wav_float" && format != "flac" && format != "auto") {
+            throw std::invalid_argument("audio_format must be wav, wav_float, flac, or auto");
         }
-        job.audio_format = format;
+        job.audio_format = format != "auto" ? format
+            : job.inbound_format.empty() ? "wav" : job.inbound_format;
         job.loras = parse_loras(root);
         if (job.kind == JobKind::continue_audio) {
             if (!json::boolean(root, "use_continuation_adapter", true)) {
@@ -1256,7 +1263,11 @@ private:
                 append_midi_json(body, job);
             } else {
                 // Base64 needs no JSON escaping.
-                body += ",\"audio_data\":\"" + job.audio_data + "\",\"abc\":" + json::quote(job.abc) +
+                body += ",\"audio_data\":\"" + job.audio_data + "\"" +
+                    // Beside the payload, so a client can pick a decoder without
+                    // sniffing. Never "auto".
+                    ",\"audio_format\":" + json::quote(job.audio_format) +
+                    ",\"abc\":" + json::quote(job.abc) +
                     ",\"meta\":{\"seed\":" + std::to_string(job.song.seed) +
                     ",\"duration\":" + real(job.duration_seconds) +
                     ",\"sample_rate\":48000,\"channels\":2" +

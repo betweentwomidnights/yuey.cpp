@@ -309,14 +309,11 @@ When the standard published filenames are present in `--adapters-dir` (the
 models directory by default), the server discovers both official optional
 adapters automatically. Explicit flags or environment variables take priority.
 
-- **`audio_format`**: `wav` is 16-bit PCM, which gary4juce reads; `wav_float`
-  keeps the model's float output; `flac` carries the same 16-bit samples
-  losslessly at about 40% of the WAV's size, for clients on a network. A
-  decoder returns exactly the samples `wav` would have held. `/health` and
-  `/props` list the accepted values as `audio_formats`, so a client can ask
-  for FLAC only from a server that answers it.
+- **`audio_format`**: the container of the returned audio. See
+  [Audio on the wire](#audio-on-the-wire).
 
-`/cover` also requires `audio_data`, a base64 WAV of any rate and channel count.
+`/cover` also requires `audio_data`, a base64 WAV or FLAC of any rate and
+channel count.
 It accepts `transcription_mode`: `melody` (default) or `full`. A `full`
 transcription conditions `symbolic_mode: full` unless overridden. `/cover`
 rejects `abc`; the score comes from the audio. Set `instrumental: true` for an
@@ -456,7 +453,38 @@ match the completed result.
 - **Failures** add `error` and `cancelled`.
 
 Finished jobs are kept for five minutes. Poll with `?consume=1` to take the
-result and free it at once; a song's base64 WAV is tens of megabytes.
+result and free it at once; a song's base64 WAV is tens of megabytes (see
+[Audio on the wire](#audio-on-the-wire)).
+
+## Audio on the wire
+
+Every request and response carries audio as base64, and over a network that
+blob is most of the round trip: a finished song is tens of megabytes of base64
+WAV in one poll response. FLAC carries the same 16-bit samples losslessly at
+roughly 40% of the size. This is the contract yuey.cpp defines for the GGML
+servers, matching the SA3 service gary4beatbox already uses.
+
+- **Uploads** (`audio_data` on `/cover`, `/continue`, `/transcribe`) may be WAV
+  or FLAC. The container is read from the magic bytes (`fLaC`), never from a
+  field, and a 16-bit FLAC decodes to exactly the samples its WAV would.
+- **`audio_format`** on a request picks the returned container:
+  - `wav` (the default, and it stays the default: a client that never asks is
+    never surprised) is 16-bit PCM;
+  - `wav_float` keeps the model's float output;
+  - `flac` is the same 16-bit samples as `wav`, losslessly;
+  - `auto` answers in the upload's container, and in `wav` for jobs with no
+    upload.
+- **Completed responses** name the container beside the payload as
+  `audio_format`, always concrete, never `auto`.
+- **`/health` and `/props`** list the accepted values as `audio_formats`. Older
+  servers reject a value they do not know, so a client should ask for `flac`
+  only from a server that lists it. Sniffing the returned bytes as well costs
+  nothing and covers a server that ignores the field.
+
+Encoding is yuey's own (`tools/server/flac.cpp`: fixed predictors, partitioned
+Rice, stereo decorrelation, no dependency). Decoding uploads uses the vendored
+dr_flac (`third_party/dr_libs`), which reads any FLAC a client produces,
+including libFLAC's LPC frames.
 
 ## Calling it
 

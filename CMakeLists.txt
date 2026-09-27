@@ -87,6 +87,8 @@ set_target_properties(yue2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(yue2 PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
+# dr_flac decodes uploaded FLAC; see third_party/dr_libs/README.md.
+target_include_directories(yue2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/dr_libs)
 target_link_libraries(yue2 PUBLIC ggml)
 
 if(YUE2_BUILD_SHARED)
@@ -222,9 +224,11 @@ if(YUE2_BUILD_TESTS)
     yue2_enable_test_assertions(yue2-server-support-test)
     add_test(NAME yue2-server-support-test COMMAND yue2-server-support-test)
     add_executable(yue2-flac-test tests/flac_test.cpp)
-    target_link_libraries(yue2-flac-test PRIVATE yue2-server-support)
+    target_link_libraries(yue2-flac-test PRIVATE yue2-server-support yue2)
     yue2_enable_test_assertions(yue2-flac-test)
-    add_test(NAME yue2-flac-test COMMAND yue2-flac-test)
+    add_test(NAME yue2-flac-test COMMAND yue2-flac-test
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/flac-reference-lpc.flac
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/flac-reference.wav)
 
     add_executable(yue2-runtime-info-test tests/runtime_info_test.cpp)
     target_link_libraries(yue2-runtime-info-test PRIVATE yue2)

@@ -3,9 +3,14 @@
 // verbatim and fixed subframes, partitioned Rice residuals, and all four
 // stereo decorrelations. Sample-exact recovery is the only acceptable result.
 #include "server/flac.h"
+#include "yue2/audio.h"
 
 #include <cassert>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <random>
 #include <stdexcept>
@@ -181,9 +186,43 @@ void round_trip(const std::vector<std::int16_t> & pcm, std::uint32_t channels, s
     assert(back.samples == pcm);
 }
 
+std::vector<std::uint8_t> read_file(const char * path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error(std::string("cannot open ") + path);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+// The WAV the server would have sent for the same samples.
+std::vector<std::uint8_t> wav_pcm16(const std::vector<std::int16_t> & pcm, std::uint32_t rate, std::uint32_t channels) {
+    std::vector<std::uint8_t> out;
+    auto u16 = [&](std::uint32_t v) { out.push_back(v & 255); out.push_back((v >> 8) & 255); };
+    auto u32 = [&](std::uint32_t v) { u16(v & 0xffff); u16(v >> 16); };
+    const auto bytes = static_cast<std::uint32_t>(pcm.size() * 2);
+    out.insert(out.end(), {'R', 'I', 'F', 'F'});
+    u32(36 + bytes);
+    out.insert(out.end(), {'W', 'A', 'V', 'E', 'f', 'm', 't', ' '});
+    u32(16); u16(1); u16(channels); u32(rate); u32(rate * channels * 2); u16(channels * 2); u16(16);
+    out.insert(out.end(), {'d', 'a', 't', 'a'});
+    u32(bytes);
+    for (const auto s : pcm) u16(static_cast<std::uint16_t>(s));
+    return out;
+}
+
+// Uploads go through decode_audio_mono. A FLAC and the WAV holding the same
+// samples have to come out of it identical.
+void same_upload(const std::vector<std::uint8_t> & flac, const std::vector<std::uint8_t> & wav) {
+    using namespace yue2::audio;
+    assert(std::string(sniff_audio_container(flac.data(), flac.size())) == "flac");
+    assert(std::string(sniff_audio_container(wav.data(), wav.size())) == "wav");
+    const auto a = decode_audio_mono(flac.data(), flac.size());
+    const auto b = decode_audio_mono(wav.data(), wav.size());
+    assert(a.sample_rate == b.sample_rate);
+    assert(a.samples == b.samples);
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char ** argv) {
     std::mt19937 random(1234);
     const std::uint32_t frames = 4096 * 3 + 123;  // a short last block
 
@@ -239,5 +278,18 @@ int main() {
     const auto dual_flac = yue2::server::encode_flac_pcm16(dual, 48000, 2);
     for (const int assignment : decode(dual_flac).assignments) assert(assignment != 0b0001);
     round_trip(dual, 2);
+
+    // Our own output through the upload decoder.
+    same_upload(yue2::server::encode_flac_pcm16(walk, 48000, 2), wav_pcm16(walk, 48000, 2));
+    same_upload(yue2::server::encode_flac_pcm16(mono, 44100, 1), wav_pcm16(mono, 44100, 1));
+
+    // A third-party FLAC: ffmpeg at compression level 8 writes LPC subframes
+    // and its own block size, as libFLAC-based clients such as JUCE do, and
+    // the fixture WAV holds exactly the same PCM.
+    if (argc >= 3) {
+        same_upload(read_file(argv[1]), read_file(argv[2]));
+    } else {
+        std::fputs("flac_test: no fixtures given, third-party decode not checked\n", stderr);
+    }
     return 0;
 }

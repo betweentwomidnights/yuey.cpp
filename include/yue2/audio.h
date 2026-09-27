@@ -21,6 +21,15 @@ MonoAudio read_wav_mono(const std::filesystem::path & path);
 // Decode a complete RIFF/WAVE payload already owned by a host or HTTP upload.
 MonoAudio decode_wav_mono(const std::uint8_t * bytes, std::size_t byte_count);
 
+// The container of an upload, by its magic bytes: "flac" or "wav". Anything
+// that is not FLAC is treated as WAV, and the WAV decoder says if it is not.
+const char * sniff_audio_container(const std::uint8_t * bytes, std::size_t byte_count);
+
+// Decode an uploaded WAV or FLAC payload, whichever its magic bytes say, and
+// average the channels exactly as decode_wav_mono does: a 16-bit FLAC decodes
+// to the same samples its WAV would.
+MonoAudio decode_audio_mono(const std::uint8_t * bytes, std::size_t byte_count);
+
 std::vector<float> resample_sinc(
     const std::vector<float> & input,
     std::int32_t input_rate,

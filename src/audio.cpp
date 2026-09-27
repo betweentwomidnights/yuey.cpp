@@ -1,5 +1,10 @@
 #include "yue2/audio.h"
 
+#define DR_FLAC_IMPLEMENTATION
+#define DR_FLAC_NO_STDIO
+#define DR_FLAC_NO_OGG
+#include "dr_flac.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -145,6 +150,50 @@ MonoAudio decode_wav_mono(const std::uint8_t * bytes, std::size_t byte_count) {
         }
         result.samples[frame] = static_cast<float>(mixed / channels);
     }
+    if (result.samples.size() < 1025) {
+        throw std::runtime_error(std::string(label) + ": audio must contain at least 1025 samples");
+    }
+    return result;
+}
+
+const char * sniff_audio_container(const std::uint8_t * bytes, std::size_t byte_count) {
+    return bytes && byte_count >= 4 && std::memcmp(bytes, "fLaC", 4) == 0 ? "flac" : "wav";
+}
+
+MonoAudio decode_audio_mono(const std::uint8_t * bytes, std::size_t byte_count) {
+    if (std::strcmp(sniff_audio_container(bytes, byte_count), "flac") != 0) {
+        return decode_wav_mono(bytes, byte_count);
+    }
+    constexpr const char * label = "memory FLAC";
+    unsigned int channels = 0;
+    unsigned int rate = 0;
+    drflac_uint64 frames = 0;
+    float * decoded = drflac_open_memory_and_read_pcm_frames_f32(
+        bytes, byte_count, &channels, &rate, &frames, nullptr);
+    if (!decoded) throw std::runtime_error(std::string(label) + " could not be decoded");
+    MonoAudio result;
+    try {
+        if (channels == 0 || rate == 0 || frames == 0) {
+            throw std::runtime_error(std::string(label) + " has no audio");
+        }
+        result.sample_rate = static_cast<std::int32_t>(rate);
+        result.samples.resize(static_cast<std::size_t>(frames));
+        for (std::size_t frame = 0; frame < result.samples.size(); ++frame) {
+            double mixed = 0.0;
+            for (unsigned int channel = 0; channel < channels; ++channel) {
+                const double value = decoded[frame * channels + channel];
+                if (!std::isfinite(value)) {
+                    throw std::runtime_error(std::string(label) + ": non-finite audio sample");
+                }
+                mixed += value;
+            }
+            result.samples[frame] = static_cast<float>(mixed / channels);
+        }
+    } catch (...) {
+        drflac_free(decoded, nullptr);
+        throw;
+    }
+    drflac_free(decoded, nullptr);
     if (result.samples.size() < 1025) {
         throw std::runtime_error(std::string(label) + ": audio must contain at least 1025 samples");
     }
