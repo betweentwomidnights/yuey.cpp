@@ -15,8 +15,18 @@ enum class TranscriptionPreset {
     paper,
 };
 
+// What to do with audio before the first downbeat in the song's main meter.
+// `keep` writes it as a pickup, or as whatever short bar the tracker labeled it
+// (a 7/8 bar of lead-in ahead of a 4/4 song). `drop` starts the score on that
+// downbeat: a cover then opens on beat one, instead of with a short bar of rests
+// where the tracker had not locked on yet. Its notes go; its key, chord and section
+// label carry to bar one. Keep it wherever the score has to stay on the
+// source audio's timeline.
+enum class Pickup { keep, drop };
+
 struct TranscriptionOptions {
     bool melody_only = true;
+    Pickup pickup = Pickup::keep;
     TranscriptionPreset preset = TranscriptionPreset::standard;
     float window_seconds = 300.0F;
     float overlap_seconds = 200.0F;
@@ -121,7 +131,8 @@ std::vector<ScoreEvent> decode_sheetsage2_tokens(
 // dialect. Melody-only omits chord symbols but retains both melody voices.
 std::string serialize_sheetsage2_abc(
     const std::vector<ScoreEvent> & events,
-    bool melody_only = true);
+    bool melody_only = true,
+    Pickup pickup = Pickup::keep);
 
 // Serialize a DAW-oriented format-1 Standard MIDI File. The conductor track
 // carries inferred tempo, meter, key, and structure markers; active vocal and
@@ -130,14 +141,16 @@ std::string serialize_sheetsage2_abc(
 std::vector<std::uint8_t> serialize_sheetsage2_midi(
     const std::vector<ScoreEvent> & events,
     bool melody_only = false,
-    double duration_seconds = 0.0);
+    double duration_seconds = 0.0,
+    Pickup pickup = Pickup::keep);
 
 // Build the combined transcription MIDI and the same component MIDI set as
 // the released SheetSage2 exporter.
 TranscriptionMidiExports serialize_sheetsage2_midis(
     const std::vector<ScoreEvent> & events,
     bool melody_only = false,
-    double duration_seconds = 0.0);
+    double duration_seconds = 0.0,
+    Pickup pickup = Pickup::keep);
 
 // Convert YuE2's constrained native two-lane ABC score into the same combined
 // and component Standard MIDI files returned by transcription. This performs

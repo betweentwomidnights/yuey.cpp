@@ -935,6 +935,17 @@ private:
             }
             if (job->input.samples.empty()) throw std::invalid_argument("audio_data contains no samples");
             job->transcription.melody_only = melody_only(first_string(root, {"transcription_mode", "mode"}));
+            // A clip sent here nearly always starts on bar one, but SheetSage2's
+            // tracker often finds its first downbeat late, and the lead-in became
+            // a short bar of rests at the start of every render. Covers and
+            // transcriptions drop it; audio continuation keeps it, because its
+            // score has to stay on the source audio's timeline.
+            const auto pickup = json::string(
+                root, "pickup", kind == JobKind::continue_audio ? "keep" : "drop");
+            if (pickup != "keep" && pickup != "drop") {
+                throw std::invalid_argument("pickup must be keep or drop");
+            }
+            job->transcription.pickup = pickup == "drop" ? yue2::Pickup::drop : yue2::Pickup::keep;
         }
         if (kind != JobKind::transcribe) parse_song(root, *job);
 
