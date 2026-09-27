@@ -310,7 +310,11 @@ models directory by default), the server discovers both official optional
 adapters automatically. Explicit flags or environment variables take priority.
 
 - **`audio_format`**: `wav` is 16-bit PCM, which gary4juce reads; `wav_float`
-  keeps the model's float output.
+  keeps the model's float output; `flac` carries the same 16-bit samples
+  losslessly at about 40% of the WAV's size, for clients on a network. A
+  decoder returns exactly the samples `wav` would have held. `/health` and
+  `/props` list the accepted values as `audio_formats`, so a client can ask
+  for FLAC only from a server that answers it.
 
 `/cover` also requires `audio_data`, a base64 WAV of any rate and channel count.
 It accepts `transcription_mode`: `melody` (default) or `full`. A `full`

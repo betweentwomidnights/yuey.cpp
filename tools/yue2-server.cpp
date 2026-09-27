@@ -10,6 +10,7 @@
 #include "yue2/transcription.h"
 
 #include "server/base64.h"
+#include "server/flac.h"
 #include "server/http.h"
 #include "server/json.h"
 #include "server/policy.h"
@@ -546,6 +547,13 @@ bool melody_only(const std::string & value) {
     throw std::invalid_argument("transcription mode must be melody or full");
 }
 
+// The one float-to-16-bit rule, so the WAV and FLAC paths carry identical
+// samples: FLAC decodes to exactly what the WAV would have held.
+std::int16_t pcm16(float sample) {
+    const float clamped = std::isfinite(sample) ? std::clamp(sample, -1.0F, 1.0F) : 0.0F;
+    return static_cast<std::int16_t>(std::lrint(clamped * 32767.0F));
+}
+
 // 16-bit PCM is what the gary4local services return and gary4juce expects.
 std::vector<std::uint8_t> encode_wav_pcm16(
     const std::vector<float> & samples,
@@ -579,13 +587,25 @@ std::vector<std::uint8_t> encode_wav_pcm16(
     u16(16);
     text("data");
     u32(static_cast<std::uint32_t>(data_bytes));
-    for (const float sample : samples) {
-        const float clamped = std::isfinite(sample) ? std::clamp(sample, -1.0F, 1.0F) : 0.0F;
-        const auto value = static_cast<std::int16_t>(std::lrint(clamped * 32767.0F));
-        u16(static_cast<std::uint16_t>(value));
-    }
+    for (const float sample : samples) u16(static_cast<std::uint16_t>(pcm16(sample)));
     return output;
 }
+
+// Lossless and roughly half the size of the WAV, for the network: a finished
+// song is otherwise tens of megabytes of base64 in one poll response.
+std::vector<std::uint8_t> encode_flac_pcm16(
+    const std::vector<float> & samples,
+    std::int32_t sample_rate,
+    std::int32_t channels) {
+    std::vector<std::int16_t> pcm(samples.size());
+    std::transform(samples.begin(), samples.end(), pcm.begin(), pcm16);
+    return yue2::server::encode_flac_pcm16(
+        pcm, static_cast<std::uint32_t>(sample_rate), static_cast<std::uint32_t>(channels));
+}
+
+// What `audio_format` accepts, so a client can ask for FLAC only from a server
+// that answers it; older servers reject the value outright.
+const std::string kAudioFormatsJson = "\"audio_formats\":[\"wav\",\"wav_float\",\"flac\"]";
 
 HttpResponse failure(int status, const std::string & message) {
     return yue2::server::json_response(
@@ -609,7 +629,7 @@ struct Job {
     yue2::TranscriptionOptions transcription;
     std::uint32_t continuation_bars = 0;
     bool keep_models = false;
-    bool float_wav = false;
+    std::string audio_format = "wav";
     std::string encoding = "auto";
     std::atomic<bool> cancel{false};
 
@@ -785,7 +805,7 @@ private:
             "," + yue2::server::generation_policy_json(generation_policy()) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
             ",\"generation\":" + generation + ",\"transcription\":" + transcription +
-            ",\"continuation\":" + continuation + "}");
+            ",\"continuation\":" + continuation + "," + kAudioFormatsJson + "}");
     }
 
     HttpResponse props() {
@@ -818,7 +838,7 @@ private:
             "\"instrumental_best_effort\":" + json_bool(configuration_.instrumental_loras.empty()) + ","
             "\"vocal_rest_experiment\":true,"
             "\"score_editing\":true,\"score_aligned_generation\":true,"
-            "\"model_downloads\":false},\"devices\":[";
+            "\"model_downloads\":false," + kAudioFormatsJson + "},\"devices\":[";
         for (std::size_t index = 0; index < devices.size(); ++index) {
             const auto & device = devices[index];
             if (index) body.push_back(',');
@@ -1100,10 +1120,10 @@ private:
         run.flow.ode_steps = json::u32(root, "ode_steps", run.flow.ode_steps);
 
         const auto format = json::string(root, "audio_format", "wav");
-        if (format != "wav" && format != "wav_float") {
-            throw std::invalid_argument("audio_format must be wav or wav_float");
+        if (format != "wav" && format != "wav_float" && format != "flac") {
+            throw std::invalid_argument("audio_format must be wav, wav_float, or flac");
         }
-        job.float_wav = format == "wav_float";
+        job.audio_format = format;
         job.loras = parse_loras(root);
         if (job.kind == JobKind::continue_audio) {
             if (!json::boolean(root, "use_continuation_adapter", true)) {
@@ -1479,10 +1499,13 @@ private:
             generator_.reset();
             generator_loaded_.store(false);
         }
-        const auto wav = job.float_wav
-            ? yue2::audio::encode_wav_float(song.audio.interleaved_samples, song.audio.sample_rate, song.audio.channels)
-            : encode_wav_pcm16(song.audio.interleaved_samples, song.audio.sample_rate, song.audio.channels);
-        auto encoded = yue2::server::base64_encode(wav.data(), wav.size());
+        const auto & audio = song.audio;
+        const auto bytes = job.audio_format == "flac"
+            ? encode_flac_pcm16(audio.interleaved_samples, audio.sample_rate, audio.channels)
+            : job.audio_format == "wav_float"
+                ? yue2::audio::encode_wav_float(audio.interleaved_samples, audio.sample_rate, audio.channels)
+                : encode_wav_pcm16(audio.interleaved_samples, audio.sample_rate, audio.channels);
+        auto encoded = yue2::server::base64_encode(bytes.data(), bytes.size());
 
         std::lock_guard<std::mutex> lock(jobs_mutex_);
         job.audio_data = std::move(encoded);

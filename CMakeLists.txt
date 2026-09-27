@@ -19,6 +19,7 @@ option(YUE2_BUILD_SHARED "Build the stable C ABI shared library" ON)
 if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
     add_library(yue2-server-support STATIC
         tools/server/base64.cpp
+        tools/server/flac.cpp
         tools/server/http.cpp
         tools/server/json.cpp
         tools/server/multipart.cpp
@@ -220,6 +221,10 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-server-support-test PRIVATE yue2-server-support)
     yue2_enable_test_assertions(yue2-server-support-test)
     add_test(NAME yue2-server-support-test COMMAND yue2-server-support-test)
+    add_executable(yue2-flac-test tests/flac_test.cpp)
+    target_link_libraries(yue2-flac-test PRIVATE yue2-server-support)
+    yue2_enable_test_assertions(yue2-flac-test)
+    add_test(NAME yue2-flac-test COMMAND yue2-flac-test)
 
     add_executable(yue2-runtime-info-test tests/runtime_info_test.cpp)
     target_link_libraries(yue2-runtime-info-test PRIVATE yue2)
