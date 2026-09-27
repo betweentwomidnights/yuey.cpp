@@ -72,6 +72,7 @@ add_library(yue2 STATIC
     src/audio.cpp
     src/generation.cpp
     src/generation_pipeline.cpp
+    src/instrumental_transfer.cpp
     src/lora.cpp
     src/mert2_encoder.cpp
     src/mert2_frontend.cpp
@@ -238,6 +239,11 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-runtime-info-test PRIVATE yue2)
     yue2_enable_test_assertions(yue2-runtime-info-test)
     add_test(NAME yue2-runtime-info-test COMMAND yue2-runtime-info-test)
+
+    add_executable(yue2-instrumental-transfer-test tests/instrumental_transfer_test.cpp)
+    target_link_libraries(yue2-instrumental-transfer-test PRIVATE yue2)
+    yue2_enable_test_assertions(yue2-instrumental-transfer-test)
+    add_test(NAME yue2-instrumental-transfer-test COMMAND yue2-instrumental-transfer-test)
 
     add_executable(yue2-planning-header-test tests/planning_header_test.cpp)
     target_link_libraries(yue2-planning-header-test PRIVATE yue2)

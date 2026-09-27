@@ -383,7 +383,19 @@ public:
                 result.abc_token_ids = tokenizer.encode(result.abc);
             }
         }
-        if (effective.experimental_vocal_rest || effective.instrumental) {
+        if (effective.instrumental &&
+                effective.instrumental_method == InstrumentalMethod::transfer) {
+            try {
+                result.abc = make_instrumental_transfer_abc(result.abc);
+            } catch (const std::exception & error) {
+                // A score the transfer cannot rewrite still renders with the
+                // melody rested, which is what instrumental meant before.
+                std::fprintf(stderr, "[yue2] melody transfer failed, resting Vocal instead: %s\n",
+                             error.what());
+                result.abc = make_vocal_rest_abc(result.abc);
+            }
+            result.abc_token_ids = tokenizer.encode(result.abc);
+        } else if (effective.experimental_vocal_rest || effective.instrumental) {
             result.abc = make_vocal_rest_abc(result.abc);
             result.abc_token_ids = tokenizer.encode(result.abc);
         }

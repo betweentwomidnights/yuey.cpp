@@ -211,6 +211,7 @@ dragging even when the user does not want generated audio.
   "lyrics": "[Verse]\n...\n[Chorus]\n...",
   "instrumental": false,
   "use_instrumental_adapter": true,
+  "instrumental_method": "transfer",
   "experimental_vocal_rest": false,
   "encoding": "Q4_K_M",
   "planning": {"bpm": 95, "key": "C# minor", "meter_numerator": 4, "meter_denominator": 4},
@@ -234,10 +235,21 @@ dragging even when the user does not want generated audio.
   may still occur, and completed responses include a machine-readable warning.
   It requires empty `lyrics` and symbolic mode `melody` or `full`. It adds
   explicit no-vocal style conditioning, builds empty lyric
-  sections in the score's section order, and replaces Vocal notes with
-  duration-equivalent rests before semantic generation. For a newly planned
-  song it seeds a conventional intro/verse/chorus form, then rebuilds the
-  sections from the completed score.
+  sections in the score's section order, and takes the melody off the Vocal
+  lane before semantic generation (see `instrumental_method`). For a newly
+  planned song it seeds a conventional intro/verse/chorus form, then rebuilds
+  the sections from the completed score.
+- **`instrumental_method`** decides what an instrumental request does with the
+  Vocal lane's notes, planned or transcribed. `transfer`, the default, is
+  upstream YuE2's method: the notes move into Ins, so the melody is still
+  played, by an instrument. Where a moved note overlaps an Ins note the moved
+  note wins and the Ins note is trimmed around it; Vocal keeps its chord
+  symbols and nothing else. Bars with no Vocal notes keep their exact text.
+  `rest` replaces the notes with rests and leaves Ins as it was, which is how
+  instrumental worked before and usually gives a sparser piece. A score the
+  transfer cannot rewrite falls back to `rest` and says so in the server log.
+  It applies whether or not the instrumental adapter is in use. `/health` lists
+  the accepted values under `capabilities.instrumental_methods`.
 - **`experimental_vocal_rest`** is a diagnostic, not an instrumental mode. It
   requires empty `lyrics` plus `symbolic_mode: melody` or `full`. After planning
   or accepting an external score, it replaces Vocal notes with
@@ -329,8 +341,9 @@ stay on the source's timeline. On a 52 s clip that opened with a 7/8 lead-in,
 `drop` gave 26 bars of 4/4 lasting 52 s with the melody on the first
 downbeat, where `keep` gave 27 bars, 54 s, and a bar of rests first. `/cover`
 rejects `abc`; the score comes from the audio. Set `instrumental: true` for an
-instrumental-source remix: the server rests SheetSage2's Vocal lane and uses
-the same empty lyric-section/no-vocal conditioning as instrumental generation.
+instrumental-source remix: the transcribed vocal melody moves to the Ins lane
+(or is rested, with `instrumental_method: "rest"`), with the same empty
+lyric-section/no-vocal conditioning as instrumental generation.
 This flag defaults to `false` at the API boundary so vocal covers are not
 silently stripped. The bundled UI exposes a separate, default-on **keep
 instrumental** control for remixes; it never borrows state from the Create tab.
