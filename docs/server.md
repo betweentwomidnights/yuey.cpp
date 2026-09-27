@@ -274,7 +274,9 @@ dragging even when the user does not want generated audio.
   fields to a trusted header builder rather than assemble arbitrary ABC.
 - **`planning`** is that trusted typed interface. It applies to `/plan` and `/generate`
   only and requires `bpm`; meter defaults to 4/4. A major/minor `key` locks the
-  key too; leave it empty and the header stops after the voices, so the model
+  key too, in either spelling (`"A# major"` and `"Bb major"` are the same); the
+  header writes the spelling SheetSage2's scores use, so the model sees `K:Bb`
+  and `K:C#m`, never `K:A#`. Leave it empty and the header stops after the voices, so the model
   writes its own `K:` line and opening section. In 24 test plans it wrote a
   valid key every time. The server validates the values and constructs the
   proven two-voice planning prefix before sampling. It is mutually exclusive

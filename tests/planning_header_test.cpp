@@ -22,15 +22,35 @@ bool rejected(const yue2::PlanningHeader & header) {
 int main() {
     assert(yue2::normalize_abc_key("C# minor") == "C#m");
     assert(yue2::normalize_abc_key(" c#:MINOR ") == "C#m");
-    // Flats are accepted but never returned: the plugin, the web UI and this
-    // API all name pitches with sharps, and Db and C# are the same key.
-    assert(yue2::normalize_abc_key("Db major") == "C#");
-    assert(yue2::normalize_abc_key("Eb minor") == "D#m");
-    assert(yue2::normalize_abc_key("Bb major") == "A#");
+    // Either spelling goes in; the key SheetSage2's scores write comes out.
+    // The plugin and the web UI name pitches with sharps, and K:A# is not a
+    // key any score uses.
+    assert(yue2::normalize_abc_key("Db major") == "Db");
+    assert(yue2::normalize_abc_key("C# major") == "Db");
+    assert(yue2::normalize_abc_key("D# major") == "Eb");
+    assert(yue2::normalize_abc_key("G# major") == "Ab");
+    assert(yue2::normalize_abc_key("A# major") == "Bb");
+    assert(yue2::normalize_abc_key("Bb major") == "Bb");
+    assert(yue2::normalize_abc_key("D# minor") == "Ebm");
+    assert(yue2::normalize_abc_key("Eb minor") == "Ebm");
+    assert(yue2::normalize_abc_key("A# minor") == "Bbm");
+    assert(yue2::normalize_abc_key("Db minor") == "C#m");
+    assert(yue2::normalize_abc_key("Ab minor") == "G#m");
     assert(yue2::normalize_abc_key("Cb major") == "B");
     assert(yue2::normalize_abc_key("Fb minor") == "Em");
+    assert(yue2::normalize_abc_key("E# major") == "F");
+    assert(yue2::normalize_abc_key("bb major") == "Bb");
+    assert(yue2::normalize_abc_key("b minor") == "Bm");
     assert(yue2::normalize_abc_key("Am") == "Am");
-    assert(yue2::normalize_abc_key("F#maj") == "F#");
+    assert(yue2::normalize_abc_key("F#maj") == "Gb");
+    assert(yue2::normalize_abc_key("F# minor") == "F#m");
+    // Whatever the picker sends, no major key comes back sharp.
+    for (const char * root : {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}) {
+        for (const char * mode : {" major", " minor"}) {
+            const auto key = yue2::normalize_abc_key(std::string(root) + mode);
+            assert(key.find('#') == std::string::npos || key.back() == 'm');
+        }
+    }
 
     const auto prefix = yue2::make_planning_abc_prefix({95, 4, 4, "C# minor"});
     assert(prefix ==
