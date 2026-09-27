@@ -62,6 +62,14 @@ std::string make_planning_abc_prefix(const PlanningHeader & header);
 // Vocal/Ins pair.
 std::string make_vocal_rest_abc(const std::string & abc);
 
+// Converts the same dialect into upstream YuE2's instrumental score: Vocal
+// notes move into Ins, and Vocal keeps only rests and its chord symbols. Where
+// a moved note overlaps an Ins note, the Vocal note wins and the Ins note is
+// trimmed around it. Bars nothing changes in keep their exact text, so a score
+// with no Vocal notes comes back unchanged. Throws when the score does not
+// parse or the result would not render.
+std::string make_instrumental_transfer_abc(const std::string & abc);
+
 // Builds the empty lyric-section sequence used by YuE2 for intentional
 // instrumental rendering. Section markers are read from native ABC comments
 // such as "% intro" and "% chorus" and retained in score order. A score
@@ -122,6 +130,12 @@ std::string fit_natural_plan_to_ceiling(
     std::uint32_t outro_bars = 4,
     std::uint32_t retained_bars = 0);
 
+// What an instrumental request does with the planned melody before audio.
+// `transfer` moves it to the instrument lane, as upstream YuE2 does, so the
+// tune is still played. `rest` silences it and leaves only what Ins already
+// had, which is the older behavior and usually a sparser piece.
+enum class InstrumentalMethod { transfer, rest };
+
 struct SongRequest {
     std::string style;
     std::string lyrics;
@@ -146,6 +160,7 @@ struct SongRequest {
     // explicit empty section scaffold, adds no-vocal style conditioning, and
     // rests Vocal before semantic inference.
     bool instrumental = false;
+    InstrumentalMethod instrumental_method = InstrumentalMethod::transfer;
     // Zero retains the complete planned/supplied score. With outro ending,
     // the completed plan is fitted to this exact number of bars before audio.
     std::uint32_t target_bars = 0;

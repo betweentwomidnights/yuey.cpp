@@ -43,6 +43,7 @@ void usage(const char * argv0) {
         << "  --duration/--seconds N  Deprecated aliases for --max-seconds\n"
         << "  --lyrics TEXT | --lyrics-file PATH  Optional vocal lyrics\n"
         << "  --instrumental        Best-effort instrumental; vocal material may occur\n"
+        << "  --instrumental-method M  transfer (default) moves the melody to Ins; rest silences it\n"
         << "  --experimental-vocal-rest  Rest Vocal without changing Ins; not an instrumental mode\n"
         << "  --symbolic MODE       off, melody, or full (default full)\n"
         << "  --abc PATH            Use an external ABC score instead of planning one\n"
@@ -332,6 +333,14 @@ int main(int argc, char ** argv) {
             throw std::runtime_error("--lyrics and --lyrics-file are mutually exclusive");
         }
         request.instrumental = has(argc, argv, "--instrumental");
+        const auto method = value_after(argc, argv, "--instrumental-method", false);
+        if (!method.empty()) {
+            if (method != "transfer" && method != "rest") {
+                throw std::runtime_error("--instrumental-method must be transfer or rest");
+            }
+            request.instrumental_method = method == "rest"
+                ? yue2::InstrumentalMethod::rest : yue2::InstrumentalMethod::transfer;
+        }
         const auto bars = value_after(argc, argv, "--bars", false);
         if (!bars.empty()) request.target_bars = parse_u32(bars, "--bars");
         const auto ending = value_after(argc, argv, "--ending", false);

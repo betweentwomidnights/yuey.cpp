@@ -839,6 +839,7 @@ private:
             "\"continuation_adapter\":" + json_bool(!configuration_.continuation_loras.empty()) + ","
             "\"instrumental_best_effort\":" + json_bool(configuration_.instrumental_loras.empty()) + ","
             "\"vocal_rest_experiment\":true,"
+            "\"instrumental_methods\":[\"transfer\",\"rest\"],"
             "\"score_editing\":true,\"score_aligned_generation\":true,"
             "\"model_downloads\":false," + kAudioFormatsJson + "},\"devices\":[";
         for (std::size_t index = 0; index < devices.size(); ++index) {
@@ -978,6 +979,12 @@ private:
         song.lyrics = json::string(root, "lyrics");
         song.instrumental = json::boolean(root, "instrumental", false);
         song.experimental_vocal_rest = json::boolean(root, "experimental_vocal_rest", false);
+        const auto method = json::string(root, "instrumental_method", "transfer");
+        if (method != "transfer" && method != "rest") {
+            throw std::invalid_argument("instrumental_method must be transfer or rest");
+        }
+        song.instrumental_method = method == "rest"
+            ? yue2::InstrumentalMethod::rest : yue2::InstrumentalMethod::transfer;
         song.target_bars = json::u32(root, "target_bars", 0);
         if (job.kind == JobKind::continue_audio) {
             job.continuation_bars = json::u32(root, "continuation_bars", 0);
