@@ -519,24 +519,14 @@ std::string normalize_abc_key(const std::string & input) {
     if (std::toupper(root) < 'A' || std::toupper(root) > 'G') {
         throw std::invalid_argument("planning key must start with A through G");
     }
-    std::string output(1, static_cast<char>(std::toupper(root)));
+    static const char * const naturals = "C D EF G A B";
+    int pitch_class = 0;
+    while (naturals[pitch_class] != std::toupper(root)) ++pitch_class;
     std::size_t offset = 1;
     if (offset < value.size() && (value[offset] == '#' || value[offset] == 'b')) {
-        output.push_back(value[offset++]);
+        pitch_class += value[offset++] == '#' ? 1 : -1;
     }
-    // Callers name pitches with sharps everywhere, so a flat spelling is
-    // accepted but not preserved: Eb and D# are the same key and only one of
-    // them should ever come back out of this API.
-    if (output.size() == 2 && output[1] == 'b') {
-        static const char * const naturals = "C D EF G A B";
-        static const char * const sharps[] = {
-            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        int natural = -1;
-        for (int index = 0; index < 12; ++index) {
-            if (naturals[index] == output[0]) { natural = index; break; }
-        }
-        if (natural >= 0) output = sharps[(natural + 11) % 12];
-    }
+    pitch_class = (pitch_class + 12) % 12;
 
     std::string quality;
     for (; offset < value.size(); ++offset) {
@@ -547,8 +537,17 @@ std::string normalize_abc_key(const std::string & input) {
         }
         quality.push_back(static_cast<char>(std::tolower(c)));
     }
-    if (quality.empty() || quality == "major" || quality == "maj") return output;
-    if (quality == "m" || quality == "minor" || quality == "min") return output + 'm';
+    // Any spelling is accepted, and each key comes back one way: the spelling
+    // SheetSage2's scores use (abc_key in transcription.cpp), which is what the
+    // model learned K: from. Sharps everywhere wrote K:A#, K:D# and K:G#, keys
+    // no score uses; the model never saw them, and the MIDI export, the web
+    // editor and upstream's tools all read them as C major.
+    static const char * const major_keys[] = {
+        "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
+    static const char * const minor_keys[] = {
+        "Cm", "C#m", "Dm", "Ebm", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "Bbm", "Bm" };
+    if (quality.empty() || quality == "major" || quality == "maj") return major_keys[pitch_class];
+    if (quality == "m" || quality == "minor" || quality == "min") return minor_keys[pitch_class];
     throw std::invalid_argument("planning key must use major or minor quality");
 }
 

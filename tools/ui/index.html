@@ -645,8 +645,18 @@
     select.value = value;
     return select;
   }
+  // One K: spelling per key, as SheetSage2 writes it: the picker lists sharps,
+  // but K:A# is not a key any score (or the model) uses.
+  const scoreMajorKeys = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const scoreMinorKeys = ['Cm', 'C#m', 'Dm', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'G#m', 'Am', 'Bbm', 'Bm'];
+  const pickerRoots = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  function rootPitchClass(root) {
+    const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[root[0]];
+    return (base + (root[1] === '#' ? 1 : root[1] === 'b' ? -1 : 0) + 12) % 12;
+  }
   function updateScoreKey() {
-    const value = $('score-key-root').value + $('score-key-mode').value;
+    const pitchClass = rootPitchClass($('score-key-root').value);
+    const value = ($('score-key-mode').value === 'm' ? scoreMinorKeys : scoreMajorKeys)[pitchClass];
     const text = $('abc').value, match = text.match(/^K:\s*\S+.*$/m);
     if (match) replaceScore(match.index, match.index + match[0].length, `K:${value}`, []);
   }
@@ -672,7 +682,7 @@
     const notes = score.notes.filter(n => lane === 'all' || n.voice === lane);
     const keyParts = score.key.match(/^([A-G](?:#|b)?)(m)?$/);
     if (keyParts && chordRoots.includes(keyParts[1])) {
-      $('score-key-root').value = keyParts[1]; $('score-key-mode').value = keyParts[2] || '';
+      $('score-key-root').value = pickerRoots[rootPitchClass(keyParts[1])]; $('score-key-mode').value = keyParts[2] || '';
     }
     updateScoreMeta(score);
     if (!score.bars) { shell.innerHTML = '<div class="roll-empty">this score has no complete bars.</div>'; return; }
