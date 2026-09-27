@@ -419,12 +419,18 @@ ggml_tensor * cached_decoder_layer(
     const auto total_tokens = cached_tokens + value->ne[1];
     const std::size_t row_bytes = 64 * ggml_type_size(GGML_TYPE_F32);
     const std::size_t head_stride = row_bytes * static_cast<std::size_t>(cache.max_tokens);
-    auto * all_key = ggml_view_3d(
+    // Copied out of the cache before attention. Read in place, each head's rows
+    // sit a whole cache apart, and ggml's Vulkan backend computes this
+    // attention wrongly from such a view: the decoder drifted after a bar or
+    // two into one repeated note, so every transcription on Vulkan (and so on
+    // every AMD card) came back as garbage. CUDA and CPU were right either way,
+    // and the copy is a few hundred KB per layer.
+    auto * all_key = ggml_cont(context, ggml_view_3d(
         context, cache.self_key[static_cast<std::size_t>(layer)], 64, total_tokens, 8,
-        row_bytes, head_stride, 0);
-    auto * all_value = ggml_view_3d(
+        row_bytes, head_stride, 0));
+    auto * all_value = ggml_cont(context, ggml_view_3d(
         context, cache.self_value[static_cast<std::size_t>(layer)], 64, total_tokens, 8,
-        row_bytes, head_stride, 0);
+        row_bytes, head_stride, 0));
     value = ggml_add(context, value, cached_attention_output(
         context, model, value, all_key, all_value, self_prefix, causal_mask, false));
     value = layer_norm(
