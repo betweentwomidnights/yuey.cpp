@@ -431,9 +431,8 @@ bool valid_meter(std::int32_t numerator, std::int32_t denominator) {
     return numerator > 0 && denominator > 0 && (denominator & (denominator - 1)) == 0;
 }
 
-std::vector<AbcMeasure> infer_abc_measures(
+std::map<std::int64_t, std::pair<std::int32_t, std::int32_t>> detect_downbeats(
     const std::vector<ScoreEvent> & events,
-    std::int64_t content_steps,
     std::int32_t fallback_numerator,
     std::int32_t fallback_denominator) {
     std::vector<const ScoreEvent *> ordered;
@@ -466,6 +465,15 @@ std::vector<AbcMeasure> infer_abc_measures(
         }
         begin = end;
     }
+    return downbeats;
+}
+
+std::vector<AbcMeasure> infer_abc_measures(
+    const std::vector<ScoreEvent> & events,
+    std::int64_t content_steps,
+    std::int32_t fallback_numerator,
+    std::int32_t fallback_denominator) {
+    const auto downbeats = detect_downbeats(events, fallback_numerator, fallback_denominator);
 
     std::vector<AbcMeasure> result;
     const auto append_span = [&](std::int64_t start,
@@ -663,6 +671,94 @@ std::string sanitize_structure(const std::string & label) {
     return clean;
 }
 
+// Starts the score on the first downbeat of the song's main meter. On a clip
+// that begins on bar one, the tracker often locks on a little late, and what
+// comes before that downbeat is lead-in, not music, so a cover would otherwise
+// open with a short bar of rests. Notes before the downbeat go; key, chord,
+// section and meter information is kept at the new bar one. Event times are
+// untouched, so the tempo still reads from the same anchors.
+std::vector<ScoreEvent> drop_leading_pickup(const std::vector<ScoreEvent> & events) {
+    const auto downbeats = detect_downbeats(events, 4, 4);
+    if (downbeats.empty()) return events;
+
+    // The lead-in shows up two ways: the first downbeat comes after the first
+    // step, or the tracker opens with a short bar in some other meter (a 7/8
+    // bar of lead-in ahead of a 4/4 song, written as a 4/8 pickup). Either
+    // way the score starts on the first downbeat in the song's main meter:
+    // the one whose bars cover the most steps.
+    std::map<std::pair<std::int32_t, std::int32_t>, std::int64_t> coverage;
+    for (auto it = downbeats.begin(); it != downbeats.end(); ++it) {
+        const auto next = std::next(it);
+        if (next != downbeats.end()) coverage[it->second] += next->first - it->first;
+    }
+    if (coverage.empty()) return events;
+    auto main = coverage.begin();
+    for (auto it = coverage.begin(); it != coverage.end(); ++it) {
+        if (it->second > main->second) main = it;
+    }
+    std::int64_t first = 0;
+    for (const auto & [position, meter] : downbeats) {
+        if (meter == main->first) {
+            first = position;
+            break;
+        }
+    }
+    if (first <= 0) return events;
+
+    std::vector<ScoreEvent> result;
+    result.reserve(events.size());
+    for (const auto & event : events) {
+        auto copy = event;
+        if (copy.subbeat < first) {
+            copy.notes.clear();
+            copy.subbeat = first;
+            // Its timing belongs to the lead-in, and its meter or beat position
+            // would relabel bar one, so only what it says about the music stays.
+            copy.has_timestamp = false;
+            copy.meter_numerator = 0;
+            copy.meter_denominator = 0;
+            copy.eighth_position = -1;
+            if (copy.key.empty() && copy.chord.empty() && copy.structure.empty()) continue;
+        }
+        copy.subbeat -= first;
+        copy.source_subbeat -= first;
+        result.push_back(std::move(copy));
+    }
+    return result;
+}
+
+// The meter denominator that covers the most of the score. A step is a
+// quarter of the meter's beat, so turning seconds per step into a quarter-note
+// tempo needs the denominator of the bars the timing comes from: the body of
+// the song. SheetSage2 often opens with a pickup in 4/8 or 1/8, and converting
+// with that first denominator halved Q:, so every render of the transcription
+// played the melody at half speed for twice the source's length.
+std::int32_t governing_denominator(const std::vector<ScoreEvent> & events) {
+    std::vector<std::pair<std::int64_t, std::int32_t>> changes;
+    std::int64_t end = 0;
+    for (const auto & event : events) {
+        const auto at = std::max<std::int64_t>(0, event.subbeat);
+        end = std::max(end, at + 1);
+        for (const auto & note : event.notes) end = std::max(end, at + std::max(1, note.duration_steps));
+        if (valid_meter(event.meter_numerator, event.meter_denominator)) {
+            changes.emplace_back(at, event.meter_denominator);
+        }
+    }
+    if (changes.empty()) return 4;
+    std::stable_sort(changes.begin(), changes.end(),
+                     [](const auto & a, const auto & b) { return a.first < b.first; });
+    std::map<std::int32_t, std::int64_t> steps;
+    for (std::size_t i = 0; i < changes.size(); ++i) {
+        const auto until = i + 1 < changes.size() ? changes[i + 1].first : end;
+        steps[changes[i].second] += std::max<std::int64_t>(0, until - changes[i].first);
+    }
+    auto best = steps.begin();
+    for (auto it = steps.begin(); it != steps.end(); ++it) {
+        if (it->second > best->second) best = it;
+    }
+    return best->first;
+}
+
 double infer_quarter_bpm(
     const std::vector<ScoreEvent> & events,
     std::int32_t denominator) {
@@ -699,7 +795,7 @@ std::string make_abc(const std::vector<ScoreEvent> & events, bool melody_only) {
         const auto candidate = abc_key(event.key);
         if (!candidate.empty()) { key = candidate; break; }
     }
-    const double tempo = infer_quarter_bpm(events, denominator);
+    const double tempo = infer_quarter_bpm(events, governing_denominator(events));
 
     std::int64_t content_steps = 0;
     std::map<std::int64_t, std::string> keys;
@@ -911,7 +1007,7 @@ MidiTimeline make_midi_timeline(
     const std::vector<ScoreEvent> & events,
     double duration_seconds,
     double bpm,
-    std::int32_t first_denominator) {
+    std::int32_t tempo_denominator) {
     std::int32_t numerator = 4;
     std::int32_t denominator = 4;
     bool found_meter = false;
@@ -941,7 +1037,7 @@ MidiTimeline make_midi_timeline(
             }
         }
         double duration_steps_value =
-            duration_seconds * bpm * std::max(1, first_denominator) / 60.0;
+            duration_seconds * bpm * std::max(1, tempo_denominator) / 60.0;
         if (last_anchor && previous_anchor &&
             last_anchor->subbeat > previous_anchor->subbeat &&
             last_anchor->time_seconds > previous_anchor->time_seconds &&
@@ -1051,17 +1147,11 @@ TranscriptionMidiExports make_midis(
     const std::vector<ScoreEvent> & events,
     bool melody_only,
     double duration_seconds) {
-    std::int32_t first_denominator = 4;
-    for (const auto & event : events) {
-        if (valid_meter(event.meter_numerator, event.meter_denominator)) {
-            first_denominator = event.meter_denominator;
-            break;
-        }
-    }
+    const auto denominator = governing_denominator(events);
     const auto bpm = std::max<std::int64_t>(1, std::llround(
-        infer_quarter_bpm(events, first_denominator)));
+        infer_quarter_bpm(events, denominator)));
     const auto timeline = make_midi_timeline(
-        events, duration_seconds, static_cast<double>(bpm), first_denominator);
+        events, duration_seconds, static_cast<double>(bpm), denominator);
     const auto tempo = static_cast<std::uint32_t>(std::clamp<std::int64_t>(
         std::llround(60000000.0 / static_cast<double>(bpm)), 1, 0xffffff));
 
@@ -1201,22 +1291,27 @@ TranscriptionMidiExports make_midis(
 
 std::string serialize_sheetsage2_abc(
     const std::vector<ScoreEvent> & events,
-    bool melody_only) {
-    return make_abc(events, melody_only);
+    bool melody_only,
+    Pickup pickup) {
+    return make_abc(pickup == Pickup::drop ? drop_leading_pickup(events) : events, melody_only);
 }
 
 std::vector<std::uint8_t> serialize_sheetsage2_midi(
     const std::vector<ScoreEvent> & events,
     bool melody_only,
-    double duration_seconds) {
-    return make_midis(events, melody_only, duration_seconds).transcription;
+    double duration_seconds,
+    Pickup pickup) {
+    return make_midis(pickup == Pickup::drop ? drop_leading_pickup(events) : events,
+                      melody_only, duration_seconds).transcription;
 }
 
 TranscriptionMidiExports serialize_sheetsage2_midis(
     const std::vector<ScoreEvent> & events,
     bool melody_only,
-    double duration_seconds) {
-    return make_midis(events, melody_only, duration_seconds);
+    double duration_seconds,
+    Pickup pickup) {
+    return make_midis(pickup == Pickup::drop ? drop_leading_pickup(events) : events,
+                      melody_only, duration_seconds);
 }
 
 std::vector<TranscriptionWindow> make_transcription_window_plan(
@@ -1454,9 +1549,9 @@ TranscriptionResult Transcriber::transcribe_mono(
     }
     if (result.windows.size() == 1) result.tokens = result.windows.front().tokens;
     result.events = std::move(stitched);
-    result.abc = serialize_sheetsage2_abc(result.events, options.melody_only);
+    result.abc = serialize_sheetsage2_abc(result.events, options.melody_only, options.pickup);
     result.midi_exports = serialize_sheetsage2_midis(
-        result.events, options.melody_only, result.duration_seconds);
+        result.events, options.melody_only, result.duration_seconds, options.pickup);
     result.midi = result.midi_exports.transcription;
     if (options.melody_only) {
         result.warnings.push_back(

@@ -315,7 +315,19 @@ adapters automatically. Explicit flags or environment variables take priority.
 `/cover` also requires `audio_data`, a base64 WAV or FLAC of any rate and
 channel count.
 It accepts `transcription_mode`: `melody` (default) or `full`. A `full`
-transcription conditions `symbolic_mode: full` unless overridden. `/cover`
+transcription conditions `symbolic_mode: full` unless overridden.
+
+`pickup` (on `/cover`, `/transcribe` and `/continue`) decides what happens to
+audio before the first downbeat in the song's main meter. SheetSage2's tracker
+often locks on late, or labels the first second or two as a short bar in
+another meter (a 7/8 bar ahead of a 4/4 song), and that lead-in became a half
+bar of rests at the start of every render. `drop`, the default for `/cover`
+and `/transcribe`, starts the score on that downbeat: its notes go, and its
+key, chord and section label carry to bar one. `keep`, the default for
+`/continue`, writes it as before, because an audio continuation's score has to
+stay on the source's timeline. On a 52 s clip that opened with a 7/8 lead-in,
+`drop` gave 26 bars of 4/4 lasting 52 s with the melody on the first
+downbeat, where `keep` gave 27 bars, 54 s, and a bar of rests first. `/cover`
 rejects `abc`; the score comes from the audio. Set `instrumental: true` for an
 instrumental-source remix: the server rests SheetSage2's Vocal lane and uses
 the same empty lyric-section/no-vocal conditioning as instrumental generation.
