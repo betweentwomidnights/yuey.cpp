@@ -111,6 +111,7 @@ cancellation releases the transcriber and generator before the job finishes.
 | `GET` | `/poll_status/<id>` | progress; results on completion; `?consume=1` removes a finished job |
 | `POST` | `/cancel/<id>` | cooperative cancel; a queued job fails immediately as `cancelled` |
 | `POST` | `/unload` | release resident models; `409` while a job runs |
+| `POST` | `/score/transform` | `{abc, op}` → the edited score at once; see [score transforms](#score-transforms) |
 
 Errors are `{success:false, error}` with an HTTP status. Unknown sessions
 return `404`, as in sa3-server.
@@ -454,6 +455,38 @@ file. It also returns `midi_files`, whose base64 values are keyed by
 For generation and continuation, these files are derived from the final ABC
 used for the render—not merely the source transcription—so their bars and notes
 match the completed result.
+
+### Score transforms
+
+`POST /score/transform` applies one quick, deterministic edit to a score, for a
+score editor to offer as buttons before a render. It answers at once: no job,
+no model, and it works while a render is running.
+
+```json
+{"abc": "X:1\n...", "op": "transpose", "semitones": 5}
+```
+
+| `op` | What it does |
+|---|---|
+| `half_time`, `double_time` | Halves or doubles the `Q:` tempo and leaves every note alone, so the same score plays at half or twice the speed. The result must stay within 20-400 bpm. `Q:` takes whole numbers, so half of an odd tempo rounds up, and the response's `note` says so: inside a project at the old tempo, 46 against 45.5 drifts about 1% off the grid. |
+| `transpose` | Moves every note on both lanes by `semitones` (-24 to 24). Unless the shift is whole octaves, the key (header, voice and inline `K:`) and every chord symbol move too, spelled as SheetSage2 spells them: keys as the planning header writes them, chord roots in sharps. A note pushed out of the MIDI range is an error. |
+| `melody_to_instrument` | The instrumental melody transfer: Vocal notes move into Ins, and Vocal keeps its chords over rests. |
+| `swap_lanes` | Exchanges the two lanes' notes, so the instrument part is sung and the melody played. Chord symbols stay on Vocal. |
+| `drop_chords` | Removes every chord symbol and leaves notes and rests where they were, so the model harmonises the melody itself. On a score with no melody it has little to go on: a chordless scaffold comes back as drums over one chord. |
+
+A successful response is `{success, op, changed, bars, bpm, abc}`, plus `note`
+when the edit had to round. A score the edit leaves alone comes back exactly as
+it went in, with `changed:false`; otherwise only bars that change are
+rewritten, and rewritten notes carry explicit accidentals. Every result is
+checked to render before it is returned. A score outside the native dialect,
+or an edit that cannot apply, is a `400` naming the reason. `/health` and
+`/props` list the accepted ops as `score_transforms`, so a client can show only
+the buttons a server supports.
+
+On love_is_blue's transcription, `transpose` by 5 turned `K:Am` into `K:Dm`,
+and the render transcribed back as D minor over Dm, Gm and A#, the source's
+Am, Dm and F moved up a fourth. `half_time` rendered 127 s where the original
+rendered 65 s.
 
 ### Polling
 

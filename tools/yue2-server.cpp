@@ -7,6 +7,7 @@
 #include "yue2/generation_pipeline.h"
 #include "yue2/mert2_encoder.h"
 #include "yue2/runtime_info.h"
+#include "yue2/score_transform.h"
 #include "yue2/transcription.h"
 
 #include "server/base64.h"
@@ -229,7 +230,8 @@ void usage(const char * executable) {
         << "  --props                      Print the GET /props document and exit without serving\n"
         << "  --version                    Print the engine version and exit\n\n"
         << "Routes: GET /, GET /health, GET /props, GET /loras, POST /plan, POST /generate, POST /cover, POST /continue, POST /transcribe,\n"
-        << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload\n";
+        << "        GET /poll_status/<id>[?consume=1], POST /cancel/<id>, POST /unload,\n"
+        << "        POST /score/transform\n";
 }
 
 Configuration parse_configuration(int argc, char ** argv) {
@@ -629,6 +631,12 @@ std::vector<std::uint8_t> encode_flac_pcm16(
 const std::string kAudioFormatsJson =
     "\"audio_formats\":[\"wav\",\"wav_float\",\"flac\",\"auto\"]";
 
+// The ops POST /score/transform takes, so a score editor shows only the
+// buttons this server can apply.
+const std::string kScoreTransformsJson =
+    "\"score_transforms\":[\"half_time\",\"double_time\",\"transpose\","
+    "\"melody_to_instrument\",\"swap_lanes\",\"drop_chords\"]";
+
 HttpResponse failure(int status, const std::string & message) {
     return yue2::server::json_response(
         "{\"success\":false,\"error\":" + json::quote(message) + "}", status);
@@ -754,6 +762,7 @@ public:
 
             if (path == "/transcribe") return post ? submit(request, JobKind::transcribe) : not_allowed();
             if (path == "/unload") return post ? unload() : not_allowed();
+            if (path == "/score/transform") return post ? transform_score(request) : not_allowed();
             if (starts_with(path, "/poll_status/")) {
                 return get ? poll(path.substr(std::strlen("/poll_status/")), request.query) : not_allowed();
             }
@@ -828,7 +837,8 @@ private:
             "," + yue2::server::generation_policy_json(generation_policy()) +
             ",\"busy\":" + json_bool(busy) + ",\"queued\":" + std::to_string(queued) +
             ",\"generation\":" + generation + ",\"transcription\":" + transcription +
-            ",\"continuation\":" + continuation + "," + kAudioFormatsJson + "}");
+            ",\"continuation\":" + continuation + "," + kAudioFormatsJson +
+            "," + kScoreTransformsJson + "}");
     }
 
     HttpResponse props() {
@@ -862,7 +872,8 @@ private:
             "\"vocal_rest_experiment\":true,"
             "\"instrumental_methods\":[\"transfer\",\"rest\"],"
             "\"score_editing\":true,\"score_aligned_generation\":true,"
-            "\"model_downloads\":false," + kAudioFormatsJson + "},\"devices\":[";
+            "\"model_downloads\":false," + kAudioFormatsJson + "," + kScoreTransformsJson +
+            "},\"devices\":[";
         for (std::size_t index = 0; index < devices.size(); ++index) {
             const auto & device = devices[index];
             if (index) body.push_back(',');
@@ -1363,6 +1374,54 @@ private:
         }
         return yue2::server::json_response(
             "{\"success\":true,\"session_id\":" + json::quote(id) + ",\"status\":" + json::quote(job.status) + "}");
+    }
+
+    // A score editor's buttons: text in, text out. No job and no model, so a
+    // client can use it while a render runs.
+    HttpResponse transform_score(const HttpRequest & request) {
+        const auto root = parse_object(request.body);
+        const auto abc = json::string(root, "abc");
+        if (abc.empty()) throw std::invalid_argument("abc is required");
+        const auto op = json::string(root, "op");
+        std::string result;
+        std::string note;
+        if (op == "half_time") {
+            result = yue2::scale_abc_tempo(abc, 0.5);
+            // Q: takes whole numbers, so half of an odd tempo rounds, and inside
+            // a project at the old tempo the render drifts off its grid. Say so.
+            const auto before = yue2::inspect_abc_score(abc).bpm;
+            if (before % 2 != 0) {
+                note = "half of " + std::to_string(before) + " bpm is " + std::to_string(before / 2) +
+                    ".5; ABC tempos are whole numbers, so the score says " +
+                    std::to_string(yue2::inspect_abc_score(result).bpm);
+            }
+        } else if (op == "double_time") {
+            result = yue2::scale_abc_tempo(abc, 2.0);
+        } else if (op == "transpose") {
+            const auto semitones = json::number(root, "semitones", 0.0);
+            if (semitones != std::floor(semitones)) {
+                throw std::invalid_argument("semitones must be a whole number");
+            }
+            result = yue2::transpose_abc(abc, static_cast<int>(semitones));
+        } else if (op == "melody_to_instrument") {
+            result = yue2::make_instrumental_transfer_abc(abc);
+        } else if (op == "swap_lanes") {
+            result = yue2::swap_abc_lanes(abc);
+        } else if (op == "drop_chords") {
+            result = yue2::drop_abc_chords(abc);
+        } else {
+            throw std::invalid_argument(
+                "op must be half_time, double_time, transpose, melody_to_instrument, "
+                "swap_lanes, or drop_chords");
+        }
+        const auto score = yue2::inspect_abc_score(result);
+        return yue2::server::json_response(
+            "{\"success\":true,\"op\":" + json::quote(op) +
+            ",\"changed\":" + json_bool(result != abc) +
+            ",\"bars\":" + std::to_string(score.bars) +
+            ",\"bpm\":" + std::to_string(score.bpm) +
+            (note.empty() ? std::string() : ",\"note\":" + json::quote(note)) +
+            ",\"abc\":" + json::quote(result) + "}");
     }
 
     HttpResponse unload() {
