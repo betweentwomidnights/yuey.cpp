@@ -71,6 +71,7 @@ add_library(yue2 STATIC
     src/autoregressive.cpp
     src/audio.cpp
     src/generation.cpp
+    src/abc_score.cpp
     src/generation_pipeline.cpp
     src/instrumental_transfer.cpp
     src/lora.cpp
@@ -79,6 +80,7 @@ add_library(yue2 STATIC
     src/quantize.cpp
     src/runtime_info.cpp
     src/score_midi.cpp
+    src/score_transform.cpp
     src/sheetsage2_tokens.cpp
     src/tokenizer.cpp
     src/transcription.cpp
@@ -244,6 +246,11 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-instrumental-transfer-test PRIVATE yue2)
     yue2_enable_test_assertions(yue2-instrumental-transfer-test)
     add_test(NAME yue2-instrumental-transfer-test COMMAND yue2-instrumental-transfer-test)
+
+    add_executable(yue2-score-transform-test tests/score_transform_test.cpp)
+    target_link_libraries(yue2-score-transform-test PRIVATE yue2)
+    yue2_enable_test_assertions(yue2-score-transform-test)
+    add_test(NAME yue2-score-transform-test COMMAND yue2-score-transform-test)
 
     add_executable(yue2-planning-header-test tests/planning_header_test.cpp)
     target_link_libraries(yue2-planning-header-test PRIVATE yue2)
