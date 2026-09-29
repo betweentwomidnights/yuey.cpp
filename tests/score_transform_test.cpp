@@ -93,5 +93,41 @@ int main() {
     assert(yue2::drop_abc_chords(chordless) == chordless);
 
     assert(rejects([&] { return yue2::drop_abc_chords("X:1\nM:4/4\nK:C\nC4|\n"); }));
+
+    // Read as upstream's ABC tools read the dialect. A tie's unmarked
+    // continuation keeps the tied accidental across the barline: one F#.
+    const auto tied = score("C", "100", "z16^F16-|F32|", "z32|z32|");
+    check(yue2::transpose_abc(tied, 2), score("D", "100", "z16^G16-|^G32|", "z32|z32|"));
+    // A bar's accidental reaches its letter in every octave: both are F#.
+    check(yue2::swap_abc_lanes(score("C", "100", "^F8f8z16|", "z32|")),
+          score("C", "100", "z32|", "^F8^f8z16|"));
+
+    // What the dialect leaves out is refused by name.
+    const auto message = [](auto call) -> std::string {
+        try {
+            (void)call();
+        } catch (const std::invalid_argument & error) {
+            return error.what();
+        }
+        return {};
+    };
+    const auto third = score("C", "100", "z32|", "z32|") + "V: Bass\nz32|\n";
+    assert(message([&] { return yue2::swap_abc_lanes(third); }).find("V: Bass") != std::string::npos);
+    assert(message([&] { return yue2::swap_abc_lanes(score("C", "100", "[ceg]32|", "z32|")); })
+               .find("stacked notes like [ceg]") != std::string::npos);
+    assert(message([&] { return yue2::swap_abc_lanes(score("C", "100", "c32|]", "z32|]")); })
+               .find("|]") != std::string::npos);
+    const auto lyrics = score("C", "100", "c32|", "z32|") + "w: la\n";
+    assert(message([&] { return yue2::swap_abc_lanes(lyrics); }).find("w:") != std::string::npos);
+
+    // One long section: every bar used to scan the whole lane.
+    std::string vocal, ins;
+    for (int bar = 0; bar < 20000; ++bar) {
+        vocal += "\"C\"c8d8e8f8|";
+        ins += "C,16-C,16|";
+    }
+    const auto long_score = score("C", "100", vocal, ins);
+    (void)yue2::transpose_abc(long_score, 1);
+    (void)yue2::swap_abc_lanes(long_score);
     return 0;
 }

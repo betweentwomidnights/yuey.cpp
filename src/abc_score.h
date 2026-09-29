@@ -48,9 +48,13 @@ struct Segment {
 };
 
 struct Voice {
-    std::vector<Segment> segments;
-    std::vector<Span> notes;  // ties joined, in time order
+    std::vector<Segment> segments;  // in time order
+    std::vector<Span> notes;  // ties joined, in time order, never overlapping
 };
+
+// Index of the first note that ends after `tick`, in a lane's notes; with the
+// notes that start before some later tick, the ones that can reach a span.
+std::size_t first_reaching(const std::vector<Span> & notes, std::uint64_t tick);
 
 struct Parsed {
     std::uint32_t unit_denominator = 32;
@@ -69,7 +73,7 @@ std::string spell(int pitch, const std::string & key);
 
 // Writes a segment's bars as note and rest runs from `notes`, with the
 // segment's marks at their ticks. A note that runs past a bar or a mark is
-// tied through it.
+// tied through it. `notes` must be one lane: in time order, not overlapping.
 std::string write_bars(const Segment & segment, const std::vector<Span> & notes,
                        std::uint64_t unit_ticks, const std::string & key);
 

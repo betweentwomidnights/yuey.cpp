@@ -44,13 +44,21 @@ std::uint64_t duration_ticks(const std::string & line, std::size_t & offset, std
     return ticks / (denominator * unit);
 }
 
-int pitch_of(char symbol, int octave, const std::string & accidental, const std::string & key,
-             std::map<std::pair<char, int>, int> & bar_accidentals) {
+int written_pitch(char symbol, int octave) {
     static const std::string letters = "CDEFGAB";
     static const std::array<int, 7> natural = {0, 2, 4, 5, 7, 9, 11};
     const char upper = static_cast<char>(std::toupper(static_cast<unsigned char>(symbol)));
+    return (octave + 1) * 12 + natural[letters.find(upper)];
+}
+
+// Accidentals last to the barline and apply to their letter in every octave, as
+// upstream's ABC tools and score_midi.cpp read the dialect.
+int pitch_of(char symbol, int octave, const std::string & accidental, const std::string & key,
+             std::map<char, int> & bar_accidentals) {
+    static const std::string letters = "CDEFGAB";
+    const char upper = static_cast<char>(std::toupper(static_cast<unsigned char>(symbol)));
     const auto index = letters.find(upper);
-    const auto identity = std::make_pair(upper, octave);
+    const auto identity = upper;
     int alteration = 0;
     if (!accidental.empty()) {
         if (accidental.front() == '^') alteration = static_cast<int>(accidental.size());
@@ -61,8 +69,9 @@ int pitch_of(char symbol, int octave, const std::string & accidental, const std:
     } else {
         alteration = key_accidentals(key)[index];
     }
-    return std::clamp((octave + 1) * 12 + natural[index] + alteration, 0, 127);
+    return std::clamp(written_pitch(symbol, octave) + alteration, 0, 127);
 }
+
 
 // Lengths in units, largest first, from the values the native dialect uses.
 std::vector<std::uint64_t> split_units(std::uint64_t units) {
@@ -77,6 +86,16 @@ std::vector<std::uint64_t> split_units(std::uint64_t units) {
 std::string units_text(std::uint64_t units) { return units == 1 ? std::string() : std::to_string(units); }
 
 } // namespace
+
+// The notes of a time-ordered, non-overlapping lane that can reach [begin, end):
+// from the first one ending after `begin`. Callers stop at the first that starts
+// at or after `end`. Without this every bar scanned the whole section, and a
+// 150,000-bar score took minutes.
+std::size_t first_reaching(const std::vector<Span> & notes, std::uint64_t begin) {
+    return static_cast<std::size_t>(std::partition_point(
+        notes.begin(), notes.end(), [begin](const Span & note) { return note.end <= begin; }) -
+        notes.begin());
+}
 
 std::string trim(const std::string & value) {
     const auto first = value.find_first_not_of(" \t\r");
@@ -151,6 +170,7 @@ Parsed parse(const std::string & abc) {
         std::uint32_t numerator = 4, denominator = 4;
         std::string key;
         std::optional<std::size_t> tied;
+        int tied_written = 0;
     };
     std::array<State, 2> state;
     for (auto & s : state) { s.numerator = numerator; s.denominator = denominator; s.key = key; }
@@ -166,6 +186,10 @@ Parsed parse(const std::string & abc) {
         if (line == "V: Vocal") { active = 0; continue; }
         if (line == "V: Ins") { active = 1; continue; }
         if (active < 0 || line.empty() || line.front() == '%') continue;
+        if (line.rfind("V:", 0) == 0) {
+            throw std::invalid_argument("only the V: Vocal and V: Ins lanes are supported, not \"" +
+                                        line + "\"");
+        }
         auto & s = state[static_cast<std::size_t>(active)];
         if (line.rfind("M:", 0) == 0) {
             const auto slash = line.find('/');
@@ -176,6 +200,12 @@ Parsed parse(const std::string & abc) {
         }
         if (line.rfind("K:", 0) == 0) { s.key = trim(line.substr(2)); continue; }
         if (line.size() >= 2 && std::isalpha(static_cast<unsigned char>(line[0])) && line[1] == ':') continue;
+        for (const char * mark : {"|]", "||", "[|", "|:", ":|", "::"}) {
+            if (line.find(mark) != std::string::npos) {
+                throw std::invalid_argument(std::string("end every bar with a plain |; ") + mark +
+                                            " is not supported, and repeats have to be written out");
+            }
+        }
         if (line.back() != '|') throw std::invalid_argument("ABC music line must end with a barline");
 
         auto & voice = result.voices[static_cast<std::size_t>(active)];
@@ -194,7 +224,7 @@ Parsed parse(const std::string & abc) {
             segment.text = bar;
             segment.begin = s.tick;
             segment.key = s.key;
-            std::map<std::pair<char, int>, int> bar_accidentals;
+            std::map<char, int> bar_accidentals;
             bool multi = false;
             for (std::size_t offset = 0; offset < bar.size();) {
                 const char c = bar[offset];
@@ -209,6 +239,11 @@ Parsed parse(const std::string & abc) {
                 if (c == '[') {
                     const auto end = bar.find(']', offset + 1);
                     if (end == std::string::npos) throw std::invalid_argument("unterminated ABC inline field");
+                    if (end < offset + 3 || !std::isalpha(static_cast<unsigned char>(bar[offset + 1])) ||
+                        bar[offset + 2] != ':') {
+                        throw std::invalid_argument("stacked notes like " + bar.substr(offset, end - offset + 1) +
+                                                    " are not supported; each lane is one line of notes");
+                    }
                     const auto field = bar.substr(offset + 1, end - offset - 1);
                     if (field.rfind("K:", 0) == 0) {
                         s.key = trim(field.substr(2));
@@ -232,9 +267,15 @@ Parsed parse(const std::string & abc) {
                         octave += bar[offset++] == '\'' ? 1 : -1;
                     }
                     const auto length = duration_ticks(bar, offset, result.unit_denominator);
-                    const auto pitch = pitch_of(symbol, octave, accidental, s.key, bar_accidentals);
+                    const auto written = written_pitch(symbol, octave);
+                    auto pitch = pitch_of(symbol, octave, accidental, s.key, bar_accidentals);
                     const bool tie = offset < bar.size() && bar[offset] == '-';
                     if (tie) ++offset;
+                    // A tie's continuation written without an accidental keeps the
+                    // tied note's pitch, across a barline too: ^F16-|F32 is one F#.
+                    if (s.tied && accidental.empty() && written == s.tied_written) {
+                        pitch = voice.notes[*s.tied].pitch;
+                    }
                     if (s.tied) {
                         auto & held = voice.notes[*s.tied];
                         if (held.end != s.tick || held.pitch != pitch) {
@@ -246,6 +287,7 @@ Parsed parse(const std::string & abc) {
                     }
                     s.tied = tie ? std::optional<std::size_t>(s.tied ? *s.tied : voice.notes.size() - 1)
                                  : std::nullopt;
+                    s.tied_written = written;
                     s.tick += length;
                     segment.has_notes = true;
                     continue;
@@ -324,10 +366,10 @@ std::string write_bars(const Segment & segment, const std::vector<Span> & notes,
                 cuts.push_back(mark.tick);
             }
         }
-        for (const auto & n : notes) {
-            if (n.end <= bar_begin || n.begin >= bar_end) continue;
-            cuts.push_back(std::max(n.begin, bar_begin));
-            cuts.push_back(std::min(n.end, bar_end));
+        const auto first = first_reaching(notes, bar_begin);
+        for (auto i = first; i < notes.size() && notes[i].begin < bar_end; ++i) {
+            cuts.push_back(std::max(notes[i].begin, bar_begin));
+            cuts.push_back(std::min(notes[i].end, bar_end));
         }
         std::sort(cuts.begin(), cuts.end());
         cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
@@ -336,8 +378,8 @@ std::string write_bars(const Segment & segment, const std::vector<Span> & notes,
             const auto from = cuts[i], to = cuts[i + 1];
             for (const auto * mark : marks) if (mark->tick == from) out += mark->text;
             const Span * note = nullptr;
-            for (const auto & n : notes) {
-                if (n.begin <= from && n.end >= to) { note = &n; break; }
+            for (auto n = first; n < notes.size() && notes[n].begin < to; ++n) {
+                if (notes[n].begin <= from && notes[n].end >= to) { note = &notes[n]; break; }
             }
             if ((to - from) % unit_ticks != 0) throw std::invalid_argument("rewritten note is off the unit grid");
             const auto parts = split_units((to - from) / unit_ticks);

@@ -92,9 +92,9 @@ void rewrite_lane(const abc::Parsed & parsed, int lane, const std::vector<Span> 
     const auto & voice = parsed.voices[static_cast<std::size_t>(lane)];
     for (const auto & segment : voice.segments) {
         bool reached = segment.has_notes || (with_marks && !segment.marks.empty());
-        for (const auto & note : notes) {
-            if (reached) break;
-            reached = note.begin < segment.end && note.end > segment.begin;
+        if (!reached) {
+            const auto first = abc::first_reaching(notes, segment.begin);
+            reached = first < notes.size() && notes[first].begin < segment.end;
         }
         if (!reached) continue;
         Segment copy = segment;
@@ -177,6 +177,14 @@ std::string transpose_abc(const std::string & abc_text, int semitones) {
 }
 
 std::string swap_abc_lanes(const std::string & abc_text) {
+    // Lyric lines follow the notes above them, and a swap moves those notes
+    // to the other lane. YuE2 carries lyrics in their own field, not in w:.
+    for (const auto & line : abc::split_lines(abc_text)) {
+        if (abc::trim(line).rfind("w:", 0) == 0) {
+            throw std::invalid_argument("a score with w: lyric lines cannot swap lanes; "
+                                        "the lyrics would sit under the wrong notes");
+        }
+    }
     const auto parsed = abc::parse(abc_text);
     const auto & vocal = parsed.voices[0].notes;
     const auto & ins = parsed.voices[1].notes;
