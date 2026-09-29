@@ -63,9 +63,12 @@ void check_generation_policy() {
     policy.natural_max_seconds = 96.0;
     policy.planning_overrun = 1.5;
     policy.planning_loop_bars = 12;
+    policy.instrumental_method = "rest";
+    policy.use_instrumental_adapter = false;
     const auto body = yue2::server::generation_policy_json(policy);
 
-    for (const char * key : {"natural_max_seconds", "planning_overrun", "planning_loop_bars"}) {
+    for (const char * key : {"natural_max_seconds", "planning_overrun", "planning_loop_bars",
+                             "instrumental_method", "use_instrumental_adapter"}) {
         assert(body.find(std::string("\"") + key + "\":") != std::string::npos);
     }
     // Spliceable into a larger object: no braces, no leading comma.
@@ -77,6 +80,8 @@ void check_generation_policy() {
     assert(yue2::server::json::number(parsed, "natural_max_seconds", 0.0) == 96.0);
     assert(yue2::server::json::number(parsed, "planning_overrun", 0.0) == 1.5);
     assert(yue2::server::json::u32(parsed, "planning_loop_bars", 0) == 12);
+    assert(yue2::server::json::string(parsed, "instrumental_method") == "rest");
+    assert(!yue2::server::json::boolean(parsed, "use_instrumental_adapter", true));
 
     // A zero disables either bound and still has to be reported, not omitted.
     yue2::server::GenerationPolicy off;

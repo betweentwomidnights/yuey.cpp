@@ -18,6 +18,8 @@ yue2-server --models-dir models --encoding Q4_K_M
 # --planning-loop-bars N   stop after N identical bars (default 16, 0 = off)
 # --instrumental-lora REF[=SCALE]
 # --continuation-lora REF[=SCALE]
+# --instrumental-method M  transfer (default) or rest, for requests that omit it
+# --no-instrumental-adapter  adapter off unless a request sets use_instrumental_adapter
 # --vae-tile-frames N      latent frames per VAE decode window (default 512)
 # --props    print the GET /props document and exit, without binding a port
 # --version  print the engine version and exit
@@ -42,6 +44,10 @@ declarative.
 `YUE2_FORCE_UNLOAD=1` prevents clients from retaining models between jobs.
 `YUE2_NATURAL_MAX_SECONDS` sets the planner-length ceiling described under
 [natural length](#natural-length).
+`YUE2_INSTRUMENTAL_METHOD` (`transfer` or `rest`) and
+`YUE2_USE_INSTRUMENTAL_ADAPTER=0` change what an instrumental request gets when
+it leaves those fields out; a request that sets them still wins. Both are
+reported with the other generation defaults in `/health` and `/props`.
 Port 8007 is the next free port after the services gary4juce already addresses
 (8000, 8002, 8003, 8005, 8006, and 8015).
 
@@ -248,8 +254,9 @@ dragging even when the user does not want generated audio.
   `rest` replaces the notes with rests and leaves Ins as it was, which is how
   instrumental worked before and usually gives a sparser piece. A score the
   transfer cannot rewrite falls back to `rest` and says so in the server log.
-  It applies whether or not the instrumental adapter is in use. `/health` lists
-  the accepted values under `capabilities.instrumental_methods`.
+  It applies whether or not the instrumental adapter is in use. `/props` lists
+  the accepted values under `capabilities.instrumental_methods`, and `/health`
+  and `/props` report the server's default as `instrumental_method`.
 - **`experimental_vocal_rest`** is a diagnostic, not an instrumental mode. It
   requires empty `lyrics` plus `symbolic_mode: melody` or `full`. After planning
   or accepting an external score, it replaces Vocal notes with

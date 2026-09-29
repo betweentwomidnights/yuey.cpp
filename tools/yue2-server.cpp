@@ -141,6 +141,10 @@ struct Configuration {
     std::int64_t vae_tile_frames = 512;
     double planning_overrun = 2.0;
     std::uint32_t planning_loop_bars = 16;
+    // Defaults for instrumental requests that leave these fields out, so a
+    // supervisor such as gary4local can set them for every client.
+    std::string instrumental_method = "transfer";
+    bool use_instrumental_adapter = true;
     std::vector<yue2::LoraAdapterSpec> loras;
     std::vector<yue2::LoraAdapterSpec> instrumental_loras;
     std::vector<yue2::LoraAdapterSpec> continuation_loras;
@@ -209,6 +213,9 @@ void usage(const char * executable) {
         << "                               Adapter added whenever instrumental=true; repeatable\n"
         << "  --continuation-lora REF[=SCALE]\n"
         << "                               Matching real-audio NAR adapter for /continue; repeatable\n"
+        << "  --instrumental-method M      transfer or rest, for requests that omit it (YUE2_INSTRUMENTAL_METHOD)\n"
+        << "  --no-instrumental-adapter    Leave the instrumental adapter off unless a request asks\n"
+        << "                               (YUE2_USE_INSTRUMENTAL_ADAPTER=0)\n"
         << "  --keep-models                Keep models resident between jobs by default\n"
         << "  --force-unload               Ignore per-request keep_models and unload after every job\n"
         << "  --device NAME                cpu, cuda, or another GGML backend (YUE2_DEVICE)\n"
@@ -286,6 +293,20 @@ Configuration parse_configuration(int argc, char ** argv) {
             if (result.vae_tile_frames < 32 || result.vae_tile_frames > 24576) {
                 throw std::invalid_argument("--vae-tile-frames must be in [32, 24576]");
             }
+        }
+    }
+    {
+        auto value = option(argc, argv, "--instrumental-method");
+        if (value.empty()) value = environment("YUE2_INSTRUMENTAL_METHOD");
+        if (!value.empty()) {
+            if (value != "transfer" && value != "rest") {
+                throw std::invalid_argument("--instrumental-method must be transfer or rest");
+            }
+            result.instrumental_method = value;
+        }
+        const auto adapter = upper(environment("YUE2_USE_INSTRUMENTAL_ADAPTER"));
+        if (has(argc, argv, "--no-instrumental-adapter") || adapter == "0" || adapter == "FALSE") {
+            result.use_instrumental_adapter = false;
         }
     }
     {
@@ -979,7 +1000,8 @@ private:
         song.lyrics = json::string(root, "lyrics");
         song.instrumental = json::boolean(root, "instrumental", false);
         song.experimental_vocal_rest = json::boolean(root, "experimental_vocal_rest", false);
-        const auto method = json::string(root, "instrumental_method", "transfer");
+        const auto method = json::string(
+            root, "instrumental_method", configuration_.instrumental_method);
         if (method != "transfer" && method != "rest") {
             throw std::invalid_argument("instrumental_method must be transfer or rest");
         }
@@ -1171,7 +1193,7 @@ private:
             job.continuation_adapter = true;
         }
         if (song.instrumental &&
-            json::boolean(root, "use_instrumental_adapter", true) &&
+            json::boolean(root, "use_instrumental_adapter", configuration_.use_instrumental_adapter) &&
             !configuration_.instrumental_loras.empty()) {
             // The instrumental AR adapters are trained for score-first COT and
             // chord-annotated full SheetSage2 plans. Keep this policy in the
@@ -1651,6 +1673,8 @@ private:
         policy.natural_max_seconds = configuration_.natural_max_seconds;
         policy.planning_overrun = configuration_.planning_overrun;
         policy.planning_loop_bars = configuration_.planning_loop_bars;
+        policy.instrumental_method = configuration_.instrumental_method;
+        policy.use_instrumental_adapter = configuration_.use_instrumental_adapter;
         return policy;
     }
 
