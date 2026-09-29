@@ -15,6 +15,10 @@ struct GenerationPolicy {
     double natural_max_seconds = 180.0;
     double planning_overrun = 2.0;
     std::uint32_t planning_loop_bars = 16;
+    // What an instrumental request gets when it does not say: its
+    // instrumental_method, and whether the instrumental adapter is stacked.
+    std::string instrumental_method = "transfer";
+    bool use_instrumental_adapter = true;
 };
 
 // Emits the fields without enclosing braces or a leading comma, so a caller
