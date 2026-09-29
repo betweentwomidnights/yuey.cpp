@@ -1382,6 +1382,12 @@ private:
         const auto root = parse_object(request.body);
         const auto abc = json::string(root, "abc");
         if (abc.empty()) throw std::invalid_argument("abc is required");
+        // A 900-second song is tens of KB. The edits are linear now, but this is
+        // an open route and a quick edit has no business with a larger score.
+        constexpr std::size_t kMaxTransformBytes = 1 << 20;
+        if (abc.size() > kMaxTransformBytes) {
+            throw std::invalid_argument("abc is larger than the 1 MB a quick edit takes");
+        }
         const auto op = json::string(root, "op");
         std::string result;
         std::string note;
@@ -1398,6 +1404,10 @@ private:
         } else if (op == "double_time") {
             result = yue2::scale_abc_tempo(abc, 2.0);
         } else if (op == "transpose") {
+            const auto * given = root.find("semitones");
+            if (given == nullptr || given->type != json::Type::number) {
+                throw std::invalid_argument("transpose needs semitones, a whole number");
+            }
             const auto semitones = json::number(root, "semitones", 0.0);
             if (semitones != std::floor(semitones)) {
                 throw std::invalid_argument("semitones must be a whole number");

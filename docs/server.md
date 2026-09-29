@@ -479,7 +479,15 @@ when the edit had to round. A score the edit leaves alone comes back exactly as
 it went in, with `changed:false`; otherwise only bars that change are
 rewritten, and rewritten notes carry explicit accidentals. Every result is
 checked to render before it is returned. A score outside the native dialect,
-or an edit that cannot apply, is a `400` naming the reason. `/health` and
+or an edit that cannot apply, is a `400` naming the reason, and so is a score
+over 1 MB (a 900-second song is tens of KB). The edits run in linear time: a
+565 KB single-section score, 17,000 bars, takes about 0.1 s for any op.
+
+Notes are read the way upstream YuE2's ABC tools read the dialect, and the
+MIDI export reads them the same way. An accidental lasts to the barline and
+applies to its letter in every octave, and a tie's continuation written
+without an accidental keeps the tied note's pitch, across a barline too:
+`^F16-|F32` is one F#. `/health` and
 `/props` list the accepted ops as `score_transforms`, so a client can show only
 the buttons a server supports.
 

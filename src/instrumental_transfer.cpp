@@ -23,6 +23,18 @@ namespace yue2 {
 using abc::Segment;
 using abc::Span;
 
+namespace {
+
+// The segment holding `tick`; a lane's segments are contiguous from tick 0.
+std::size_t segment_at(const std::vector<Segment> & segments, std::uint64_t tick) {
+    const auto after = std::upper_bound(
+        segments.begin(), segments.end(), tick,
+        [](std::uint64_t value, const Segment & segment) { return value < segment.begin; });
+    return static_cast<std::size_t>(after - segments.begin()) - 1;
+}
+
+} // namespace
+
 std::string make_instrumental_transfer_abc(const std::string & abc_text) {
     const auto parsed = abc::parse(abc_text);
     const auto & vocal = parsed.voices[0];
@@ -33,7 +45,9 @@ std::string make_instrumental_transfer_abc(const std::string & abc_text) {
     std::vector<Span> merged = vocal.notes;
     for (const auto & note : ins.notes) {
         std::vector<Span> pieces = {note};
-        for (const auto & v : vocal.notes) {
+        for (auto index = abc::first_reaching(vocal.notes, note.begin);
+             index < vocal.notes.size() && vocal.notes[index].begin < note.end; ++index) {
+            const auto & v = vocal.notes[index];
             std::vector<Span> next;
             for (const auto & p : pieces) {
                 if (v.end <= p.begin || v.begin >= p.end) { next.push_back(p); continue; }
@@ -51,22 +65,26 @@ std::string make_instrumental_transfer_abc(const std::string & abc_text) {
     // old notes count too: a tie out of a kept bar must not land on a bar that
     // no longer continues it.
     std::vector<bool> ins_touched(ins.segments.size(), false);
-    const auto overlaps = [](const Segment & s, const Span & n) { return n.begin < s.end && n.end > s.begin; };
     for (std::size_t i = 0; i < ins.segments.size(); ++i) {
-        for (const auto & v : vocal.notes) if (overlaps(ins.segments[i], v)) { ins_touched[i] = true; break; }
+        const auto & segment = ins.segments[i];
+        const auto first = abc::first_reaching(vocal.notes, segment.begin);
+        ins_touched[i] = first < vocal.notes.size() && vocal.notes[first].begin < segment.end;
     }
-    std::vector<Span> tied = merged;
-    tied.insert(tied.end(), ins.notes.begin(), ins.notes.end());
-    for (bool changed = true; changed;) {
-        changed = false;
-        for (const auto & n : tied) {
-            bool any = false;
-            for (std::size_t i = 0; i < ins.segments.size(); ++i) if (ins_touched[i] && overlaps(ins.segments[i], n)) any = true;
-            if (!any) continue;
-            for (std::size_t i = 0; i < ins.segments.size(); ++i) {
-                if (!ins_touched[i] && overlaps(ins.segments[i], n)) { ins_touched[i] = true; changed = true; }
-            }
-        }
+    // joined[i]: some note, old or new, runs across the barline into segment
+    // i. Bars joined that way are rewritten together, so a run of them with
+    // one touched bar is touched throughout.
+    std::vector<bool> joined(ins.segments.size(), false);
+    const auto join = [&](const Span & note) {
+        const auto last = segment_at(ins.segments, note.end - 1);
+        for (auto i = segment_at(ins.segments, note.begin) + 1; i <= last; ++i) joined[i] = true;
+    };
+    for (const auto & note : merged) join(note);
+    for (const auto & note : ins.notes) join(note);
+    for (std::size_t i = 1; i < ins.segments.size(); ++i) {
+        if (joined[i] && ins_touched[i - 1]) ins_touched[i] = true;
+    }
+    for (std::size_t i = ins.segments.size(); i-- > 1;) {
+        if (joined[i] && ins_touched[i]) ins_touched[i - 1] = true;
     }
 
     auto line_segments = parsed.line_segments;

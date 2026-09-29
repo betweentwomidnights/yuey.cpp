@@ -219,14 +219,25 @@ std::pair<std::int8_t, bool> midi_key_signature(const std::string & key) {
     return {0, false};
 }
 
-int pitch_for(char letter, int octave, const std::string & accidental,
-              const std::string & key, std::map<std::pair<char,int>, int> & measure) {
+// The note as written, before any accidental: its letter in its octave.
+int written_pitch(char letter, int octave) {
     static const std::map<char, int> natural = {
         {'C',0},{'D',2},{'E',4},{'F',5},{'G',7},{'A',9},{'B',11},
     };
     const char upper = static_cast<char>(std::toupper(static_cast<unsigned char>(letter)));
+    const auto found = natural.find(upper);
+    if (found == natural.end()) throw std::invalid_argument("invalid ABC pitch");
+    return (octave + 1) * 12 + found->second;
+}
+
+// Accidentals last to the barline and apply to their letter in every octave:
+// the rule upstream YuE2's own ABC tools read the native dialect by, since its
+// exporters write it that way.
+int pitch_for(char letter, int octave, const std::string & accidental,
+              const std::string & key, std::map<char, int> & measure) {
+    const char upper = static_cast<char>(std::toupper(static_cast<unsigned char>(letter)));
     auto alteration = 0;
-    const auto identity = std::make_pair(upper, octave);
+    const auto identity = upper;
     if (!accidental.empty()) {
         if (accidental.front() == '^') alteration = static_cast<int>(accidental.size());
         else if (accidental.front() == '_') alteration = -static_cast<int>(accidental.size());
@@ -238,9 +249,7 @@ int pitch_for(char letter, int octave, const std::string & accidental,
         const auto index = letters.find(upper);
         alteration = key_accidentals(key)[index];
     }
-    const auto found = natural.find(upper);
-    if (found == natural.end()) throw std::invalid_argument("invalid ABC pitch");
-    return std::clamp((octave + 1) * 12 + found->second + alteration, 0, 127);
+    return std::clamp(written_pitch(letter, octave) + alteration, 0, 127);
 }
 
 std::vector<int> chord_pitches(const std::string & label) {
@@ -279,7 +288,7 @@ std::vector<int> chord_pitches(const std::string & label) {
     return result;
 }
 
-struct NoteSpan { std::uint32_t begin = 0, end = 0; int pitch = 0; bool tied = false; };
+struct NoteSpan { std::uint32_t begin = 0, end = 0; int pitch = 0; bool tied = false; int written = 0; };
 struct ChordMark { std::uint32_t tick = 0; std::string label; };
 struct VoiceState {
     std::uint64_t tick = 0;
@@ -287,7 +296,7 @@ struct VoiceState {
     std::uint32_t numerator = 4;
     std::uint32_t denominator = 4;
     std::string key = "C";
-    std::map<std::pair<char,int>, int> accidentals;
+    std::map<char, int> accidentals;
     std::optional<std::size_t> tied_note;
     std::uint64_t expected_span = 0;
 };
@@ -466,12 +475,19 @@ ParsedScore parse_score(const std::string & abc) {
                 const auto duration = duration_ticks(duration_at(line, offset), unit_denominator);
                 const auto begin = checked_tick(voice.tick);
                 voice.tick += duration;
-                const auto pitch = pitch_for(symbol, octave, accidental, voice.key, voice.accidentals);
+                const auto written = written_pitch(symbol, octave);
+                auto pitch = pitch_for(symbol, octave, accidental, voice.key, voice.accidentals);
                 bool tied = false;
                 if (offset < line.size() && line[offset] == '-') { tied = true; ++offset; }
                 auto & notes = result.notes[static_cast<std::size_t>(active_voice)];
                 if (voice.expected_span != 0) {
                     throw std::invalid_argument("ABC multi-bar rest must end at a barline");
+                }
+                // A tie's continuation written without an accidental keeps the
+                // tied note's pitch, across a barline too: ^F16-|F32 is one F#.
+                if (voice.tied_note && *voice.tied_note < notes.size() && accidental.empty() &&
+                    notes[*voice.tied_note].written == written) {
+                    pitch = notes[*voice.tied_note].pitch;
                 }
                 if (voice.tied_note) {
                     if (*voice.tied_note >= notes.size() || !notes[*voice.tied_note].tied ||
@@ -482,7 +498,7 @@ ParsedScore parse_score(const std::string & abc) {
                     notes[*voice.tied_note].end = checked_tick(voice.tick);
                     notes[*voice.tied_note].tied = tied;
                 } else {
-                    notes.push_back({begin, checked_tick(voice.tick), pitch, tied});
+                    notes.push_back({begin, checked_tick(voice.tick), pitch, tied, written});
                     voice.tied_note = notes.size() - 1;
                 }
                 if (!tied) voice.tied_note.reset();
