@@ -47,7 +47,7 @@ the package CI would have built. it builds with:
 - `GGML_NATIVE=OFF`, `GGML_BACKEND_DL=ON` and `GGML_CPU_ALL_VARIANTS=ON`.
 - no CUDA architecture list, so ggml's portable default applies (Maxwell
   through Blackwell).
-- in CI, CUDA 12.8.1 and Vulkan SDK 1.4.309.0 on the pinned `windows-2022`
+- in CI, CUDA 12.8.1 and Vulkan SDK 1.4.350.0 (the official LunarG installer) on the pinned `windows-2022`
   runner with Visual Studio 2022.
 
 the script also enforces the release rules:

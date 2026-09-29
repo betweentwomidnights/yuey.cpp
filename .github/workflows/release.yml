@@ -41,6 +41,7 @@ jobs:
     timeout-minutes: 240
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      VULKAN_VERSION: 1.4.350.0
 
     steps:
       - name: Checkout
@@ -87,11 +88,37 @@ jobs:
           "CUDA_PATH=$cuda" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "$cuda\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
-      - name: Install Vulkan SDK
-        uses: humbletim/install-vulkan-sdk@v1.2
+      # The official LunarG SDK, the same one a developer machine has. A
+      # trimmed install leaves out SPIRV-Headers' CMake config, which ggml's
+      # Vulkan backend asks for, and the first release dry run failed on it.
+      - name: Cache Vulkan SDK
+        id: cache-vulkan
+        uses: actions/cache@v4
         with:
-          version: 1.4.309.0
-          cache: true
+          path: C:\VulkanSDK\${{ env.VULKAN_VERSION }}
+          key: vulkan-sdk-${{ env.VULKAN_VERSION }}-windows-2022
+
+      - name: Install Vulkan SDK
+        if: steps.cache-vulkan.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "vulkansdk.exe"
+          curl.exe -fsSL -o $installer "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          if ($LASTEXITCODE -ne 0) { throw "could not download the Vulkan SDK $env:VULKAN_VERSION" }
+          # A GUI-subsystem installer: without -Wait the step would move on
+          # while it's still unpacking.
+          $run = Start-Process -FilePath $installer -Wait -PassThru `
+            -ArgumentList "--accept-licenses", "--default-answer", "--confirm-command", "install"
+          if ($run.ExitCode -ne 0) { throw "the Vulkan SDK installer exited with $($run.ExitCode)" }
+
+      - name: Point at the Vulkan SDK
+        shell: pwsh
+        run: |
+          $sdk = "C:\VulkanSDK\$env:VULKAN_VERSION"
+          $spirv = Join-Path $sdk "Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfig.cmake"
+          if (-not (Test-Path $spirv)) { throw "the Vulkan SDK at $sdk has no SPIRV-Headers CMake config" }
+          "VULKAN_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "$sdk\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Build, test, and package
         shell: pwsh
