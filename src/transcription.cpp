@@ -1654,7 +1654,7 @@ std::string serialize_transcription_json(const TranscriptionResult & result) {
     return output.str();
 }
 
-const char * version() noexcept { return "0.2.0"; }
+const char * version() noexcept { return YUE2_VERSION_STRING; }
 bool transcription_runtime_available() noexcept { return true; }
 
 } // namespace yue2

@@ -92,6 +92,10 @@ target_include_directories(yue2 PUBLIC
 )
 # dr_flac decodes uploaded FLAC; see third_party/dr_libs/README.md.
 target_include_directories(yue2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/dr_libs)
+# project(VERSION) above is the one place the version is written. The engine
+# reports it (yue2::version(), --version, /health), and ci/package-windows.ps1
+# refuses a release tag that does not match it.
+target_compile_definitions(yue2 PRIVATE YUE2_VERSION_STRING="${PROJECT_VERSION}")
 target_link_libraries(yue2 PUBLIC ggml)
 
 if(YUE2_BUILD_SHARED)

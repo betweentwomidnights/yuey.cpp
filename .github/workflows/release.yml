@@ -1,21 +1,32 @@
 # ABOUTME: Builds the portable Windows packages for a published release and
 # ABOUTME: attaches them with SHA256SUMS, for supervisors that install yuey.
+#
+# The package contract every native service follows is
+# docs/native-runtime-packages.md in gary-localhost-installer; docs/packaging.md
+# here is yuey's side of it, including the release checklist.
 name: release
 
 on:
   release:
     types: [published]
-  # Rebuild and re-attach for a release that already exists, e.g. after a
-  # runner failure. Assets are replaced, not duplicated.
+  # With a tag: rebuild and re-attach for a release that already exists, e.g.
+  # after a runner failure; assets are replaced, not duplicated. Without one:
+  # a dry run of the chosen branch, packaged under the version CMakeLists.txt
+  # declares and kept as a workflow artifact, so the release path is proven
+  # before anything is published.
   workflow_dispatch:
     inputs:
       tag:
-        description: existing release tag to build and attach to (e.g. v0.2.0)
-        required: true
+        description: existing release tag to build and attach to (e.g. v0.2.0); empty for a dry run
+        required: false
         type: string
 
 permissions:
   contents: write
+  # Build provenance: `gh attestation verify <zip> -R betweentwomidnights/yuey.cpp`
+  # proves a package was built by this workflow from the tagged commit.
+  id-token: write
+  attestations: write
 
 jobs:
   windows:
@@ -35,12 +46,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ env.TAG || github.ref }}
           submodules: recursive
 
-      # The full toolkit rather than network sub-packages: the runtime pack
-      # redistributes cudart and cuBLAS and ships NVIDIA's EULA with them, and
-      # only a full install is sure to lay all three down.
+      # A release is packaged under its tag, which the package script checks
+      # against CMakeLists.txt; a dry run under what CMakeLists.txt declares.
+      - name: Choose the version
+        shell: pwsh
+        run: |
+          if ($env:TAG) {
+            $version = $env:TAG
+          } else {
+            $match = Select-String -Path CMakeLists.txt -Pattern 'project\(yue2_cpp VERSION (\d+\.\d+\.\d+)'
+            if (-not $match) { throw "no project(VERSION) in CMakeLists.txt" }
+            $version = "v" + $match.Matches[0].Groups[1].Value
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "packaging $version$(if (-not $env:TAG) { ' (dry run)' })"
+
+      # The full toolkit rather than network sub-packages, so the build sees
+      # the same toolkit layout as a developer machine.
       - name: Cache CUDA toolkit
         id: cache-cuda
         uses: actions/cache@v4
@@ -70,9 +95,23 @@ jobs:
 
       - name: Build, test, and package
         shell: pwsh
-        run: ./ci/package-windows.ps1 -Version $env:TAG
+        run: ./ci/package-windows.ps1 -Version $env:VERSION
+
+      - name: Keep the packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: yuey-${{ env.VERSION }}-windows-x64
+          path: dist/
+          retention-days: 14
+
+      - name: Attest provenance
+        if: env.TAG != ''
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*.zip'
 
       - name: Attach to release
+        if: env.TAG != ''
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
