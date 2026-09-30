@@ -186,6 +186,41 @@ safetensors explicitly. This avoids a local Transformers low-memory-loading
 compatibility issue that left the non-persistent rotary-frequency buffer
 uninitialized and would otherwise make the oracle itself incorrect.
 
+## Running the real-weight smoke tests
+
+`ctest` covers only the tests that need no model files. The tests that load real
+weights are built alongside it but not registered, so run them by hand from the
+build directory. The usage lines are in `CMakeLists.txt`; two of them need
+nothing beyond the published GGUFs:
+
+```bash
+# Text/score -> semantic -> flow -> VAE, twice on one loaded model pair.
+build-metal/bin/yue2-generation-integration-test \
+  models/yue2-3.6B-v1.0-Q4_K_M.gguf models/yue2-vae-v1.0-F16.gguf \
+  models/yue2-qwen.tiktoken mtl        # or cpu, cuda, vulkan; omit for auto
+
+# Real-weight SheetSage2 through the C++ API, single window plus 4-window stitching.
+YUE2_DEVICE=mtl build-metal/bin/yue2-transcription-integration-test \
+  models/sheetsage2-mert2-0.7B-v1.0-F16.gguf
+```
+
+`yue2-c-transcription-test TRANSCRIPTION.gguf [DEVICE]` and
+`yue2-c-generation-test MODEL.gguf VAE.gguf QWEN.TIKTOKEN [DEVICE]` exercise the
+same paths through the C ABI with the same arguments.
+
+The generation tests print `semantic=... latents=128` and the PCM size. Quantized
+tiers sample different codec IDs from BF16 (Q4_K_M gives `12046,19633`, where the
+BF16 figure quoted above is `12046, 8433`), so compare backends against the same
+tier rather than against a number from another one.
+
+The parity tests (`yue2-autoregressive-test` and `yue2-flow-test`) compare
+against the official float32 fixtures in `tests/fixtures/`, and their tolerances
+are set for the BF16 GGUF. Running them on Q4_K_M reports the correct top token
+but fails the tolerance (AR logit relative RMS 0.0076 on CPU and 0.0069 on
+Metal), which is quantization error, not a backend fault. `yue2-vae-decoder-test` and
+`yue2-mert2-subsampler-test` need expected outputs generated with the matching
+`tools/dump_*_reference.py` script.
+
 ## Quantized generation validation
 
 The first real-weight comparison ran on an NVIDIA GB10 with CUDA at commit

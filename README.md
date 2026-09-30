@@ -121,15 +121,39 @@ ctest --test-dir build-cuda --output-on-failure
 
 ### Apple silicon + Metal
 
+The build needs the `ggml` submodule. If you cloned without
+`--recurse-submodules`, run `git submodule update --init --recursive` first.
+
 ```bash
 cmake -S . -B build-metal -DYUE2_METAL=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-metal --parallel
 ctest --test-dir build-metal --output-on-failure
 ```
 
-Copy the same model directory to the Mac before testing
-`build-metal/bin/yue2-server`. Backend options are `YUE2_CUDA`, `YUE2_VULKAN`,
-`YUE2_METAL`, and `YUE2_HIP`.
+Download the models on the Mac (`./models.sh --profile full` is 5.7 GB for
+Q4_K_M) or copy an existing `models/` directory, then start the server from the
+repository root:
+
+```bash
+build-metal/bin/yue2-server --models-dir models --encoding Q4_K_M
+```
+
+Backend options are `YUE2_CUDA`, `YUE2_VULKAN`, `YUE2_METAL`, and `YUE2_HIP`.
+Things worth knowing on a Mac:
+
+- ggml turns Metal on by default on macOS, so leaving `YUE2_METAL` off does not
+  give a CPU-only build. For a CPU baseline, configure with `-DGGML_METAL=OFF`,
+  or keep the Metal build and pass `--device cpu`.
+- `--device` (and `YUE2_DEVICE`) takes `cpu`, a device index, or any part of a
+  device's name or description. The Metal GPU is named `MTL0`, so use
+  `--device mtl`; `--device metal` matches nothing and fails.
+  `yue2-server --props` lists the devices.
+- Metal reports roughly two thirds of unified memory as its working set (about
+  21 GiB on a 32 GB M4), and that is the figure the UI and the tier
+  recommendation use.
+- Generation is far slower than on CUDA. On an M4, transcribing a 3:46 song took
+  26 s on Metal against 96 s on CPU, but a full-length remix of that song took
+  about 37 minutes, roughly 55 s per flow step. Expect to try short clips first.
 
 ## TODO
 
