@@ -26,8 +26,8 @@ public APIs retain the `yue2` prefix to identify the underlying model.
 - Score-first length and ending controls that fit generated plans to musical
   bars and let semantic generation reach the score's natural end.
 - Best-effort instrumental generation using score-aligned empty lyric sections,
-  a duration-preserving rested Vocal lane, and optional instrumental AR adapter
-  support.
+  the melody moved onto the instrument lane as official YuE does (or rested,
+  on request), and optional instrumental AR adapter support.
 - BF16, Q8_0, Q5_K_M, and Q4_K_M generation models, including automatic device
   memory recommendations.
 - A local asynchronous HTTP server and embedded Yuey web UI.
@@ -35,6 +35,16 @@ public APIs retain the `yue2` prefix to identify the underlying model.
 
 The complete path is validated on an RTX 5070 Laptop GPU and a DGX Spark using
 CUDA. Other backends remain works in progress.
+
+## Download
+
+Every [release](https://github.com/betweentwomidnights/yuey.cpp/releases) has
+prebuilt Windows packages. To run yuey on its own, take
+`yuey-vX.Y.Z-windows-x64-standalone.zip`: it holds the server, both GPU
+backends and the CUDA runtime, and works on NVIDIA, AMD and Intel GPUs. Unzip
+it, run `models.cmd`, then `yue2-server.exe --models-dir models`. The split
+core and backend zips are for supervisors such as gary4local; see
+[packaging](docs/packaging.md).
 
 ## Quickstart
 
@@ -175,6 +185,8 @@ Things worth knowing on a Mac:
 - [C/C++ embedding](docs/embedding.md)
 - [C ABI V1 contract](docs/C_ABI_V1.md)
 - [GGUF naming, conversion, and quantization](docs/distribution.md)
+- [Packaging and releases](docs/packaging.md)
+- [Changelog](CHANGELOG.md)
 - [Instrumental adapters and real-audio continuation](docs/realaudio-continuation.md)
 - [Numerical and listening validation](docs/validation.md)
 - [Pinned upstream references](docs/reference-lock.md)
