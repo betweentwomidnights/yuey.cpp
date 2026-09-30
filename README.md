@@ -151,9 +151,13 @@ Things worth knowing on a Mac:
 - Metal reports roughly two thirds of unified memory as its working set (about
   21 GiB on a 32 GB M4), and that is the figure the UI and the tier
   recommendation use.
-- Generation is far slower than on CUDA. On an M4, transcribing a 3:46 song took
-  26 s on Metal against 96 s on CPU, but a full-length remix of that song took
-  about 37 minutes, roughly 55 s per flow step. Expect to try short clips first.
+- Generation is far slower than on CUDA, and the cost grows faster than the
+  length of the song. On an M4, transcribing a 3:46 song took 26 s on Metal
+  against 96 s on CPU. A transcribe + remix (Q4_K_M) took 109 s for a 30 s clip,
+  277 s for 60 s, and 916 s for 120 s, and about 37 minutes for the full song.
+  Nearly all of the growth is the flow stage, at 2.3, 6.2, and 22.6 s per step
+  for the three clips. Memory was not the limit: swap did not grow and the server
+  peaked near 4 GB. Try short clips first.
 
 ## TODO
 
