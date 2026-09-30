@@ -25,6 +25,13 @@ yue2-server --models-dir models --encoding Q4_K_M
 # --version  print the engine version and exit
 ```
 
+`--device` and `YUE2_DEVICE` accept `cpu`, `auto`, a device index, or a
+case-insensitive substring of a device's name or description (as `--props`
+lists them), not a backend family: on Apple silicon the GPU is `MTL0`, so
+`--device mtl` selects it and `--device metal` fails with "requested accelerator
+was not found". A set `YUE2_GPU` takes the same index-or-name selector and wins
+over an accelerator named by `--device`, though not over `--device cpu`.
+
 `--props` exists for installers. After unpacking a package, a supervisor runs it
 once to learn which GGML backends actually initialized, what memory they
 report, and which tier fits, before it ever starts the service. A CUDA backend

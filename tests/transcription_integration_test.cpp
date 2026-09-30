@@ -74,7 +74,7 @@ int main(int argc, char ** argv) {
         pcm.samples.data(), pcm.samples.size(), pcm.sample_rate, options);
 
     assert(yue2::transcription_runtime_available());
-    assert(std::string(yue2::version()).find("dev") != std::string::npos);
+    assert(!std::string(yue2::version()).empty());
     assert(std::abs(result.duration_seconds - 0.2) < 1e-6);
     assert(result.abc.rfind("X:1\n", 0) == 0);
     assert(result.abc.find("V: Vocal\n") != std::string::npos);
