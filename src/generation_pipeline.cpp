@@ -232,8 +232,14 @@ public:
             double planning_stop_seconds = 0.0;
             if (effective.planning_overrun > 0.0) {
                 if (effective.target_bars != 0) {
-                    const double wanted =
-                        static_cast<double>(effective.target_bars) * effective.planning_overrun;
+                    // The margin is for the bars being composed. A
+                    // continuation's target includes its whole transcribed
+                    // prefix, and multiplying that too had a 10-bar clip plus
+                    // 8 composing 26 new bars to keep 8.
+                    const auto prefix = std::min(supplied_prefix_bars, effective.target_bars);
+                    const double wanted = static_cast<double>(prefix) +
+                        static_cast<double>(effective.target_bars - prefix) *
+                            effective.planning_overrun;
                     planning_stop_bars = wanted >= static_cast<double>(
                         std::numeric_limits<std::uint32_t>::max())
                         ? std::numeric_limits<std::uint32_t>::max()

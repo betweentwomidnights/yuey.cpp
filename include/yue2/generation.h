@@ -182,7 +182,8 @@ struct SongRequest {
     // bars of a finished plan are its composed ending, and stopping exactly at
     // the kept length takes whatever the planner happened to be writing
     // instead. The margin buys room for an ending to arrive while bounding the
-    // runaway case. 0 disables the stop and plans to the token limit.
+    // runaway case. On a continuation it multiplies only the bars added, not
+    // the prefix. 0 disables the stop and plans to the token limit.
     double planning_overrun = 2.0;
     // Stop planning once this many bars in a row are identical. A planner that
     // is looping is not composing an ending worth waiting for, so unlike the
