@@ -395,14 +395,14 @@ means the same thing at any tempo, and an over-long plan is passed through
 `fit_abc_score_to_bars` rather than truncated: the opening is kept and the
 planner's real tail becomes the outro, so a held song still ends.
 
-The ceiling applies only when yuey wrote the whole score itself:
+The ceiling applies wherever yuey chooses how long the result runs:
 
 | Request | Held to the ceiling |
 |---|---|
 | `/plan` and `/generate` with `planning` or nothing | yes |
 | `/generate` with `abc` | no, the score is the caller's |
 | `/cover` | no, the length comes from the source audio |
-| `/continue`, or `/generate` with a transcribed `abc_prefix` | no, holding a continuation to this could cut it shorter than the audio it extends |
+| `/continue`, or `/generate` with a transcribed `abc_prefix` | yes, by what it adds: the source bars are kept whatever their length, and the ceiling applies to the bars after them |
 | anything with `target_bars` | no, the explicit bar fit already governs |
 
 Set it to `0` for a local install where a fifteen-minute render is the user's
