@@ -161,7 +161,12 @@ ggml_tensor * LoraStack::linear(
         if (factor.scale == 0.0F) continue;
         auto * ax = ggml_mul_mat(context, factor.a, input);
         auto * bax = ggml_mul_mat(context, factor.b, ax);
-        output = ggml_add(context, output, ggml_scale(context, bax, factor.scale));
+        // Every shipped adapter has alpha == rank at strength 1, so this scale
+        // is 1.0, and as its own op it was ~6% of decode and of each flow
+        // step for nothing. Multiplying by one is exact, so leaving it out
+        // changes no output.
+        if (factor.scale != 1.0F) bax = ggml_scale(context, bax, factor.scale);
+        output = ggml_add(context, output, bax);
     }
     return output;
 }

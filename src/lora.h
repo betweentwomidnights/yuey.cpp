@@ -26,6 +26,13 @@ public:
     // trained NAR vae2llm/llm2vae projections) as strength-scaled deltas.
     ggml_tensor * bias(ggml_context * context, ggml_tensor * base) const;
 
+    // Whether any adapter changes this base tensor. A caller that multiplies
+    // by a slice of a weight bypasses linear(), so it must check first.
+    bool adapts(const ggml_tensor * base) const {
+        auto * key = const_cast<ggml_tensor *>(base);
+        return bindings_.count(key) != 0 || replacements_.count(key) != 0;
+    }
+
     std::size_t adapter_count() const noexcept { return adapters_.size(); }
     std::size_t target_count() const noexcept {
         return bindings_.size() + replacements_.size();
