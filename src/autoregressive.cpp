@@ -128,57 +128,167 @@ ggml_tensor * attention(
     return linear(context, loras, attended, model.get(prefix + "o_proj.weight"));
 }
 
+// Rows a cache grows by. Attention on CUDA covers every allocated row (see
+// whole_cache_window), so this bounds how many masked rows a decode step pays
+// for, and each growth costs one copy plus one CUDA graph recapture.
+constexpr std::size_t kCacheBucket = 1024;
+
+// Rows to allocate for `needed`: whole buckets, then nudged off a multiple of
+// 256. At a KV length that is a multiple of 256 ggml-cuda switches decode to
+// its vector flash-attention kernel, and that kernel replays wrong logits
+// from a captured CUDA graph (top-1 disagreed with CPU on 30% of steps from
+// the first replay). Eight spare rows keep it on the kernel that replays
+// right. This, not partial views, is what broke the 256-rounded window.
+std::size_t cache_rows_for(std::size_t needed) {
+    auto rows = (needed + kCacheBucket - 1) / kCacheBucket * kCacheBucket;
+    if (rows % 256 == 0) rows += 8;
+    return rows;
+}
+
 class KvCache {
 public:
-    KvCache(ggml_backend_t backend, std::size_t capacity)
-        : capacity_(capacity) {
-        const std::size_t tensor_count = 2 * kLayers;
-        const ggml_init_params params = {
-            tensor_count * ggml_tensor_overhead() + 1024, nullptr, true};
-        context_ = ggml_init(params);
-        if (!context_) throw ar_error("could not create KV-cache context");
-        key_.reserve(kLayers);
-        value_.reserve(kLayers);
-        for (int layer = 0; layer < kLayers; ++layer) {
-            auto * key = ggml_new_tensor_3d(
-                context_, GGML_TYPE_F16, kHeadDim,
-                static_cast<std::int64_t>(capacity), kKvHeads);
-            auto * value = ggml_new_tensor_3d(
-                context_, GGML_TYPE_F16, kHeadDim,
-                static_cast<std::int64_t>(capacity), kKvHeads);
-            ggml_set_name(key, ("yue2.ar.cache.key." + std::to_string(layer)).c_str());
-            ggml_set_name(value, ("yue2.ar.cache.value." + std::to_string(layer)).c_str());
-            key_.push_back(key);
-            value_.push_back(value);
-        }
-        buffer_ = ggml_backend_alloc_ctx_tensors(context_, backend);
-        if (!buffer_) {
-            ggml_free(context_);
-            context_ = nullptr;
-            throw ar_error("could not allocate KV cache");
-        }
-        ggml_backend_buffer_clear(buffer_, 0);
+    // capacity is the most rows the session may ever hold; rows are allocated
+    // up front only to initial_rows (all of capacity when zero) and grown in
+    // kCacheBucket steps by reserve().
+    KvCache(ggml_backend_t backend, std::size_t capacity, std::size_t initial_rows = 0)
+        : backend_(backend), capacity_(capacity) {
+        allocate(initial_rows == 0 ? capacity : bucketed(initial_rows));
     }
 
-    ~KvCache() {
-        if (buffer_) ggml_backend_buffer_free(buffer_);
-        if (context_) ggml_free(context_);
-    }
+    ~KvCache() { release(); }
     KvCache(const KvCache &) = delete;
     KvCache & operator=(const KvCache &) = delete;
 
     ggml_tensor * key(int layer) const { return key_[static_cast<std::size_t>(layer)]; }
     ggml_tensor * value(int layer) const { return value_[static_cast<std::size_t>(layer)]; }
     std::size_t capacity() const noexcept { return capacity_; }
+    std::size_t rows() const noexcept { return rows_; }
     std::size_t position() const noexcept { return position_; }
     void advance(std::size_t count) noexcept { position_ += count; }
 
+    // Makes room for `needed` rows. A planning session is sized for its whole
+    // 9000-token budget but usually stops far short, and on CUDA every decode
+    // step attended over all of it: planning ran at half Vulkan's speed on the
+    // same GPU. Growing by whole reallocated tensors keeps what attention sees
+    // a complete cache, the shape that replays bit for bit, rather than a
+    // partial view of a larger one.
+    void reserve(std::size_t needed) {
+        if (needed <= rows_) return;
+        if (needed > capacity_) throw ar_error("KV cache reserve exceeds its capacity");
+        const auto grown = bucketed(needed);
+        auto * old_context = context_;
+        auto * old_buffer = buffer_;
+        const auto old_key = key_;
+        const auto old_value = value_;
+        context_ = nullptr;
+        buffer_ = nullptr;
+        try {
+            allocate(grown);
+            if (position_ != 0) copy_rows(old_key, old_value);
+        } catch (...) {
+            release();
+            context_ = old_context;
+            buffer_ = old_buffer;
+            key_ = old_key;
+            value_ = old_value;
+            rows_ = static_cast<std::size_t>(old_key.front()->ne[1]);
+            throw;
+        }
+        ggml_backend_buffer_free(old_buffer);
+        ggml_free(old_context);
+    }
+
 private:
+    // Never more than capacity, except to step a 256-multiple capacity off
+    // the kernel cache_rows_for avoids.
+    std::size_t bucketed(std::size_t needed) const {
+        const auto limit = capacity_ % 256 == 0 ? capacity_ + 8 : capacity_;
+        return std::min(cache_rows_for(needed), limit);
+    }
+
+    void allocate(std::size_t rows) {
+        const std::size_t tensor_count = 2 * kLayers;
+        const ggml_init_params params = {
+            tensor_count * ggml_tensor_overhead() + 1024, nullptr, true};
+        context_ = ggml_init(params);
+        if (!context_) throw ar_error("could not create KV-cache context");
+        key_.clear();
+        value_.clear();
+        key_.reserve(kLayers);
+        value_.reserve(kLayers);
+        for (int layer = 0; layer < kLayers; ++layer) {
+            auto * key = ggml_new_tensor_3d(
+                context_, GGML_TYPE_F16, kHeadDim,
+                static_cast<std::int64_t>(rows), kKvHeads);
+            auto * value = ggml_new_tensor_3d(
+                context_, GGML_TYPE_F16, kHeadDim,
+                static_cast<std::int64_t>(rows), kKvHeads);
+            ggml_set_name(key, ("yue2.ar.cache.key." + std::to_string(layer)).c_str());
+            ggml_set_name(value, ("yue2.ar.cache.value." + std::to_string(layer)).c_str());
+            key_.push_back(key);
+            value_.push_back(value);
+        }
+        buffer_ = ggml_backend_alloc_ctx_tensors(context_, backend_);
+        if (!buffer_) {
+            ggml_free(context_);
+            context_ = nullptr;
+            throw ar_error("could not allocate KV cache");
+        }
+        // Rows not yet written must stay finite: on CUDA attention covers
+        // them, masked.
+        ggml_backend_buffer_clear(buffer_, 0);
+        rows_ = rows;
+    }
+
+    // Copies the written rows into the new tensors on the device. A head's
+    // rows are one contiguous run in both tensors, only at different offsets,
+    // so each head moves as a flat block.
+    void copy_rows(
+        const std::vector<ggml_tensor *> & old_key,
+        const std::vector<ggml_tensor *> & old_value) {
+        // Two views and a copy per head, per tensor, per layer.
+        const std::size_t nodes = 3 * 2 * kLayers * kKvHeads + 16;
+        const ggml_init_params params = {
+            nodes * 2 * ggml_tensor_overhead() + ggml_graph_overhead_custom(nodes, false),
+            nullptr, true};
+        std::unique_ptr<ggml_context, decltype(&ggml_free)> context(
+            ggml_init(params), ggml_free);
+        if (!context) throw ar_error("could not create KV-cache copy context");
+        auto * graph = ggml_new_graph_custom(context.get(), nodes, false);
+        const auto values = static_cast<std::int64_t>(position_) * kHeadDim;
+        const auto copy = [&](ggml_tensor * from, ggml_tensor * to) {
+            for (int head = 0; head < kKvHeads; ++head) {
+                auto * source = ggml_view_1d(
+                    context.get(), from, values, static_cast<std::size_t>(head) * from->nb[2]);
+                auto * target = ggml_view_1d(
+                    context.get(), to, values, static_cast<std::size_t>(head) * to->nb[2]);
+                ggml_build_forward_expand(graph, ggml_cpy(context.get(), source, target));
+            }
+        };
+        for (int layer = 0; layer < kLayers; ++layer) {
+            copy(old_key[static_cast<std::size_t>(layer)], key_[static_cast<std::size_t>(layer)]);
+            copy(old_value[static_cast<std::size_t>(layer)], value_[static_cast<std::size_t>(layer)]);
+        }
+        const auto status = ggml_backend_graph_compute(backend_, graph);
+        if (status != GGML_STATUS_SUCCESS) {
+            throw ar_error(std::string("KV cache growth failed: ") + ggml_status_to_string(status));
+        }
+    }
+
+    void release() {
+        if (buffer_) ggml_backend_buffer_free(buffer_);
+        if (context_) ggml_free(context_);
+        buffer_ = nullptr;
+        context_ = nullptr;
+    }
+
+    ggml_backend_t backend_ = nullptr;
     ggml_context * context_ = nullptr;
     ggml_backend_buffer_t buffer_ = nullptr;
     std::vector<ggml_tensor *> key_;
     std::vector<ggml_tensor *> value_;
     std::size_t capacity_ = 0;
+    std::size_t rows_ = 0;
     std::size_t position_ = 0;
 };
 
@@ -264,6 +374,24 @@ void require_shape(
     if (tensor->ne[0] != ne0 || tensor->ne[1] != ne1) {
         throw ar_error("unexpected tensor shape: " + name);
     }
+}
+
+// A contiguous run of vocabulary rows to compute logits for.
+struct LogitSlice {
+    std::size_t first = 0;
+    std::size_t count = kGenerationVocabSize;
+};
+
+// Every token a phase's sampler can return: the phase's range plus its stop
+// token, which sits just outside it.
+LogitSlice sampled_logits(AutoregressivePhase phase) {
+    if (phase == AutoregressivePhase::abc) {
+        static_assert(kEodToken < kAbcEndToken, "ABC stop must follow the text range");
+        return {0, static_cast<std::size_t>(kAbcEndToken) + 1};
+    }
+    static_assert(kMusicEndToken + 1 == kCodecOffset, "music stop must precede the codecs");
+    return {static_cast<std::size_t>(kMusicEndToken),
+            static_cast<std::size_t>(kCodecOffset + kCodecSize - kMusicEndToken)};
 }
 
 } // namespace
@@ -449,14 +577,22 @@ public:
         return logits;
     }
 
-    std::vector<float> append(KvCache & cache, const std::vector<std::int32_t> & ids) {
+    std::vector<float> append(
+        KvCache & cache,
+        const std::vector<std::int32_t> & ids,
+        LogitSlice slice = {}) {
         std::lock_guard<std::mutex> lock(mutex);
-        return append_locked(cache, ids);
+        return append_locked(cache, ids, slice);
     }
 
+    // Returns all kGenerationVocabSize logits, but only `slice` is computed;
+    // the rest read -inf. lm_head over the whole vocabulary was a tenth of
+    // every decode step, and the 740 KB copy back was paid per token too,
+    // while the semantic sampler reads 32,769 of those rows.
     std::vector<float> append_locked(
         KvCache & cache,
-        const std::vector<std::int32_t> & ids) {
+        const std::vector<std::int32_t> & ids,
+        LogitSlice slice = {}) {
         if (ids.empty() || cache.position() + ids.size() > cache.capacity()) {
             throw std::invalid_argument("YuE2 AR append exceeds the KV-cache capacity");
         }
@@ -466,6 +602,11 @@ public:
             }
         }
 
+        if (slice.count == 0 || slice.first + slice.count > kGenerationVocabSize) {
+            throw std::invalid_argument("YuE2 AR logit slice is out of range");
+        }
+        cache.reserve(cache.position() + ids.size());
+
         auto & storage = graph_storage();
         const ggml_init_params params = {storage.size(), storage.data(), true};
         std::unique_ptr<ggml_context, decltype(&ggml_free)> context(
@@ -474,8 +615,10 @@ public:
         auto * graph = ggml_new_graph_custom(context.get(), kGraphSize, false);
         const auto steps = static_cast<std::int64_t>(ids.size());
         const auto cached = static_cast<std::int64_t>(cache.position());
-        const auto window = whole_cache_window
-            ? static_cast<std::int64_t>(cache.capacity()) : cached + steps;
+        // Only single-token decode repeats a graph CUDA can replay; a prefill
+        // runs once, so it attends over exactly what it needs.
+        const auto window = whole_cache_window && steps == 1
+            ? static_cast<std::int64_t>(cache.rows()) : cached + steps;
         auto * token_ids = ggml_new_tensor_1d(context.get(), GGML_TYPE_I32, steps);
         auto * positions = ggml_new_tensor_1d(context.get(), GGML_TYPE_I32, steps);
         auto * cache_rows = ggml_new_tensor_1d(context.get(), GGML_TYPE_I64, steps);
@@ -509,8 +652,23 @@ public:
         auto * last_hidden = ggml_view_1d(
             context.get(), hidden, kHidden,
             static_cast<std::size_t>(steps - 1) * hidden->nb[1]);
-        auto * output = linear(
-            context.get(), loras, last_hidden, model.get("lm_head.weight"));
+        auto * head = model.get("lm_head.weight");
+        ggml_tensor * output = nullptr;
+        if (loras.adapts(head)) {
+            output = ggml_view_1d(
+                context.get(), linear(context.get(), loras, last_hidden, head),
+                static_cast<std::int64_t>(slice.count),
+                slice.first * sizeof(float));
+        } else {
+            // Vocabulary rows are contiguous, so the slice is a plain view.
+            output = ggml_mul_mat(
+                context.get(),
+                ggml_view_2d(
+                    context.get(), head, kHidden, static_cast<std::int64_t>(slice.count),
+                    head->nb[1], slice.first * head->nb[1]),
+                last_hidden);
+        }
+        output = ggml_cont(context.get(), output);
         ggml_set_name(output, "yue2.ar.cached_logits");
         ggml_build_forward_expand(graph, output);
         static const bool report_nodes = std::getenv("YUE2_DEBUG_GRAPH_NODES") != nullptr;
@@ -566,8 +724,10 @@ public:
             throw ar_error(std::string("cached forward graph failed: ") +
                 ggml_status_to_string(status));
         }
-        std::vector<float> logits(kGenerationVocabSize);
-        ggml_backend_tensor_get(output, logits.data(), 0, logits.size() * sizeof(float));
+        std::vector<float> logits(
+            kGenerationVocabSize, -std::numeric_limits<float>::infinity());
+        ggml_backend_tensor_get(
+            output, logits.data() + slice.first, 0, slice.count * sizeof(float));
         cache.advance(ids.size());
         return logits;
     }
@@ -605,11 +765,12 @@ public:
     // captured graph when two in a row match, so each decode step launched
     // its ~1000 kernels one at a time. With the whole cache the shape holds
     // for a generation; the rows not yet written are zero from allocation, so
-    // the masked tail stays finite. A window rounded up to 256 held the shape
-    // too, but a partial view of the cache replays wrong logits from the first
-    // captured step; the whole cache replays bit for bit. Vulkan has nothing
-    // to replay and pays a few percent for the longer attention on a long
-    // song, so it keeps the growing window.
+    // the masked tail stays finite. "Whole" is the allocated rows, which
+    // KvCache grows in kCacheBucket steps, so the masked tail is under a
+    // bucket rather than the session's entire budget. (A window rounded up to
+    // 256 once replayed wrong logits; that was the length, not the view: see
+    // cache_rows_for.) Vulkan has nothing to replay, so it keeps the growing
+    // window.
     bool whole_cache_window = false;
     std::mutex mutex;
 };
@@ -643,10 +804,12 @@ ggml_tensor * nar_mlp(
 
 ggml_tensor * nar_attention(
     ggml_context * context,
+    ggml_cgraph * graph,
     AutoregressiveState & state,
     KvCache & ar_cache,
     ggml_tensor * value,
     ggml_tensor * positions,
+    ggml_tensor * cache_rows,
     int layer) {
     const std::string prefix =
         "model.layers." + std::to_string(layer) + ".nar_self_attn.";
@@ -670,16 +833,23 @@ ggml_tensor * nar_attention(
         context, key, positions, nullptr, kHeadDim, GGML_ROPE_TYPE_NEOX, 0,
         kRopeTheta, 1.0F, 0.0F, 1.0F, 0.0F, 0.0F);
     query = ggml_permute(context, query, 0, 2, 1, 3);
-    key = ggml_cast(
-        context, ggml_cont(context, ggml_permute(context, key, 0, 2, 1, 3)),
-        GGML_TYPE_F16);
-    projected_value = ggml_cast(
-        context,
-        ggml_cont(context, ggml_permute(context, projected_value, 0, 2, 1, 3)),
-        GGML_TYPE_F16);
-    key = ggml_concat(context, ar_cache.key(layer), key, 1);
-    projected_value = ggml_concat(
-        context, ar_cache.value(layer), projected_value, 1);
+    // The AR cache was sized with room for the NAR rows after it, so the NAR
+    // keys and values are written into place and attention reads the cache
+    // whole. Concatenating instead copied the entire AR cache into a new
+    // tensor in every layer of every ODE evaluation.
+    ggml_build_forward_expand(
+        graph,
+        ggml_set_rows(
+            context, ar_cache.key(layer),
+            ggml_cont(context, ggml_permute(context, key, 0, 2, 1, 3)), cache_rows));
+    ggml_build_forward_expand(
+        graph,
+        ggml_set_rows(
+            context, ar_cache.value(layer),
+            ggml_cont(context, ggml_permute(context, projected_value, 0, 2, 1, 3)),
+            cache_rows));
+    key = ar_cache.key(layer);
+    projected_value = ar_cache.value(layer);
     ggml_tensor * attended = nullptr;
     if (state.flash) {
         attended = ggml_flash_attn_ext(
@@ -710,9 +880,11 @@ public:
             context_.get(), GGML_TYPE_F32, 64, nar_length_);
         time_features_ = ggml_new_tensor_1d(context_.get(), GGML_TYPE_F32, 256);
         positions_ = ggml_new_tensor_1d(context_.get(), GGML_TYPE_I32, nar_length_);
-        for (auto * input : {latent_state_, time_features_, positions_}) {
+        cache_rows_ = ggml_new_tensor_1d(context_.get(), GGML_TYPE_I64, nar_length_);
+        for (auto * input : {latent_state_, time_features_, positions_, cache_rows_}) {
             ggml_set_input(input);
         }
+        ggml_set_name(cache_rows_, "yue2.nar.cache_rows");
         ggml_set_name(latent_state_, "yue2.nar.latent_state");
         ggml_set_name(time_features_, "yue2.nar.time_features");
         ggml_set_name(positions_, "yue2.nar.positions");
@@ -743,7 +915,8 @@ public:
             hidden = ggml_add(
                 context_.get(), hidden,
                 nar_attention(
-                    context_.get(), state_, ar_cache_, normalized, positions_, layer));
+                    context_.get(), graph_, state_, ar_cache_, normalized, positions_,
+                    cache_rows_, layer));
             normalized = rms_norm(
                 context_.get(), hidden,
                 state_.model.get(prefix + "nar_pre_mlp_layernorm.weight"));
@@ -778,12 +951,19 @@ public:
         if (!ggml_backend_sched_alloc_graph(state_.scheduler, graph_)) {
             throw ar_error("could not allocate NAR graph");
         }
+        if (ar_cache_.rows() != ar_cache_.position() + static_cast<std::size_t>(nar_length_)) {
+            throw ar_error("NAR cache must hold exactly the AR prefix and the NAR rows");
+        }
         std::vector<std::int32_t> positions(static_cast<std::size_t>(nar_length_));
+        std::vector<std::int64_t> rows(static_cast<std::size_t>(nar_length_));
         for (std::size_t index = 0; index < positions.size(); ++index) {
             positions[index] = static_cast<std::int32_t>(ar_cache_.position() + index);
+            rows[index] = static_cast<std::int64_t>(ar_cache_.position() + index);
         }
         ggml_backend_tensor_set(
             positions_, positions.data(), 0, positions.size() * sizeof(positions.front()));
+        ggml_backend_tensor_set(
+            cache_rows_, rows.data(), 0, rows.size() * sizeof(rows.front()));
     }
 
     std::vector<float> velocity(
@@ -828,6 +1008,7 @@ private:
     ggml_tensor * latent_state_ = nullptr;
     ggml_tensor * time_features_ = nullptr;
     ggml_tensor * positions_ = nullptr;
+    ggml_tensor * cache_rows_ = nullptr;
     ggml_tensor * output_ = nullptr;
 };
 
@@ -860,9 +1041,11 @@ std::vector<float> AutoregressiveState::solve_flow_chunk(
         return std::chrono::duration<double, std::milli>(to - from).count();
     };
     const auto preamble_started = clock_now();
-    KvCache ar_cache(model.backend(), ar_tokens.size());
+    // Room for the NAR rows after the prefix; FlowGraph writes them in place.
+    KvCache ar_cache(model.backend(), ar_tokens.size() + frames + 2);
     const auto cache_ready = clock_now();
-    (void)append_locked(ar_cache, ar_tokens);
+    // Only the cache is wanted; one logit row keeps lm_head out of it.
+    (void)append_locked(ar_cache, ar_tokens, {0, 1});
     const auto prefill_done = clock_now();
     FlowGraph graph(*this, ar_cache, frames);
     const auto graph_ready = clock_now();
@@ -878,7 +1061,7 @@ std::vector<float> AutoregressiveState::solve_flow_chunk(
             "[yue2] flow memory: compute buffer %.0f MiB, kv cache %.0f MiB\n",
             ggml_backend_sched_get_buffer_size(scheduler, model.backend()) / 1048576.0,
             2.0 * kLayers * kKvHeads * kHeadDim * sizeof(ggml_fp16_t) *
-                static_cast<double>(ar_tokens.size()) / 1048576.0);
+                static_cast<double>(ar_cache.rows()) / 1048576.0);
     }
     auto state = noise;
     const double dt = 1.0 / static_cast<double>(ode_steps);
@@ -905,7 +1088,15 @@ std::vector<float> AutoregressiveState::solve_flow_chunk(
 class AutoregressiveSession::Impl {
 public:
     Impl(std::shared_ptr<AutoregressiveState> state, std::size_t capacity)
-        : state(std::move(state)), cache(this->state->model.backend(), capacity) {}
+        : state(std::move(state)),
+          // Only CUDA attends over every allocated row, so only CUDA grows
+          // its cache; the other backends allocate the whole budget as before.
+          // Growth on Vulkan copied wrong (every logit after the first growth
+          // was off by up to 18; a host round trip was right, so the device
+          // copy graph is at fault), and Vulkan's growing window never needed
+          // it.
+          cache(this->state->model.backend(), capacity,
+                this->state->whole_cache_window ? 1 : 0) {}
 
     std::shared_ptr<AutoregressiveState> state;
     KvCache cache;
@@ -1099,7 +1290,12 @@ AutoregressiveResult AutoregressiveModel::generate(
         throw std::runtime_error("YuE2 generation cancelled");
     }
     auto session = create_session(prefix.size() + sampling.max_tokens);
-    auto logits = session->append(prefix);
+    const auto slice = sampled_logits(phase);
+    const auto append = [&slice](AutoregressiveSession & target,
+                                 const std::vector<std::int32_t> & ids) {
+        return target.impl_->state->append(target.impl_->cache, ids, slice);
+    };
+    auto logits = append(*session, prefix);
     std::mt19937_64 random(seed);
     AutoregressiveResult result;
     result.tokens.reserve(sampling.max_tokens);
@@ -1124,7 +1320,7 @@ AutoregressiveResult AutoregressiveModel::generate(
             result.reached_end = true;
             break;
         }
-        if (step + 1 < sampling.max_tokens) logits = session->append({token});
+        if (step + 1 < sampling.max_tokens) logits = append(*session, {token});
     }
     return result;
 }
@@ -1150,8 +1346,13 @@ AutoregressiveResult AutoregressiveModel::generate_cfg(
     }
     auto positive = create_session(positive_prefix.size() + sampling.max_tokens);
     auto negative = create_session(negative_prefix.size() + sampling.max_tokens);
-    auto positive_logits = positive->append(positive_prefix);
-    auto negative_logits = negative->append(negative_prefix);
+    const auto slice = sampled_logits(phase);
+    const auto append = [&slice](AutoregressiveSession & target,
+                                 const std::vector<std::int32_t> & ids) {
+        return target.impl_->state->append(target.impl_->cache, ids, slice);
+    };
+    auto positive_logits = append(*positive, positive_prefix);
+    auto negative_logits = append(*negative, negative_prefix);
     std::vector<float> guided(kGenerationVocabSize);
     std::mt19937_64 random(seed);
     AutoregressiveResult result;
@@ -1182,8 +1383,8 @@ AutoregressiveResult AutoregressiveModel::generate_cfg(
             break;
         }
         if (step + 1 < sampling.max_tokens) {
-            positive_logits = positive->append({token});
-            negative_logits = negative->append({token});
+            positive_logits = append(*positive, {token});
+            negative_logits = append(*negative, {token});
         }
     }
     return result;

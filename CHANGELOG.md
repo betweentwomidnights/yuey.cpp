@@ -1,5 +1,48 @@
 # changelog
 
+## unreleased
+
+**continuation is faster, mostly by doing less.** an 8-bar audio continuation
+of a 25-second clip went from 46s to 31s on CUDA and from 37s to 32s on Vulkan
+(RTX 5070 Laptop, Q4_K_M). none of it changes the model; the changes cut
+work whose result was thrown away:
+
+- **planning composed three times the bars it kept.** the planning margin
+  (`planning_overrun`, 2×) multiplied the whole target, and a continuation's
+  target includes its transcribed prefix, so a 10-bar clip continued by 8
+  stopped at 36 bars. the margin now covers only the bars being added: 26.
+- **CUDA planned at half Vulkan's speed on the same GPU.** each CUDA decode
+  step attends over every allocated cache row (that's what lets it replay as a
+  graph), and a planning session allocated its whole 9000-token budget up
+  front, so every planning token attended over ~10k masked rows. the cache now
+  starts small and grows in 1024-row steps, copying on the device. only CUDA
+  grows; the other backends never attend past what's written, so they
+  allocate up front as before.
+- **lm_head computed all 184,704 logits per token** and copied them all back
+  to the host, while the semantic sampler reads 32,769 of them (the codes plus
+  the stop token, one contiguous run). decode now computes only the rows the
+  phase can sample, about a tenth of each semantic decode step.
+- **every LoRA layer scaled its output by 1.0** as a separate op. both shipped
+  adapters have alpha equal to rank, so that was ~200 no-op kernels in every
+  decode step and every flow evaluation, about 6% of each. it's skipped when
+  the scale is one. on Vulkan that also lets the matmul and its add fuse, which
+  rounds differently in the last bits (logits within 0.004 of before).
+- **the flow copied the whole AR cache in every layer of every ODE
+  evaluation** to append its own keys and values. the cache is now allocated
+  with room for them, and the flow writes them in place. bit-identical.
+
+**a CUDA bug the cache change surfaced.** at a KV length that's a multiple of
+256, ggml-cuda decodes with its vector flash-attention kernel, and that kernel
+replays wrong logits from a captured CUDA graph (top-1 disagreed with CPU on
+30% of steps from the first replay). the cache is sized to stay off those
+lengths. this is also what broke the 256-rounded window tried before v0.2.0,
+which was put down to partial views at the time.
+
+**every job logs a one-line timing summary** without any debug variable: time
+per stage, tokens per second for planning and semantic, milliseconds per flow
+step, and how much audio came out. it's meant for testers to paste from
+gary4local's log.
+
 ## v0.2.0
 
 **the first release with prebuilt Windows packages.** there are two shapes. the

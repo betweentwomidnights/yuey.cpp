@@ -647,6 +647,17 @@ HttpResponse failure(int status, const std::string & message) {
 
 enum class JobKind { plan, generate, cover, continue_audio, transcribe };
 
+const char * job_kind_name(JobKind kind) {
+    switch (kind) {
+        case JobKind::plan: return "plan";
+        case JobKind::generate: return "generate";
+        case JobKind::cover: return "cover";
+        case JobKind::continue_audio: return "continue";
+        case JobKind::transcribe: return "transcribe";
+    }
+    return "job";
+}
+
 struct Job {
     std::string id;
     JobKind kind = JobKind::generate;
@@ -692,6 +703,18 @@ struct Job {
     std::uint32_t semantic_budget = 0;
     double duration_seconds = 0.0;
     std::chrono::steady_clock::time_point finished;
+
+    // Where the time went, one entry per stage as update() saw it, so every
+    // job can log a one-line summary that a tester can copy out of
+    // gary4local without setting any debug variables.
+    struct StageTime {
+        std::string name;
+        std::chrono::steady_clock::time_point started;
+        double seconds = 0.0;
+        std::uint32_t step = 0;
+        std::uint32_t total = 0;
+    };
+    std::vector<StageTime> timeline;
 
     bool done() const { return status == "completed" || status == "failed"; }
 };
@@ -1492,6 +1515,74 @@ private:
         job.progress = std::clamp(std::max(job.progress, progress), 0, 99);
         job.step = step;
         job.total_steps = total_steps;
+        note_stage_locked(job, status, stage, step, total_steps);
+    }
+
+    static std::string stage_label(const char * status, const char * stage) {
+        const std::string name(stage);
+        // SheetSage2's load and its decode read as one stage; it reports
+        // progress too rarely to split them.
+        if (std::string(status) == "transcribing") return "transcribe";
+        if (name == "load") return "load-generator";
+        if (name == "semantic-tokenizer" || name == "semantic-prefix") return "tokenize";
+        if (name == "abc") return "plan";
+        return name;
+    }
+
+    static void note_stage_locked(
+        Job & job, const char * status, const char * stage,
+        std::uint32_t step, std::uint32_t total) {
+        const auto now = std::chrono::steady_clock::now();
+        const auto label = stage_label(status, stage);
+        if (job.timeline.empty() || job.timeline.back().name != label) {
+            if (!job.timeline.empty()) {
+                auto & last = job.timeline.back();
+                last.seconds = std::chrono::duration<double>(now - last.started).count();
+            }
+            job.timeline.push_back({label, now, 0.0, step, total});
+            return;
+        }
+        job.timeline.back().step = step;
+        job.timeline.back().total = total;
+    }
+
+    void log_timeline_locked(Job & job) {
+        if (job.timeline.empty()) return;
+        auto & last = job.timeline.back();
+        last.seconds = std::chrono::duration<double>(job.finished - last.started).count();
+        const auto total = std::chrono::duration<double>(
+            job.finished - job.timeline.front().started).count();
+        std::string line;
+        char part[160];
+        for (const auto & stage : job.timeline) {
+            if (stage.seconds < 0.05) continue;
+            if ((stage.name == "plan" || stage.name == "semantic") && stage.step > 0) {
+                std::snprintf(part, sizeof part, " | %s %.1fs (%u tok, %.0f/s)",
+                    stage.name.c_str(), stage.seconds, stage.step, stage.step / stage.seconds);
+            } else if (stage.name == "flow" && stage.step > 0) {
+                std::snprintf(part, sizeof part, " | flow %.1fs (%u steps, %.0f ms/step)",
+                    stage.seconds, stage.step, 1000.0 * stage.seconds / stage.step);
+            } else {
+                std::snprintf(part, sizeof part, " | %s %.1fs", stage.name.c_str(), stage.seconds);
+            }
+            line += part;
+        }
+        if (job.status == "completed" && job.duration_seconds > 0.0) {
+            std::snprintf(part, sizeof part, " | %.1fs of audio", job.duration_seconds);
+            line += part;
+        }
+        if (job.semantic_frames > 0) {
+            std::snprintf(part, sizeof part, ", %zu frames (%zu given)",
+                static_cast<std::size_t>(job.semantic_frames),
+                static_cast<std::size_t>(job.semantic_prefix_frames));
+            line += part;
+        }
+        auto device = configuration_.device.empty()
+            ? environment("YUE2_DEVICE") : configuration_.device;
+        if (device.empty()) device = "auto";
+        std::fprintf(stderr, "[yuey] %s %s in %.1fs on %s%s\n",
+            job_kind_name(job.kind), job.status.c_str(), total, device.c_str(), line.c_str());
+        std::fflush(stderr);
     }
 
     void transcribe(Job & job) {
@@ -1714,6 +1805,7 @@ private:
         job.stage = "complete";
         job.progress = 100;
         job.finished = std::chrono::steady_clock::now();
+        log_timeline_locked(job);
     }
 
     void fail_locked(Job & job, const std::string & message) {
@@ -1723,6 +1815,7 @@ private:
         job.cancelled = job.cancel.load();
         job.input = {};
         job.finished = std::chrono::steady_clock::now();
+        log_timeline_locked(job);
     }
 
     void prune_locked() {
