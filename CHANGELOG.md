@@ -1,6 +1,6 @@
 # changelog
 
-## unreleased
+## v0.2.1
 
 **continuation is faster, mostly by doing less.** an 8-bar audio continuation
 of a 25-second clip went from 46s to 31s on CUDA and from 37s to 32s on Vulkan
@@ -42,6 +42,11 @@ which was put down to partial views at the time.
 per stage, tokens per second for planning and semantic, milliseconds per flow
 step, and how much audio came out. it's meant for testers to paste from
 gary4local's log.
+
+**the docs said `/continue` ignores the natural-length ceiling.** it doesn't:
+a natural continuation keeps its source bars and is held to the ceiling by
+what it adds, so a 25s clip at gary4local's 180s comes back at about 205s.
+the code was right; `docs/server.md` now says so.
 
 ## v0.2.0
 
