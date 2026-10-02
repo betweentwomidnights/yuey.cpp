@@ -426,7 +426,10 @@ stops at the first structural boundary once the plan is that many times longer
 than what the fit will keep. Unlike the loop stop this is a judgement call: the
 last bars of a finished plan are its composed ending, and stopping exactly at
 the kept length takes whatever the planner happened to be writing instead. The
-margin buys room for an ending to arrive while bounding the runaway case.
+margin buys room for an ending to arrive while bounding the runaway case. On
+a continuation the margin covers only the bars being added, since the
+transcribed prefix is kept as it is: a 10-bar clip continued by 8 stops at
+10 + 8 × 2 = 26 bars, not (10 + 8) × 2.
 
 A stop can only land where the score parses, which is a balanced Vocal/Ins
 block boundary, so both are block-granular and overshoot the threshold by up
@@ -537,6 +540,17 @@ rendered 65 s.
 Finished jobs are kept for five minutes. Poll with `?consume=1` to take the
 result and free it at once; a song's base64 WAV is tens of megabytes (see
 [Audio on the wire](#audio-on-the-wire)).
+
+Every finished job, completed or failed, also writes one line to stderr saying
+where its time went:
+
+```text
+[yuey] continue completed in 30.4s on cuda | transcribe 3.5s | tokenize 0.5s | load-generator 1.0s | plan 5.2s (495 tok, 95/s) | semantic 5.6s (568 tok, 101/s) | flow 13.7s (32 steps, 429 ms/step) | decode 0.7s | 47.5s of audio, 1187 frames (619 given)
+```
+
+It needs no debug variable, so a slow report from a tester can carry it. Stages
+under 50ms are left out; `frames (n given)` counts the semantic frames rendered
+and how many came from the caller's audio.
 
 ## Audio on the wire
 
