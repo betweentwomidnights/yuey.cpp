@@ -110,9 +110,13 @@ Write-Host "vulkan     $env:VULKAN_SDK"
 
 # --- build ------------------------------------------------------------------
 
+# Load CUDA's MSBuild integration from the toolkit itself. CI caches that
+# directory, but not the files the installer registers inside Visual Studio.
+# An explicit toolset path therefore also works after a toolkit cache hit.
 Invoke-Checked $cmake @(
     "-S", ".", "-B", $BuildDir,
     "-G", "Visual Studio 17 2022", "-A", "x64",
+    "-T", "cuda=$env:CUDA_PATH",
     "-DCMAKE_BUILD_TYPE=Release",
     "-DGGML_NATIVE=OFF",
     "-DGGML_BACKEND_DL=ON",
