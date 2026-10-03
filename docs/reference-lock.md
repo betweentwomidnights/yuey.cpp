@@ -8,7 +8,7 @@ The initial port was analyzed against these exact revisions:
 | m-a-p/SheetSage2 | `eab522a8168e8b8b8c4856bf8609cd86198f01fe` | Audio-to-symbolic model, grammar, and exporters |
 | m-a-p/MERT-v2-FullSong | `d8ba1c745e733b3908ce6ad16ebeb17ac7600a42` | Audio encoder pinned by SheetSage2 |
 | 0xShug0/audio.cpp dev | `fbe3eedbf6c504e45189e2cdcf1b257740a28863e` | Independent GGML YuE2 and partial SheetSage2 reference |
-| betweentwomidnights/ggml | `07f9348a5150bcb6920b88281e2547ba06b2feaf` | Shared execution/training backend |
+| betweentwomidnights/ggml | `f30f0cdc6e0419fabf55f18bcdd5b6b8b234a17e` | Shared execution/training backend |
 
 The upstream repos are references, not source dependencies. `audio.cpp` is
 especially useful for tensor naming and BART/YuE2 parity ideas, but its YuE2
