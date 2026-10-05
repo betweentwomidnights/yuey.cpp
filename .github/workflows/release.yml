@@ -26,6 +26,11 @@ on:
         type: choice
         options: [all, windows, macos]
         default: all
+      publish_stable:
+        description: verify both platforms and mark the existing release stable/latest
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -251,3 +256,55 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$TAG" dist/yuey-*-macos-universal.zip dist/SHA256SUMS-macos --clobber
+
+  publish:
+    name: verify packages and publish stable release
+    needs: [windows, macos]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_stable && inputs.tag != '' && inputs.platforms == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Verify checksums, provenance, and packaged revisions
+        shell: bash
+        run: |
+          # Keep all uploaded packages at one source revision before promoting.
+          expected="$(git rev-parse HEAD)"
+          [ "$expected" = "$GITHUB_SHA" ] || { echo "tag moved since this release run started"; exit 1; }
+          mkdir verified-release
+          cd verified-release
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "yuey-$TAG-*.zip" --pattern SHA256SUMS --pattern SHA256SUMS-macos
+          sha256sum -c SHA256SUMS
+          sha256sum -c SHA256SUMS-macos
+          for package in *.zip; do
+            gh attestation verify "$package" --repo "$GITHUB_REPOSITORY"
+          done
+          export EXPECTED_COMMIT="$expected"
+          export EXPECTED_GGML="$(git -C .. ls-tree HEAD ggml | awk '{print $3}')"
+          python3 - <<'PY'
+          import json, os, zipfile
+          for platform in ("windows-x64-core", "macos-universal"):
+              with zipfile.ZipFile(f"yuey-{os.environ['TAG']}-{platform}.zip") as package:
+                  info = json.loads(package.read("BUILD-INFO.json"))
+              assert info["version"] == os.environ["TAG"], info
+              assert info["commit"] == os.environ["EXPECTED_COMMIT"], info
+              assert info["ggml_commit"] == os.environ["EXPECTED_GGML"], info
+              assert info["dirty"] is False, info
+              if platform == "macos-universal":
+                  assert info["signed"] is True, info
+          PY
+
+      - name: Mark the verified release stable and latest
+        shell: bash
+        run: |
+          current="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -1 | cut -f1)"
+          [ "$current" = "$GITHUB_SHA" ] || { echo "tag moved during verification"; exit 1; }
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest

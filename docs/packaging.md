@@ -135,3 +135,10 @@ dispatch accepts `platforms=all`, `windows`, or `macos`. for a macOS-only dry
 run, use `gh workflow run release.yml --ref main -f platforms=macos` without a
 tag. with a tag, the workflow requires signing, attests the zip, and attaches
 it and `SHA256SUMS-macos` to the existing release.
+
+for a production release, dispatch from the tagged source revision with
+`platforms=all` and `publish_stable=true`. after both jobs finish, CI verifies
+every archive's checksum and attestation, checks the packaged source and GGML
+revisions and macOS signing status, then marks the release stable and latest.
+it refuses promotion if the tag moves during the run. ordinary rebuilds keep
+the existing prerelease status.
