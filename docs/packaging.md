@@ -1,6 +1,6 @@
 # packaging and releases
 
-every yuey release comes with prebuilt Windows packages. they follow the native
+every yuey release comes with prebuilt Windows and macOS packages. they follow the native
 runtime package contract that gary4local installs all of its GGML services by:
 [`docs/native-runtime-packages.md`](https://github.com/betweentwomidnights/gary-localhost-installer/blob/main/docs/native-runtime-packages.md)
 in gary-localhost-installer. that document is the source of truth for the
@@ -16,6 +16,16 @@ built, and the checklist for cutting one.
 | `yuey-vX.Y.Z-windows-x64-vulkan.zip` | `ggml-vulkan.dll` | supervisors, AMD and Intel |
 | `yuey-vX.Y.Z-windows-x64-standalone.zip` | all of the above, plus the CUDA runtime (`cudart64_12`, `cublas64_12`, `cublasLt64_12`, `NVIDIA-CUDA-EULA.txt`), `models.cmd` and a README | running yuey on its own |
 | `SHA256SUMS` | one `sha256  name` line per zip, LF endings | everyone |
+| `yuey-vX.Y.Z-macos-universal.zip` | universal server, CLI tools and `libyue2.dylib`, GGML dylibs, embedded Metal shaders, C ABI headers, `models.sh`, licenses, README and `BUILD-INFO.json` | macOS 13.3+, Apple Silicon (Metal/CPU) and Intel (CPU) |
+| `SHA256SUMS-macos` | SHA-256 of the macOS zip, separate from the Windows checksum file | macOS |
+
+the macOS archive is one flat runtime rather than split core/backend packages.
+keep the executables and dylibs together. release binaries have Developer ID
+signatures and hardened runtime, and the zip must pass Apple notarization
+before upload. bare binaries cannot be stapled; Gatekeeper checks their ticket
+online. the macOS job runs the fixture-free tests and checks the packaged C ABI
+and server startup on both slices, with Rosetta for Intel. hosted CI checks
+CPU execution; real Metal inference needs validation on an Apple Silicon Mac.
 
 a supervisor unpacks core and exactly one backend zip into the same folder.
 ggml loads backend DLLs from the executable's folder, so that's all the backend
@@ -109,3 +119,26 @@ once gary4local pins a release, it doesn't change. a fix is a new patch
 version, never new assets under an old tag. the one exception is rerunning the
 workflow to attach assets that are missing, before anything has pinned the
 release.
+
+## macOS builds
+
+`ci/package-macos.sh --version v0.2.1 --jobs 3` builds both slices on an Apple
+Silicon Mac. `YUEY_SIGN_IDENTITY`, `YUEY_NOTARY_KEY` (a P8 file path),
+`YUEY_NOTARY_KEY_ID` and `YUEY_NOTARY_ISSUER` enable signing and notarization;
+`--require-signing` rejects missing credentials. CI imports the Developer ID
+certificate into a temporary keychain from `MACOS_CERT_P12` and
+`MACOS_CERT_PASSWORD`, uses `APPLE_TEAM_ID` to select the identity, and reads
+`APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER_ID` for
+notarization. temporary credentials are removed even after a failed job.
+
+dispatch accepts `platforms=all`, `windows`, or `macos`. for a macOS-only dry
+run, use `gh workflow run release.yml --ref main -f platforms=macos` without a
+tag. with a tag, the workflow requires signing, attests the zip, and attaches
+it and `SHA256SUMS-macos` to the existing release.
+
+for a production release, dispatch from the tagged source revision with
+`platforms=all` and `publish_stable=true`. after both jobs finish, CI verifies
+every archive's checksum and attestation, checks the packaged source and GGML
+revisions and macOS signing status, then marks the release stable and latest.
+it refuses promotion if the tag moves during the run. ordinary rebuilds keep
+the existing prerelease status.
