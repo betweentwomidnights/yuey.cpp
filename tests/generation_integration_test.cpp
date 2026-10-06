@@ -58,5 +58,28 @@ int main(int argc, char ** argv) {
               << first.semantic_codec_ids[1]
               << " latents=" << first.latents.size()
               << " pcm=" << first.audio.interleaved_samples.size() << "\n";
+
+    // Imported two-bar MIDI at 150 BPM is 3.2 seconds of score plus a 2-second
+    // decay tail: 130 semantic frames. The stock 200-frame minimum used to
+    // exceed that budget and throw before audio generation on every backend.
+    // Exercise the real pipeline with defaults, not an explicit token cap.
+    yue2::GenerationRunOptions short_run;
+    short_run.generation.semantic.temperature = 0.0F;
+    short_run.flow.ode_steps = 1;
+    auto short_request = request;
+    short_request.abc =
+        "X:1\nM:4/4\nL:1/32\nQ:1/4=150\n"
+        "V: Vocal clef=treble\nV: Ins clef=treble\nK:C\n% verse\n"
+        "V: Vocal\nC8E8G16|D8F8A16|\nV: Ins\nC,32|D,32|\n";
+    const auto short_song = pipeline.generate(short_request, short_run);
+    if (short_song.abc != *short_request.abc || short_song.score_bars != 2 ||
+        short_song.semantic_budget != 130 || short_song.semantic_codec_ids.size() != 130 ||
+        short_song.semantic_truncated || short_song.audio.interleaved_samples.empty() ||
+        !std::all_of(short_song.audio.interleaved_samples.begin(), short_song.audio.interleaved_samples.end(),
+            [](float value) { return std::isfinite(value); })) {
+        throw std::runtime_error("YuE2 short supplied score did not render within its aligned budget");
+    }
+    std::cout << "short-score semantic=" << short_song.semantic_codec_ids.size()
+              << " budget=" << short_song.semantic_budget << "\n";
     return 0;
 }

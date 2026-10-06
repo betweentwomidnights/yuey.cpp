@@ -508,8 +508,11 @@ public:
                     "YuE2 score is too long to align inside the model context");
             }
             semantic_sampling.max_tokens = budget;
+            // A short supplied score can have less room than the default
+            // 200-frame minimum. Keep every score frame, but never ask
+            // the sampler for more frames than its aligned budget allows.
             semantic_sampling.min_tokens = effective.semantic_prefix.empty()
-                ? std::max(semantic_sampling.min_tokens, minimum)
+                ? std::min(std::max(semantic_sampling.min_tokens, minimum), budget)
                 : minimum;
         }
         result.semantic_budget = semantic_sampling.max_tokens;
