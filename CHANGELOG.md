@@ -1,5 +1,21 @@
 # changelog
 
+## v0.2.2
+
+short supplied scores now render instead of failing with `invalid YuE2 AR
+sampling configuration`. a two-bar MIDI clip at 150 BPM lasts 3.2 seconds;
+its audio budget, including the decay tail, is 130 tokens. the sampler used
+to keep a 200-token minimum, which was more than that budget allowed.
+
+the minimum now fits within the score's budget while still covering every
+score frame. longer scores, explicit token budgets and real-audio prefix
+minimums keep their existing behavior. this applies to short MIDI renders
+and other supplied scores on every backend.
+
+validated on CUDA and Vulkan with the original melody retained exactly in
+exported MIDI, and on the rebuilt remote Spark backend through gary4juce.
+a real-weight regression test covers the two-bar, 150 BPM case.
+
 ## v0.2.1
 
 **continuation is faster, mostly by doing less.** an 8-bar audio continuation

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(yue2_cpp VERSION 0.2.1 LANGUAGES C CXX)
+project(yue2_cpp VERSION 0.2.2 LANGUAGES C CXX)
 
 include(CTest)
 
