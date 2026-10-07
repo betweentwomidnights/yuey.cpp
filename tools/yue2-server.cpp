@@ -16,6 +16,7 @@
 #include "server/json.h"
 #include "server/policy.h"
 #include "server/prompts.h"
+#include "server/progress.h"
 #include "yue2_ui_html.h"
 
 #include <algorithm>
@@ -1682,23 +1683,20 @@ private:
         yue2::GenerationControl control;
         control.should_cancel = [&job]() { return job.cancel.load(); };
         control.on_progress = [&, base](yue2::GenerationStage stage, std::uint32_t current, std::uint32_t total) {
-            const double fraction = total ? static_cast<double>(current) / total : 1.0;
-            const auto at = [&](double from, double to) {
-                return static_cast<int>(base + (100 - base) * (from + (to - from) * fraction));
-            };
+            const auto progress = yue2::server::generation_progress(stage, current, total, base);
             switch (stage) {
                 case yue2::GenerationStage::abc:
-                    update(job, "generating", "abc", at(0.0, 0.10), current, total);
+                    update(job, "generating", "abc", progress, current, total);
                     break;
                 case yue2::GenerationStage::semantic:
-                    update(job, "generating", "semantic", at(0.10, 0.80), current, total);
+                    update(job, "generating", "semantic", progress, current, total);
                     break;
                 case yue2::GenerationStage::flow:
-                    update(job, "generating", "flow", at(0.80, 0.92), current, total);
+                    update(job, "generating", "flow", progress, current, total);
                     break;
                 case yue2::GenerationStage::decode:
                 case yue2::GenerationStage::complete:
-                    update(job, "decoding", "decode", at(0.92, 0.99), current, total);
+                    update(job, "decoding", "decode", progress, current, total);
                     break;
             }
         };
