@@ -1,5 +1,23 @@
 # changelog
 
+## v0.2.3
+
+**generation progress follows the work.** `/poll_status` used to reach 80%
+before flow started, though flow is most of a generation's time: an M4 Air
+render of 32 seconds of audio took about 15 seconds of semantic generation and
+75 seconds of flow. progress now gives ABC planning 0–2%, semantic tokens
+2–20%, flow 20–97% and decode 97–99%. a cover still reserves the first 15% for
+transcription and a real-audio continuation the first 25% for its prefix.
+progress never goes backwards, an unknown total leaves a stage at its start,
+and only a finished result reports 100%. it's a work estimate, not an ETA.
+
+**ggml moves from `60f49e09` to `4ad3b30b`.** that brings a tiled Metal im2col
+kernel for batch-1 convolutions, which the VAE decode now uses, and a CPU
+`im2col_f32` that splits work over output pixels. both only move data. the
+Vulkan change keeps F32 kernels in fp32 for direct 2D/3D convolutions, which
+yuey doesn't call. ggml-bump-check found every output identical on CUDA,
+Vulkan, CPU and Metal.
+
 ## v0.2.2
 
 short supplied scores now render instead of failing with `invalid YuE2 AR
