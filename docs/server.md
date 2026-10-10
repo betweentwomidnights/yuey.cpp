@@ -513,7 +513,7 @@ rendered 65 s.
   "success": true, "session_id": "…",
   "generation_in_progress": true, "transform_in_progress": false,
   "status": "generating", "stage": "semantic",
-  "progress": 42, "step": 3180, "total_steps": 9000,
+  "progress": 8, "step": 3180, "total_steps": 9000,
   "queue_status": {"status": "ready", "message": "semantic"},
   "seed": 1234
 }
@@ -523,9 +523,14 @@ rendered 65 s.
   completed`, or ends in `failed`.
 - **`stage`** is finer: `load`, `transcription`, `abc`, `semantic`, `flow`,
   `decode`.
-- **`progress`** (0–100) is weighted across stages. Transcription takes the
-  first 15 of a cover; for semantic generation, `total_steps` is the token
-  budget, and generation normally stops before it.
+- **`progress`** (0–100) is a stage-weighted work estimate, not an ETA. Generation
+  allocates 0–2% to ABC planning, 2–20% to semantic tokens, 20–97% to flow, and
+  97–99% to decode/finalization. A cover reserves the first 15% for transcription;
+  real-audio continuation reserves the first 25% for its prefix preparation.
+  Generation ranges scale across the remaining work. For semantic generation,
+  `total_steps` is the token budget, and generation normally stops before it.
+  Unknown totals leave a stage at its starting percentage. Job progress never
+  decreases, and only successful result finalization reports 100%.
 - **A completed generation** adds `audio_data`, `abc` (the exact score used),
   `midi_data`, `midi_files`, and `meta:{seed, duration, score_bars,
   score_duration, sample_rate, channels, semantic_frames, semantic_budget,
