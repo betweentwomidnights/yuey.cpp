@@ -75,6 +75,12 @@ the script also enforces the release rules:
 - it empties the output folder first, so a release never uploads a stale zip.
 - a Visual C++ runtime older than the compiler that built the package fails
   the build: binaries from a newer toolset can crash on an older `msvcp140`.
+  the runtime and the compiler are both read from the build's own CMake
+  configuration, never from whichever Visual Studio is newest.
+- the staged `yue2-server.exe --props` runs under a DLL-load recorder, and the
+  build fails unless all four runtime DLLs load from the package's own folder.
+  the build machine has them in System32 too, so this proves the copies are
+  the ones Windows picks.
 - `BUILD-INFO.json` records the service, version, yuey and ggml commits, CUDA
   and Vulkan SDK versions, the Visual C++ runtime version, and build time. `dirty: true` marks a hand-built
   package from a checkout with local changes. CI never makes one.
