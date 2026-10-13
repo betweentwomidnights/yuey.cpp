@@ -13,6 +13,11 @@ zip.
   decodes FLAC uploads. it's public domain (Unlicense) or MIT No Attribution,
   your choice. neither asks for a notice, and the text is at the end of the
   header. the pinned release and hash are in `third_party/dr_libs/README.md`.
+- **Microsoft Visual C++ runtime** (`msvcp140.dll`, `vcruntime140.dll`,
+  `vcruntime140_1.dll`, `vcomp140.dll`), in the core zip beside the
+  executables so they need no system-wide install. these are redistributable
+  files from Visual Studio 2022, shipped under its license terms for
+  distributable code. `BUILD-INFO.json` records their version.
 - **Unicode data.** `src/yue2_unicode_tables.h` is generated from Python's
   `unicodedata` (Unicode 15.0.0) by `tools/generate_yue2_unicode_tables.py`.
   Unicode's data files are used under the Unicode License v3.
