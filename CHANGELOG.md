@@ -1,5 +1,15 @@
 # changelog
 
+## v0.2.4
+
+**the Visual C++ runtime comes with the package.** the core zip now carries
+`msvcp140`, `vcruntime140`, `vcruntime140_1` and `vcomp140` beside the
+executables, from the Visual Studio that built them. Windows loads those before
+System32, so yuey runs on a machine with an old or missing Visual C++
+Redistributable, and a supervisor never needs an administrator install of one.
+the package script fails if the runtime is older than the compiler, and
+`BUILD-INFO.json` records its version. nothing else changed since v0.2.3.
+
 ## v0.2.3
 
 **generation progress follows the work.** `/poll_status` used to reach 80%
