@@ -11,7 +11,7 @@ built, and the checklist for cutting one.
 
 | asset | contents | for |
 |---|---|---|
-| `yuey-vX.Y.Z-windows-x64-core.zip` | `yue2-server.exe`, `yue2-generate.exe`, `yue2-transcribe.exe`, `yue2.dll`, `ggml.dll`, `ggml-base.dll`, every `ggml-cpu-*.dll` variant, `LICENSE`, `LICENSE-ggml.txt`, `THIRD_PARTY_NOTICES.md`, `BUILD-INFO.json` | supervisors |
+| `yuey-vX.Y.Z-windows-x64-core.zip` | `yue2-server.exe`, `yue2-generate.exe`, `yue2-transcribe.exe`, `yue2.dll`, `ggml.dll`, `ggml-base.dll`, every `ggml-cpu-*.dll` variant, the Visual C++ runtime (`msvcp140`, `vcruntime140`, `vcruntime140_1`, `vcomp140`), `LICENSE`, `LICENSE-ggml.txt`, `THIRD_PARTY_NOTICES.md`, `BUILD-INFO.json` | supervisors |
 | `yuey-vX.Y.Z-windows-x64-cuda.zip` | `ggml-cuda.dll` | supervisors, NVIDIA |
 | `yuey-vX.Y.Z-windows-x64-vulkan.zip` | `ggml-vulkan.dll` | supervisors, AMD and Intel |
 | `yuey-vX.Y.Z-windows-x64-standalone.zip` | all of the above, plus the CUDA runtime (`cudart64_12`, `cublas64_12`, `cublasLt64_12`, `NVIDIA-CUDA-EULA.txt`), `models.cmd` and a README | running yuey on its own |
@@ -59,6 +59,11 @@ the package CI would have built. it builds with:
   through Blackwell).
 - in CI, CUDA 12.8.1 and Vulkan SDK 1.4.350.0 (the official LunarG installer) on the pinned `windows-2022`
   runner with Visual Studio 2022.
+- the Visual C++ runtime in the core zip, from the redistributable folder of
+  the Visual Studio that built it. Windows loads DLLs from an executable's own
+  folder before System32, so yuey runs on the runtime it was built against,
+  whatever the machine has installed, and no one needs an administrator
+  install of the redistributable.
 
 the script also enforces the release rules:
 
@@ -68,8 +73,10 @@ the script also enforces the release rules:
   all report it.
 - a GPU backend DLL that leaks into the core zip fails the build.
 - it empties the output folder first, so a release never uploads a stale zip.
+- a Visual C++ runtime older than the compiler that built the package fails
+  the build: binaries from a newer toolset can crash on an older `msvcp140`.
 - `BUILD-INFO.json` records the service, version, yuey and ggml commits, CUDA
-  and Vulkan SDK versions, and build time. `dirty: true` marks a hand-built
+  and Vulkan SDK versions, the Visual C++ runtime version, and build time. `dirty: true` marks a hand-built
   package from a checkout with local changes. CI never makes one.
 
 ```powershell

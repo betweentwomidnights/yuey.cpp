@@ -70,6 +70,48 @@ function Invoke-Checked([string]$program, [string[]]$arguments) {
     }
 }
 
+# The Visual C++ runtime, carried app-local. Every binary links it
+# dynamically, OpenMP (vcomp140) included. Windows looks in an executable's
+# own folder before System32, so copies beside it win over whatever the
+# machine has, and nobody needs an administrator install of the
+# redistributable. They come from the redistributable folder of the Visual
+# Studio that built the package, and must be at least as new as its compiler:
+# binaries from a newer toolset can crash on an older msvcp140 (std::mutex
+# changed in 14.40).
+function Get-VcRuntime([string]$buildDir) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) { Fail "vswhere.exe was not found; install Visual Studio 2022" }
+    $vs = & $vswhere -latest -products * -version "[17.0,18.0)" `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if (-not $vs) { Fail "no Visual Studio 2022 with the C++ x64 tools was found" }
+    $versionFile = Join-Path $vs "VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt"
+    if (-not (Test-Path $versionFile)) { Fail "$vs has no VC redistributable version file" }
+    $redist = Join-Path $vs "VC\Redist\MSVC\$((Get-Content $versionFile -Raw).Trim())\x64"
+
+    # The compiler CMake used, as 19.MM; its runtime is 14.MM.
+    $compiler = Get-ChildItem -Path (Join-Path $buildDir "CMakeFiles") -Filter CMakeCXXCompiler.cmake -Recurse |
+        Select-String -Pattern 'set\(CMAKE_CXX_COMPILER_VERSION "19\.(\d+)' | Select-Object -First 1
+    if (-not $compiler) { Fail "cannot tell the MSVC version from $buildDir" }
+    $toolsetMinor = [int]$compiler.Matches[0].Groups[1].Value
+
+    $files = @()
+    foreach ($entry in @(
+        @{ folder = "Microsoft.VC143.CRT"; name = "msvcp140.dll" },
+        @{ folder = "Microsoft.VC143.CRT"; name = "vcruntime140.dll" },
+        @{ folder = "Microsoft.VC143.CRT"; name = "vcruntime140_1.dll" },
+        @{ folder = "Microsoft.VC143.OpenMP"; name = "vcomp140.dll" }
+    )) {
+        $file = Join-Path $redist "$($entry.folder)\$($entry.name)"
+        if (-not (Test-Path $file)) { Fail "$file is missing; install the MSVC v143 redistributable files" }
+        $info = (Get-Item $file).VersionInfo
+        if ($info.FileMajorPart -ne 14 -or $info.FileMinorPart -lt $toolsetMinor) {
+            Fail "$($entry.name) $($info.FileVersion) is older than the 14.$toolsetMinor toolset that built the package"
+        }
+        $files += $file
+    }
+    return $files
+}
+
 # --- toolchain --------------------------------------------------------------
 
 $cmake = (Get-Command cmake.exe -ErrorAction SilentlyContinue)
@@ -174,6 +216,8 @@ $coreDir = Stage "core" @(
 Copy-Item (Join-Path $root "LICENSE") $coreDir
 Copy-Item (Join-Path $root "ggml\LICENSE") (Join-Path $coreDir "LICENSE-ggml.txt")
 Copy-Item (Join-Path $root "docs\THIRD_PARTY_NOTICES.md") $coreDir
+$vcRuntime = Get-VcRuntime $BuildDir
+foreach ($file in $vcRuntime) { Copy-Item $file $coreDir }
 
 # Where the package came from, so an installed runtime can be traced back to
 # its commits and toolchain without the release page.
@@ -189,6 +233,7 @@ $buildInfo = [ordered]@{
     backends    = @("cuda", "vulkan")
     cuda        = $cudaVersion
     vulkan_sdk  = (Split-Path -Leaf $env:VULKAN_SDK)
+    msvc_runtime = (Get-Item $vcRuntime[0]).VersionInfo.FileVersion
     built_utc   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 }
 [System.IO.File]::WriteAllText(
