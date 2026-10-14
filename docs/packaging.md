@@ -128,10 +128,22 @@ exists.
    then test an install from the published URLs, with no override set, before
    a gary4local release ships the pin.
 
+6. **promote it.** once it's been tested from gary4local, mark it stable:
+
+   ```bash
+   gh workflow run release.yml -R betweentwomidnights/yuey.cpp -f tag=vX.Y.Z -f publish_stable=true
+   ```
+
+   this builds nothing. it checks that every package is attached, then checks
+   them against `SHA256SUMS`, their attestations and their `BUILD-INFO.json`
+   (the tagged commit, a clean checkout), and marks the release stable and
+   latest. the zips it promotes are the ones gary4local pinned.
+
 once gary4local pins a release, it doesn't change. a fix is a new patch
 version, never new assets under an old tag. the one exception is rerunning the
 workflow to attach assets that are missing, before anything has pinned the
-release.
+release. that rerun, `-f tag=vX.Y.Z` without `publish_stable`, rebuilds and
+replaces every zip, and the new builds hash differently.
 
 ## macOS builds
 

@@ -10,10 +10,14 @@ on:
   release:
     types: [published]
   # With a tag: rebuild and re-attach for a release that already exists, e.g.
-  # after a runner failure; assets are replaced, not duplicated. Without one:
-  # a dry run of the chosen branch, packaged under the version CMakeLists.txt
-  # declares and kept as a workflow artifact, so the release path is proven
-  # before anything is published.
+  # after a runner failure; assets are replaced, not duplicated. Builds aren't
+  # byte-reproducible, so that changes every zip's SHA-256: never do it to a
+  # release gary4local has pinned. Without a tag: a dry run of the chosen
+  # branch, packaged under the version CMakeLists.txt declares and kept as a
+  # workflow artifact, so the release path is proven before anything is
+  # published. With a tag and publish_stable: nothing is built. The assets
+  # already attached are verified and the release is marked stable/latest, so
+  # its pinned hashes stay valid.
   workflow_dispatch:
     inputs:
       tag:
@@ -27,7 +31,7 @@ on:
         options: [all, windows, macos]
         default: all
       publish_stable:
-        description: verify both platforms and mark the existing release stable/latest
+        description: verify the attached packages and mark the existing release stable/latest, building nothing
         required: false
         type: boolean
         default: false
@@ -47,7 +51,7 @@ jobs:
     # generator by name. A runner image moving to a newer Visual Studio should
     # be a change made here on purpose, not one that turns up as a red release.
     runs-on: windows-2022
-    if: github.event_name == 'release' || inputs.platforms != 'macos'
+    if: (github.event_name == 'release' || inputs.platforms != 'macos') && !inputs.publish_stable
     # Every CUDA architecture ggml's portable default covers is compiled, which
     # is most of this job's time.
     timeout-minutes: 240
@@ -160,7 +164,7 @@ jobs:
     name: macos-universal (metal + cpu)
     # macOS 15: its Rosetta runs the x86_64 slice's AVX2 code, so CI tests both slices.
     runs-on: macos-15
-    if: github.event_name == 'release' || inputs.platforms != 'windows'
+    if: (github.event_name == 'release' || inputs.platforms != 'windows') && !inputs.publish_stable
     timeout-minutes: 90
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -259,8 +263,9 @@ jobs:
 
   publish:
     name: verify packages and publish stable release
-    needs: [windows, macos]
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_stable && inputs.tag != '' && inputs.platforms == 'all'
+    # No build jobs run first: promotion only checks what the release already
+    # carries, so the zips gary4local pinned are the ones it marks stable.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_stable && inputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -276,8 +281,20 @@ jobs:
         shell: bash
         run: |
           # Keep all uploaded packages at one source revision before promoting.
+          # The tag's commit now is what the packages must name, and what the
+          # tag must still point at when the release is marked stable.
           expected="$(git rev-parse HEAD)"
-          [ "$expected" = "$GITHUB_SHA" ] || { echo "tag moved since this release run started"; exit 1; }
+          echo "EXPECTED_COMMIT=$expected" >> "$GITHUB_ENV"
+          # A release missing a package is repaired by rerunning the workflow
+          # for its tag without publish_stable, never by promotion.
+          attached="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          missing=""
+          for name in "yuey-$TAG-windows-x64-core.zip" "yuey-$TAG-windows-x64-cuda.zip" \
+              "yuey-$TAG-windows-x64-vulkan.zip" "yuey-$TAG-windows-x64-standalone.zip" \
+              "yuey-$TAG-macos-universal.zip" SHA256SUMS SHA256SUMS-macos; do
+            grep -qx "$name" <<<"$attached" || missing="$missing $name"
+          done
+          [ -z "$missing" ] || { echo "$TAG is missing:$missing"; exit 1; }
           mkdir verified-release
           cd verified-release
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
@@ -306,5 +323,5 @@ jobs:
         shell: bash
         run: |
           current="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -1 | cut -f1)"
-          [ "$current" = "$GITHUB_SHA" ] || { echo "tag moved during verification"; exit 1; }
+          [ "$current" = "$EXPECTED_COMMIT" ] || { echo "tag moved during verification"; exit 1; }
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest
