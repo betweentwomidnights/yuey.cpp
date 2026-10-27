@@ -482,6 +482,16 @@ std::vector<std::pair<std::string, fs::path>> list_adapters(const fs::path & dir
     return output;
 }
 
+std::string loras_json(const std::vector<yue2::LoraAdapterSpec> & adapters) {
+    std::string output = "[";
+    for (const auto & spec : adapters) {
+        if (output.size() > 1) output += ',';
+        output += "{\"name\":" + json::quote(adapter_name(fs::path(spec.path).filename().string())) +
+            ",\"path\":" + json_path(spec.path) + ",\"strength\":" + real(spec.strength) + "}";
+    }
+    return output + "]";
+}
+
 fs::path resolve_adapter(const Configuration & configuration, const std::string & reference) {
     std::error_code error;
     const fs::path candidate(reference);
@@ -667,6 +677,7 @@ struct Job {
     yue2::SongRequest song;
     yue2::GenerationRunOptions run;
     std::vector<yue2::LoraAdapterSpec> loras;
+    std::vector<yue2::LoraAdapterSpec> render_loras;
     yue2::audio::MonoAudio input;
     yue2::TranscriptionOptions transcription;
     std::uint32_t continuation_bars = 0;
@@ -889,7 +900,7 @@ private:
             "{\"success\":true,\"service\":\"yue2\",\"api_version\":1,\"version\":" +
             json::quote(yue2::version()) +
             ",\"capabilities\":{\"plan\":true,\"generate\":true,\"transcribe\":true,\"cover\":true,\"continue\":true,"
-            "\"planning_controls\":true,\"instrumental\":true,"
+            "\"planning_controls\":true,\"render_loras\":true,\"instrumental\":true,"
             "\"instrumental_adapter\":" + json_bool(!configuration_.instrumental_loras.empty()) + ","
             "\"continuation_adapter\":" + json_bool(!configuration_.continuation_loras.empty()) + ","
             "\"instrumental_best_effort\":" + json_bool(configuration_.instrumental_loras.empty()) + ","
@@ -1207,6 +1218,10 @@ private:
         job.audio_format = format != "auto" ? format
             : job.inbound_format.empty() ? "wav" : job.inbound_format;
         job.loras = parse_loras(root);
+        job.render_loras = parse_loras(root, "render_loras");
+        if (job.kind == JobKind::continue_audio && !job.render_loras.empty()) {
+            throw std::invalid_argument("style render_loras require score continuation, not real-audio continuation");
+        }
         if (job.kind == JobKind::continue_audio) {
             if (!json::boolean(root, "use_continuation_adapter", true)) {
                 throw std::invalid_argument(
@@ -1250,9 +1265,10 @@ private:
         }
     }
 
-    std::vector<yue2::LoraAdapterSpec> parse_loras(const json::Value & root) {
-        const auto * value = root.find("loras");
-        if (!value || value->type == json::Type::null) return configuration_.loras;
+    std::vector<yue2::LoraAdapterSpec> parse_loras(const json::Value & root, const char * key = "loras") {
+        const auto * value = root.find(key);
+        if (!value || value->type == json::Type::null)
+            return std::string(key) == "loras" ? configuration_.loras : std::vector<yue2::LoraAdapterSpec>{};
         if (value->type != json::Type::array) throw std::invalid_argument("loras must be an array");
         std::vector<yue2::LoraAdapterSpec> output;
         for (const auto & item : value->array) {
@@ -1334,6 +1350,7 @@ private:
                     ",\"encoding\":" + json::quote(job.encoding) +
                     ",\"instrumental_adapter\":" + json_bool(job.instrumental_adapter) +
                     ",\"continuation_adapter\":" + json_bool(job.continuation_adapter) +
+                    ",\"render_loras\":[]" +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) + "}";
                 append_midi_json(body, job);
             } else {
@@ -1357,6 +1374,9 @@ private:
                     ",\"encoding\":" + json::quote(job.encoding) +
                     ",\"instrumental_adapter\":" + json_bool(job.instrumental_adapter) +
                     ",\"continuation_adapter\":" + json_bool(job.continuation_adapter) +
+                    ",\"render_loras\":" + loras_json(job.render_loras) +
+                    ",\"temperature\":" + real(job.run.generation.semantic.temperature) +
+                    ",\"ode_steps\":" + std::to_string(job.run.flow.ode_steps) +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) +
                     ",\"semantic_truncated\":" + json_bool(job.semantic_truncated) + "}";
                 append_midi_json(body, job);
@@ -1678,7 +1698,7 @@ private:
         const int base = job.kind == JobKind::cover ? 15 :
             (job.kind == JobKind::continue_audio ? 25 : 0);
         update(job, "generating", "load", base, 0, 0);
-        load_generator(job.loras, job.encoding);
+        load_generator(job.loras, job.encoding, job.render_loras);
 
         yue2::GenerationControl control;
         control.should_cancel = [&job]() { return job.cancel.load(); };
@@ -1736,7 +1756,7 @@ private:
 
     void plan(Job & job) {
         update(job, "planning", "load", 0, 0, 0);
-        load_generator(job.loras, job.encoding);
+        load_generator(job.loras, job.encoding, job.render_loras);
 
         yue2::GenerationControl control;
         control.should_cancel = [&job]() { return job.cancel.load(); };
@@ -1766,8 +1786,15 @@ private:
 
     void load_generator(
         const std::vector<yue2::LoraAdapterSpec> & loras,
-        const std::string & encoding) {
+        const std::string & encoding,
+        const std::vector<yue2::LoraAdapterSpec> & render_loras = {}) {
+        const auto same_render = render_loras.size() == generator_render_loras_.size() &&
+            std::equal(render_loras.begin(), render_loras.end(), generator_render_loras_.begin(),
+                [](const yue2::LoraAdapterSpec & a, const yue2::LoraAdapterSpec & b) {
+                    return a.path == b.path && a.strength == b.strength;
+                });
         const auto same = generator_ && loras.size() == generator_loras_.size() &&
+            same_render &&
             encoding == generator_encoding_ &&
             std::equal(loras.begin(), loras.end(), generator_loras_.begin(),
                 [](const yue2::LoraAdapterSpec & a, const yue2::LoraAdapterSpec & b) {
@@ -1782,10 +1809,12 @@ private:
         options.autoregressive.device = configuration_.device;
         options.autoregressive.threads = configuration_.threads;
         options.autoregressive.lora_adapters = loras;
+        options.render_lora_adapters = render_loras;
         options.vae.decode_core_frames = configuration_.vae_tile_frames;
         generator_ = std::make_unique<yue2::GenerationPipeline>(
             paths.model.string(), paths.vae.string(), paths.tokenizer.string(), options);
         generator_loras_ = loras;
+        generator_render_loras_ = render_loras;
         generator_encoding_ = encoding;
         generator_loaded_.store(true);
     }
@@ -1853,6 +1882,7 @@ private:
     std::unique_ptr<yue2::Transcriber> transcriber_;
     std::unique_ptr<yue2::GenerationPipeline> generator_;
     std::vector<yue2::LoraAdapterSpec> generator_loras_;
+    std::vector<yue2::LoraAdapterSpec> generator_render_loras_;
     std::string generator_encoding_;
     std::atomic<bool> transcriber_loaded_{false};
     std::atomic<bool> generator_loaded_{false};

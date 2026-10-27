@@ -1,0 +1,289 @@
+{
+  "date": "2026-10-25",
+  "style_feedback": {
+    "date": "2026-10-25",
+    "reviewer": "user",
+    "outcome": "failed dataset-style capability gate",
+    "statement": "A, B and C essentially all sound identical in all these tests. None match the Koan style.",
+    "scope": "Six primary A/B/C groups; aggregate statement, not separate per-case scores.",
+    "not_assumed_reviewed": [
+      "Doubled-strength labeled diagnostic",
+      "Native NAR without-v9 labeled controls"
+    ],
+    "interpretation": "Current NAR-only checkpoints do not demonstrate the requested learned style transfer. Prior fidelity preferences do not change this outcome."
+  },
+  "groups": [
+    {
+      "group": "source-16bar-831001",
+      "versus_v9": {
+        "reference": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.1641271490801849,
+          "optimal_gain_to_reference": 1.061991277908752,
+          "gain_fitted_residual_relative_l2": 0.1536580682328528,
+          "waveform_cosine": 0.9881240802991095,
+          "level_difference_db": -0.6261893372440362
+        },
+        "candidate": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.1720402084066429,
+          "optimal_gain_to_reference": 1.0872790874314482,
+          "gain_fitted_residual_relative_l2": 0.15265731331110238,
+          "waveform_cosine": 0.9882791835775235,
+          "level_difference_db": -0.8292277433874582
+        },
+        "candidate-x2": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.2594999405269814,
+          "optimal_gain_to_reference": 1.1614072403648763,
+          "gain_fitted_residual_relative_l2": 0.2212958680560259,
+          "waveform_cosine": 0.9752067159230198,
+          "level_difference_db": -1.5177569138546174
+        },
+        "plain-nar": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.38925115724231935,
+          "optimal_gain_to_reference": 1.0181285804594153,
+          "gain_fitted_residual_relative_l2": 0.3889053480610444,
+          "waveform_cosine": 0.9212777161364106,
+          "level_difference_db": -0.868241247316158
+        }
+      },
+      "preview_export_checks": {
+        "A": {
+          "role": "reference",
+          "relative_quantization_residual": 5.448400326787796e-07
+        },
+        "B": {
+          "role": "base",
+          "relative_quantization_residual": 5.450552611874714e-07
+        },
+        "C": {
+          "role": "candidate",
+          "relative_quantization_residual": 5.451851802578523e-07
+        }
+      }
+    },
+    {
+      "group": "source-16bar-123",
+      "versus_v9": {
+        "reference": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.1362324613046629,
+          "optimal_gain_to_reference": 1.0084340699065182,
+          "gain_fitted_residual_relative_l2": 0.13598024949208704,
+          "waveform_cosine": 0.9907115482056756,
+          "level_difference_db": -0.15400569018717555
+        },
+        "candidate": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.21166773290993124,
+          "optimal_gain_to_reference": 0.9812269561944903,
+          "gain_fitted_residual_relative_l2": 0.21083989036690567,
+          "waveform_cosine": 0.9775206088006986,
+          "level_difference_db": -0.03287096654997698
+        }
+      },
+      "preview_export_checks": {
+        "A": {
+          "role": "candidate",
+          "relative_quantization_residual": 5.745210990650945e-07
+        },
+        "B": {
+          "role": "base",
+          "relative_quantization_residual": 5.745624432008203e-07
+        },
+        "C": {
+          "role": "reference",
+          "relative_quantization_residual": 5.742074786411209e-07
+        }
+      }
+    },
+    {
+      "group": "score-waltz-831001",
+      "versus_v9": {
+        "reference": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.08024442771652872,
+          "optimal_gain_to_reference": 1.0387708805339875,
+          "gain_fitted_residual_relative_l2": 0.07108545006283389,
+          "waveform_cosine": 0.9974702295253566,
+          "level_difference_db": -0.35239648217026875
+        },
+        "candidate": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.1701987596171196,
+          "optimal_gain_to_reference": 1.059662447110869,
+          "gain_fitted_residual_relative_l2": 0.1608713797659549,
+          "waveform_cosine": 0.9869753792127751,
+          "level_difference_db": -0.617224496385375
+        }
+      },
+      "preview_export_checks": {
+        "A": {
+          "role": "base",
+          "relative_quantization_residual": 5.450042809276897e-07
+        },
+        "B": {
+          "role": "reference",
+          "relative_quantization_residual": 5.448069008142251e-07
+        },
+        "C": {
+          "role": "candidate",
+          "relative_quantization_residual": 5.458194859971987e-07
+        }
+      }
+    },
+    {
+      "group": "score-syncopation-831001",
+      "versus_v9": {
+        "reference": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.14322718920484775,
+          "optimal_gain_to_reference": 0.9985187301737479,
+          "gain_fitted_residual_relative_l2": 0.14321966412623,
+          "waveform_cosine": 0.9896909253941719,
+          "level_difference_db": -0.077132551622713
+        },
+        "candidate": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.20693110273839063,
+          "optimal_gain_to_reference": 0.9667127118795601,
+          "gain_fitted_residual_relative_l2": 0.20416718614848928,
+          "waveform_cosine": 0.9789360347337359,
+          "level_difference_db": 0.10913771597531396
+        }
+      },
+      "preview_export_checks": {
+        "A": {
+          "role": "base",
+          "relative_quantization_residual": 5.448955990522309e-07
+        },
+        "B": {
+          "role": "candidate",
+          "relative_quantization_residual": 5.457161864505193e-07
+        },
+        "C": {
+          "role": "reference",
+          "relative_quantization_residual": 5.449047086439894e-07
+        }
+      }
+    },
+    {
+      "group": "generate-01-831001",
+      "versus_v9": {
+        "reference": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.08138388508863183,
+          "optimal_gain_to_reference": 1.035784544075187,
+          "gain_fitted_residual_relative_l2": 0.07373088720447796,
+          "waveform_cosine": 0.9972781739675468,
+          "level_difference_db": -0.3290622372279553
+        },
+        "candidate": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.25690497937545304,
+          "optimal_gain_to_reference": 1.0307997302064238,
+          "gain_fitted_residual_relative_l2": 0.25527546972538856,
+          "waveform_cosine": 0.9668683646476838,
+          "level_difference_db": -0.556138912003963
+        },
+        "candidate-x2": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.4513664627348066,
+          "optimal_gain_to_reference": 1.0099322803408826,
+          "gain_fitted_residual_relative_l2": 0.451281133737397,
+          "waveform_cosine": 0.8923818343807173,
+          "level_difference_db": -1.0748306532610632
+        },
+        "plain-nar": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.29706803876866233,
+          "optimal_gain_to_reference": 0.9709310996995854,
+          "gain_fitted_residual_relative_l2": 0.2956880681212966,
+          "waveform_cosine": 0.9552845473316832,
+          "level_difference_db": -0.14111318896524938
+        }
+      },
+      "preview_export_checks": {
+        "A": {
+          "role": "candidate",
+          "relative_quantization_residual": 5.44714685657696e-07
+        },
+        "B": {
+          "role": "reference",
+          "relative_quantization_residual": 5.448515184348929e-07
+        },
+        "C": {
+          "role": "base",
+          "relative_quantization_residual": 5.450306319734313e-07
+        }
+      }
+    },
+    {
+      "group": "generate-02-831001",
+      "versus_v9": {
+        "reference": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.13439376094614405,
+          "optimal_gain_to_reference": 1.0167699999761397,
+          "gain_fitted_residual_relative_l2": 0.13339599406560432,
+          "waveform_cosine": 0.9910628177705243,
+          "level_difference_db": -0.22243081987446717
+        },
+        "candidate": {
+          "bytewise_sample_values_identical": false,
+          "raw_relative_l2": 0.24818764615138936,
+          "optimal_gain_to_reference": 1.0346918626432628,
+          "gain_fitted_residual_relative_l2": 0.2460507939555764,
+          "waveform_cosine": 0.9692569353859857,
+          "level_difference_db": -0.5674423271334668
+        }
+      },
+      "preview_export_checks": {
+        "A": {
+          "role": "reference",
+          "relative_quantization_residual": 5.449944846608861e-07
+        },
+        "B": {
+          "role": "candidate",
+          "relative_quantization_residual": 5.455039429542293e-07
+        },
+        "C": {
+          "role": "base",
+          "relative_quantization_residual": 5.452298362968411e-07
+        }
+      }
+    }
+  ],
+  "adapters": {
+    "original-step48": {
+      "rank": 8,
+      "alpha": 8.0,
+      "default_scale": 1.0,
+      "targets": 196,
+      "all_B_factors_nonzero": true,
+      "relative_weight_delta_min": 0.0007990355805522938,
+      "relative_weight_delta_median": 0.0014188587138329212,
+      "relative_weight_delta_max": 0.008811006132085809,
+      "note": "Frobenius norms describe magnitude, not style-learning capacity."
+    },
+    "expanded-step192": {
+      "rank": 8,
+      "alpha": 8.0,
+      "default_scale": 1.0,
+      "targets": 196,
+      "all_B_factors_nonzero": true,
+      "relative_weight_delta_min": 0.001300938741432931,
+      "relative_weight_delta_median": 0.0023999234122854436,
+      "relative_weight_delta_max": 0.022119261300430484,
+      "note": "Frobenius norms describe magnitude, not style-learning capacity."
+    }
+  },
+  "loading_audit": "Inference logs bind all 196 trained NAR targets at rank8 alpha8 strength1; training and inference both add B(Ax) at scale1. Waveforms and strength responses differ, and preview files map to the correct raw roles.",
+  "limitations": [
+    "Numerical differences are not evidence of perceived style transfer.",
+    "Frozen AR tokens in the comparisons do not prove NAR is intrinsically incapable of style transfer.",
+    "No subjective conclusion is assigned to the unreported strength/native-decoder diagnostics."
+  ]
+}

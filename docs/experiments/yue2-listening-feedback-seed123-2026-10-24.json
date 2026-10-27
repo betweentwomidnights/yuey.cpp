@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-24",
+  "reviewer": "user",
+  "reviewed_seed": 123,
+  "short_clips": {
+    "reviewed": 4,
+    "step48_preferences": 3,
+    "v9_preferences": 0,
+    "no_preference_stated": 1,
+    "clear_win_count_not_assigned": true
+  },
+  "interpretation": "Partial second-seed review supports the direction of the original fidelity preference. Strength varies and no preference is inferred for clip 05.",
+  "shared_artifact": "Clip 05 has a bandpass-like drum character in both variants. The observation alone does not establish intentional filtering or a LoRA-specific defect.",
+  "limits": [
+    "One reviewer; partial second-seed review on four previously reviewed source tracks.",
+    "Every trained adapter in this selected subset is B; label balance is not established by this subset alone.",
+    "The prior seed swaps A/B for clips 03 and 08; preferences on those tracks still follow step48.",
+    "Clip 07 is very close; clip 08 is a slight preference; do not report three decisive wins.",
+    "No preference or tie was explicitly stated for clip 05; leave preference null.",
+    "Other seed-123 clips and all seed-2026 pairs remain unrated."
+  ],
+  "decoded": [
+    {
+      "pair": "clip-03-123",
+      "trained_label": "B",
+      "preference": "B",
+      "lean": null,
+      "strength": "moderate",
+      "notes": "B sounds better. Both outputs are very cool; the crash cymbal at the beginning has more high-end squeakiness in A.",
+      "reviewer": "user",
+      "seed": 123,
+      "reviewed_date": "2026-10-24",
+      "review_context": "User submitted feedback before assistant decoded these seed-123 labels.",
+      "preferred_variant": "step48",
+      "lean_variant": null
+    },
+    {
+      "pair": "clip-05-123",
+      "trained_label": "B",
+      "preference": null,
+      "lean": null,
+      "strength": "no-preference-stated",
+      "notes": "Both sound somewhat degraded, possibly the nature of the output. The drums have a bandpass-filter-like character.",
+      "reviewer": "user",
+      "seed": 123,
+      "reviewed_date": "2026-10-24",
+      "review_context": "User submitted feedback before assistant decoded these seed-123 labels.",
+      "preferred_variant": null,
+      "lean_variant": null
+    },
+    {
+      "pair": "clip-07-123",
+      "trained_label": "B",
+      "preference": "B",
+      "lean": null,
+      "strength": "tentative",
+      "notes": "B seems higher fidelity, but the two are very, very close.",
+      "reviewer": "user",
+      "seed": 123,
+      "reviewed_date": "2026-10-24",
+      "review_context": "User submitted feedback before assistant decoded these seed-123 labels.",
+      "preferred_variant": "step48",
+      "lean_variant": null
+    },
+    {
+      "pair": "clip-08-123",
+      "trained_label": "B",
+      "preference": "B",
+      "lean": null,
+      "strength": "slight",
+      "notes": "A has degraded high end; B sounds a bit better.",
+      "reviewer": "user",
+      "seed": 123,
+      "reviewed_date": "2026-10-24",
+      "review_context": "User submitted feedback before assistant decoded these seed-123 labels.",
+      "preferred_variant": "step48",
+      "lean_variant": null
+    }
+  ]
+}

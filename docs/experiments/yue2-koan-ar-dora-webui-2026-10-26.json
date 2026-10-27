@@ -1,0 +1,148 @@
+{
+  "date": "2026-10-26",
+  "scope": "Publish AR DoRA150 native-NAR and matched NAR LoRA400 UI presets, preserve older LoRA pairs, add direct-remix seed",
+  "publication": {
+    "url": "http://127.0.0.1:8008",
+    "ar_only_name": "koan-yue2-r32-ar-dora150",
+    "combined_name": "koan-yue2-r32-ar-dora150-nar400",
+    "ar_only_sha256": "1f97762c1d8656f653b7fd0cd3642f5f57bec82c877e4e19b4b38b4ffa3758ca",
+    "combined_sha256": "bc6f47b9710006efeeb3c07ddf741e2dbe6a124fa47b316ce72fe0d5746be820",
+    "runtime_path": "outputs/koan-ar-dora-webui-2026-10-26/runtime/yue2-server.exe",
+    "existing_8007_process_left_running": true
+  },
+  "exports": {
+    "date": "2026-10-26",
+    "ar_only": "models/koan-yue2-r32-ar-dora150-F32-LoRA.gguf",
+    "ar_only_sha256": "1f97762c1d8656f653b7fd0cd3642f5f57bec82c877e4e19b4b38b4ffa3758ca",
+    "combined": "models/koan-yue2-r32-ar-dora150-nar400-F32-LoRA.gguf",
+    "combined_sha256": "bc6f47b9710006efeeb3c07ddf741e2dbe6a124fa47b316ce72fe0d5746be820",
+    "ar_source": "outputs/koan-ar-dora-2026-10-26/run-0100/step-150.gguf",
+    "nar_source": "outputs/koan-ar-dora-nar-calibration-2026-10-26/run-0300/step-400.gguf",
+    "source_sha256": {
+      "ar": "1f97762c1d8656f653b7fd0cd3642f5f57bec82c877e4e19b4b38b4ffa3758ca",
+      "nar": "11ff98dfbcd17e1a53b913b99d4cbff5b765eabf08384917f216b6babf040b63"
+    },
+    "tensors": 1176,
+    "all_source_tensors_byte_identical": true,
+    "reference_prefix_preserved": true,
+    "old_exports_sha256": {
+      "models\\koan-yue2-r32-ar150-F32-LoRA.gguf": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132",
+      "models\\koan-yue2-r32-ar150-nar400-F32-LoRA.gguf": "bbbcbf5bdcfb56eed8b27900fbac9d685d403b5d1e0c9d1c7c255e9be4400838",
+      "models\\koan-yue2-r32-ar200-F32-LoRA.gguf": "b7ca1f20cd9b664f9a7cbfaf47cd7b5af64f9ae95b99e6479287c19e97e7d2b6",
+      "models\\koan-yue2-r32-ar200-nar400-F32-LoRA.gguf": "af757b4a5da8ca29dec29a6127bd9582b3b6fec37ea07cd11aea6bb0604ca80d"
+    },
+    "common_instrumental_companion_required": true,
+    "adapter_families": {
+      "ar": "DoRA",
+      "nar": "LoRA"
+    }
+  },
+  "export_inference": {
+    "ar_alias_tokens_wav_exact": true,
+    "combined_tokens_wav_exact": true
+  },
+  "api": {
+    "url": "http://127.0.0.1:8008",
+    "six_style_presets_discovered": true,
+    "new_ui_labels": true,
+    "remix_seed_field": true,
+    "all_six_presets_generate": true,
+    "zero_strength_audio_exact_to_common": true,
+    "fixed_seed_generation_audio_exact": true,
+    "fixed_seed_remix_audio_and_score_exact": true,
+    "same_score_across_pairs": true,
+    "generation_and_remix_passed": true,
+    "selected_adapters_in_metadata": true,
+    "api_test_seed": 831001,
+    "api_test_frames": 64,
+    "api_test_ode_steps": 8
+  },
+  "focused_native_tests_passed": 4,
+  "browser_verification": {
+    "all_six_labels_visible": true,
+    "new_pair_selected": true,
+    "remix_seed_831001_survives_adapter_switches": true,
+    "screenshots": [
+      "outputs/koan-ar-dora-webui-2026-10-26/ui-presets.png",
+      "outputs/koan-ar-dora-webui-2026-10-26/ui-remix-seed.png"
+    ]
+  },
+  "runtime": {
+    "executable": {
+      "yue2-server.exe": "b9fccd8437fb9a0b122f57b31e5ea87439e85e60080a652a7a282e8fb5591803"
+    },
+    "shared_libraries": {
+      "ggml-base.dll": "e19201159fb68ebcaf422771ccdffc06b6ed3a8e21dfc854b3d1936849254d93",
+      "ggml-cpu.dll": "2d9ac519a8a9a78f0105f4f06ac631f816233a9ba18bccca6c55d399186e9463",
+      "ggml-cuda.dll": "158cc9662399d9cd7ce33254308371a1ac8a80c966b151ac113e108c4ba49f3d",
+      "ggml.dll": "e5c1c564dfe6a9ea1a100eceeb45f48a02204e7201d3aa1f424fb4b6e3719a93"
+    },
+    "precision_environment": {
+      "GGML_CUDA_TF32": "0",
+      "NVIDIA_TF32_OVERRIDE": null,
+      "CUBLAS_WORKSPACE_CONFIG": null
+    }
+  },
+  "health": {
+    "status": "ok",
+    "service": "yue2",
+    "api_version": 1,
+    "version": "0.2.4",
+    "device": "cuda",
+    "encoding": "Q4_K_M",
+    "models_dir": "models",
+    "keep_models": false,
+    "force_unload": false,
+    "natural_max_seconds": 180.0,
+    "planning_overrun": 2.0,
+    "planning_loop_bars": 16,
+    "instrumental_method": "transfer",
+    "use_instrumental_adapter": true,
+    "busy": false,
+    "queued": 0,
+    "generation": {
+      "available": true,
+      "loaded": false,
+      "model": "models/YuE2-3B-GGUF/yue2-3.6B-v1.0-Q4_K_M.gguf",
+      "vae": "models/YuE2-3B-GGUF/yue2-vae-v1.0-F16.gguf",
+      "tokenizer": "models/YuE2-3B-GGUF/sidecars/yue2-qwen.tiktoken"
+    },
+    "transcription": {
+      "available": true,
+      "loaded": false,
+      "model": "models/sheetsage2-mert2-f16.gguf"
+    },
+    "continuation": {
+      "available": true,
+      "model": "models/yue2-semantic-tokenizer-0.7B-v1.0-F16.gguf",
+      "adapter_configured": true
+    },
+    "audio_formats": [
+      "wav",
+      "wav_float",
+      "flac",
+      "auto"
+    ],
+    "score_transforms": [
+      "half_time",
+      "double_time",
+      "transpose",
+      "melody_to_instrument",
+      "swap_lanes",
+      "drop_chords"
+    ]
+  },
+  "source_sha256": {
+    "tools/ui/index.html": "f960fd2503065a3a20e10e8848ceb4c7f5e0f888c2f599f32f36d8b41dce60db",
+    "tools/yue2-server.cpp": "2e168fb1e4765b7feef84a080166014ab7c66e1998adabbf7e580b85dfcd9f67",
+    "src/lora.cpp": "6e48c609c655278ece10786e9611b500f2cccd2fde3acd72a485fc10c43d9824",
+    "src/lora.h": "f56a0f90ea53fcd60e8c0769692f306df537b5860bfe34ecd04749410dee5cbb",
+    "outputs/publish_koan_ar_dora_ui.py": "0146c38cea031e4d4aea1a63f4e914900cb1bf8bc0adb23cb87e07102c1ace97",
+    "outputs/verify_ar_dora_ui.py": "cd82fb6ebc49fa2d5eb93a0c6d3e5b112281797ab08dd0875f421daeaca0dfbc",
+    "outputs/summarize_ar_dora_ui.py": "e4f1fcb4e177e5084bc164ce9c4a30cfa2881b1e9863eb0bbc9b9512993fe594"
+  },
+  "ggml_revision": "b77ae790e628270af46a8af1eca38441c23f1252",
+  "ggml_changes": false,
+  "rollout_note": "Automatic approval review rejected restarting the existing 8007 process, reporting only blocked by policy. A separate output runtime was built and started on 8008 without stopping it.",
+  "retained_test_helper_failure": "Initial metadata equality check included the server-added path key; corrected to compare name/strength while retaining the failed log. Completed jobs were reused with request/audio-hash verification."
+}

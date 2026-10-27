@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-25",
+  "source": "Direct user clarification during the sv-billie adapter review",
+  "statement": "I think it's ok if our LoRA requires style prompts and trigger words associated with koan to perform good remixes. That's been the case for both sa3 and ace-step loras too.",
+  "style_prompts_allowed": true,
+  "trigger_words_allowed": true,
+  "neutral_prompt_success_required": false,
+  "neutral_prompts_role": "Optional diagnostic, not a production acceptance gate.",
+  "still_required": [
+    "No dataset reference recording needed at inference.",
+    "Keep new scores/input audio as musical content; evaluate melody/chords separately from style.",
+    "Compare identical style prompts with and without the adapter to attribute its contribution.",
+    "Evaluate degradation and repeatability across fixed seeds/content."
+  ],
+  "proposed_trigger": {
+    "text": "koan_palette",
+    "status": "Proposed future training alias, not an established trigger for the existing checkpoints.",
+    "new_vocabulary_token_required": false
+  },
+  "historical_evidence": "Previous neutral-caption tests remain valid under their original conditions; they are not the sole acceptance criterion for the clarified prompted workflow."
+}

@@ -1,0 +1,551 @@
+{
+  "date": "2026-10-25",
+  "purpose": "Audit supervision; no training; no automatic style verdict",
+  "groups": [
+    {
+      "name": "Known generated code/audio pair",
+      "variants": [
+        {
+          "label": "Original codes through native decoder",
+          "sha256": "1c2f73f1ec46f6c6a31b8c80d0aeb54fac17bd78f15c3e29bcbde162190d3ba3",
+          "comparison": {
+            "source_seconds": 15.998666666666667,
+            "render_seconds": 15.998666666666667,
+            "compared_seconds": 15.998666666666667,
+            "chroma_correlation": 0.9999999999999998,
+            "onset_correlation": 1.0,
+            "log_spectral_l1": 0.0,
+            "source_rms_db": -22.090756135109405,
+            "render_rms_db": -22.090756135109405,
+            "source_side_mid_ratio": 0.8348101377487183,
+            "render_side_mid_ratio": 0.8348101377487183,
+            "render_peak": 0.5913149118423462,
+            "render_samples_ge_1_fraction": 0.0
+          },
+          "file": "known-native-original-codes.wav"
+        },
+        {
+          "label": "Re-encoded audio tokens through native decoder",
+          "sha256": "8d87df6a9cb73a660d5ccd2551d1d67baa7abd02954fd98beba6b2435f166cde",
+          "comparison": {
+            "source_seconds": 15.998666666666667,
+            "render_seconds": 15.998666666666667,
+            "compared_seconds": 15.998666666666667,
+            "chroma_correlation": 0.8816353912254332,
+            "onset_correlation": 0.7182724617627118,
+            "log_spectral_l1": 0.46141526103019714,
+            "source_rms_db": -22.090756135109405,
+            "render_rms_db": -15.74479506187772,
+            "source_side_mid_ratio": 0.8348101377487183,
+            "render_side_mid_ratio": 0.6919397711753845,
+            "render_peak": 1.1322132349014282,
+            "render_samples_ge_1_fraction": 0.00013803233602800233
+          },
+          "file": "known-native-reencoded.wav"
+        },
+        {
+          "label": "Re-encoded audio tokens through v9",
+          "sha256": "2a5adcc2e86c348a0b64013dbac18788e32dffc0fd8f9d9310f84edf4f578804",
+          "comparison": {
+            "source_seconds": 15.998666666666667,
+            "render_seconds": 15.998666666666667,
+            "compared_seconds": 15.998666666666667,
+            "chroma_correlation": 0.8868061445206984,
+            "onset_correlation": 0.7504207095334179,
+            "log_spectral_l1": 0.46002885699272156,
+            "source_rms_db": -22.090756135109405,
+            "render_rms_db": -15.729056819457787,
+            "source_side_mid_ratio": 0.8348101377487183,
+            "render_side_mid_ratio": 0.7265493273735046,
+            "render_peak": 1.103956699371338,
+            "render_samples_ge_1_fraction": 6.120301691807651e-05
+          },
+          "file": "known-v9-reencoded.wav"
+        }
+      ],
+      "known_code_frames": 400,
+      "reencoded_frames": 400,
+      "exact_code_agreement": 0.11,
+      "note": "Non-unique codes and decoding effects limit token-ID agreement as a quality metric."
+    },
+    {
+      "name": "koan-1",
+      "variants": [
+        {
+          "label": "Source",
+          "sha256": "9e4824a2de5ead671e6aadac17230dba8383e713c900b5e514f36612493d86b0",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 12.0,
+            "compared_seconds": 12.0,
+            "chroma_correlation": 1.0,
+            "onset_correlation": 1.0,
+            "log_spectral_l1": 0.0,
+            "source_rms_db": -8.890323870633875,
+            "render_rms_db": -8.890323870633875,
+            "source_side_mid_ratio": 0.19190579652786255,
+            "render_side_mid_ratio": 0.19190579652786255,
+            "render_peak": 0.9837031960487366,
+            "render_samples_ge_1_fraction": 0.0
+          },
+          "file": "source.wav"
+        },
+        {
+          "label": "VAE only",
+          "sha256": "6824f7548dcd59b471daad9205301846b3fcf445482812a5b3aa80ae53b6703c",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.9548351129825563,
+            "onset_correlation": 0.9910402316931974,
+            "log_spectral_l1": 0.6834466457366943,
+            "source_rms_db": -8.890033339364088,
+            "render_rms_db": -8.593263500256379,
+            "source_side_mid_ratio": 0.1919095665216446,
+            "render_side_mid_ratio": 0.18962474167346954,
+            "render_peak": 1.704062819480896,
+            "render_samples_ge_1_fraction": 0.0012952828092010224
+          },
+          "file": "vae-only.wav"
+        },
+        {
+          "label": "Audio tokens through native NAR",
+          "sha256": "83f8fe6dc6b1e80abd60f39eb03d810b511560775bcb33d0924ecddabf5fef80",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.5814572387817825,
+            "onset_correlation": 0.7445407297531417,
+            "log_spectral_l1": 1.1849275827407837,
+            "source_rms_db": -8.890033339364088,
+            "render_rms_db": -9.62811250325363,
+            "source_side_mid_ratio": 0.1919095665216446,
+            "render_side_mid_ratio": 0.2679382264614105,
+            "render_peak": 1.1663466691970825,
+            "render_samples_ge_1_fraction": 0.000248291476830759
+          },
+          "file": "koan-1-native.wav"
+        },
+        {
+          "label": "Audio tokens through v9",
+          "sha256": "849710350ada9f94b7c9c5c3bbe2413d07335b8eb2003c115ae3c8f76b58f303",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.6149341987772436,
+            "onset_correlation": 0.7652137401358615,
+            "log_spectral_l1": 1.0000743865966797,
+            "source_rms_db": -8.890033339364088,
+            "render_rms_db": -9.573962145393182,
+            "source_side_mid_ratio": 0.1919095665216446,
+            "render_side_mid_ratio": 0.30401551723480225,
+            "render_peak": 1.596258282661438,
+            "render_samples_ge_1_fraction": 0.0012466662962551396
+          },
+          "file": "koan-1-v9.wav"
+        }
+      ],
+      "cached_full_context_tokens_sha256": "4f47cd8d561800478e0c808142c1610f01f6cfb00728d985f10c7f9448603ec3",
+      "cached_token_provenance": "outputs\\lora-feasibility\\pilot\\koan\\6c62aaf395f9\\full-context\\provenance.json",
+      "neutral_prefix_sha256": "ec7804af5fc8c401253f18daffb4c65e033c393d2e9f0962a4bca555fd607f0b",
+      "source_file": "koan_sound_traverse_86bpm_54bars.wav",
+      "source_sha256": "6c62aaf395f93fd94d57b6c2f6059c30986c57bf491b392b96c8df576925f2f8",
+      "offset_seconds": 20.0
+    },
+    {
+      "name": "koan-2",
+      "variants": [
+        {
+          "label": "Source",
+          "sha256": "29073b31313a4bfb9e84da9e8cd371262c5ec97e4fbdaa0b2ebc7e348223fa65",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 12.0,
+            "compared_seconds": 12.0,
+            "chroma_correlation": 1.0,
+            "onset_correlation": 1.0,
+            "log_spectral_l1": 0.0,
+            "source_rms_db": -7.615112592476284,
+            "render_rms_db": -7.615112592476284,
+            "source_side_mid_ratio": 0.265065997838974,
+            "render_side_mid_ratio": 0.265065997838974,
+            "render_peak": 1.047925591468811,
+            "render_samples_ge_1_fraction": 0.0001371527777777778
+          },
+          "file": "source.wav"
+        },
+        {
+          "label": "VAE only",
+          "sha256": "710e8a222cdc09618ca2cec2389b4118b30e47d42bcc8453f53163e8839b074e",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.988367518226765,
+            "onset_correlation": 0.9940845245737401,
+            "log_spectral_l1": 0.7099514007568359,
+            "source_rms_db": -7.614815691355519,
+            "render_rms_db": -7.269409200741674,
+            "source_side_mid_ratio": 0.2650536298751831,
+            "render_side_mid_ratio": 0.2631460130214691,
+            "render_peak": 1.575727105140686,
+            "render_samples_ge_1_fraction": 0.0030541587954217137
+          },
+          "file": "vae-only.wav"
+        },
+        {
+          "label": "Audio tokens through native NAR",
+          "sha256": "4c03e12471b0f3695d1c24d509d9352a5b2e747939faf0106113923496632bca",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.8432963899853082,
+            "onset_correlation": 0.8826260686705902,
+            "log_spectral_l1": 0.9953557252883911,
+            "source_rms_db": -7.614815691355519,
+            "render_rms_db": -11.035648299547114,
+            "source_side_mid_ratio": 0.2650536298751831,
+            "render_side_mid_ratio": 0.336047887802124,
+            "render_peak": 1.259591817855835,
+            "render_samples_ge_1_fraction": 0.00017015779531059005
+          },
+          "file": "koan-2-native.wav"
+        },
+        {
+          "label": "Audio tokens through v9",
+          "sha256": "5f405272cea95c4c2ddf0ecd2bfdace443712097c941ebc0e3bbd0fad6ad58d5",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.8418870643846036,
+            "onset_correlation": 0.9151362971230086,
+            "log_spectral_l1": 0.8899149298667908,
+            "source_rms_db": -7.614815691355519,
+            "render_rms_db": -9.398034111298749,
+            "source_side_mid_ratio": 0.2650536298751831,
+            "render_side_mid_ratio": 0.4468265473842621,
+            "render_peak": 1.356428623199463,
+            "render_samples_ge_1_fraction": 0.0009080870096677409
+          },
+          "file": "koan-2-v9.wav"
+        }
+      ],
+      "cached_full_context_tokens_sha256": "f6d00353b0767a99082593727af7122704a3c2ce99b4bd6db316cf63e80c3f66",
+      "cached_token_provenance": "outputs\\lora-feasibility\\pilot\\koan\\528791f1d019\\full-context\\provenance.json",
+      "neutral_prefix_sha256": "46250f049ef30dd5020e0a77d4856d3f923e6421d6dbf4a636d9e636c4a948a2",
+      "source_file": "thursday_172bpm_81bars.wav",
+      "source_sha256": "528791f1d019f1b478f4a4e4f5adb03d0db186a8dabc1167c23e2cb742da2a83",
+      "offset_seconds": 20.0
+    },
+    {
+      "name": "keygen-3",
+      "variants": [
+        {
+          "label": "Source",
+          "sha256": "44f67dad1194b587b7f0f42969344d016f43c074c1fa4546b812e141ff8b49de",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 12.0,
+            "compared_seconds": 12.0,
+            "chroma_correlation": 1.0,
+            "onset_correlation": 1.0,
+            "log_spectral_l1": 0.0,
+            "source_rms_db": -14.899081225287711,
+            "render_rms_db": -14.899081225287711,
+            "source_side_mid_ratio": 0.26223307847976685,
+            "render_side_mid_ratio": 0.26223307847976685,
+            "render_peak": 1.0188456773757935,
+            "render_samples_ge_1_fraction": 0.00030034722222222225
+          },
+          "file": "source.wav"
+        },
+        {
+          "label": "VAE only",
+          "sha256": "367a20969b935bcfb0436865179fe3aa6f77e224520ed9f913322ea913c22526",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.9795504276604916,
+            "onset_correlation": 0.9953640713330322,
+            "log_spectral_l1": 0.5214216709136963,
+            "source_rms_db": -14.89874301011258,
+            "render_rms_db": -14.41927756859692,
+            "source_side_mid_ratio": 0.2622339427471161,
+            "render_side_mid_ratio": 0.2649560570716858,
+            "render_peak": 1.5562920570373535,
+            "render_samples_ge_1_fraction": 0.0002882264696077342
+          },
+          "file": "vae-only.wav"
+        },
+        {
+          "label": "Audio tokens through native NAR",
+          "sha256": "110e222e144876a0802233a64efb8185f68319a7a9d5daff6bd1e208b91bac62",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.668254911913398,
+            "onset_correlation": 0.8423053887731204,
+            "log_spectral_l1": 0.8060309886932373,
+            "source_rms_db": -14.89874301011258,
+            "render_rms_db": -15.819478540765864,
+            "source_side_mid_ratio": 0.2622339427471161,
+            "render_side_mid_ratio": 0.25702667236328125,
+            "render_peak": 1.2253426313400269,
+            "render_samples_ge_1_fraction": 2.6044560506722968e-05
+          },
+          "file": "keygen-3-native.wav"
+        },
+        {
+          "label": "Audio tokens through v9",
+          "sha256": "97fc850b93241cf1b7836c165f5555b215a7ad920ebec381cb726e7855d5294b",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.769646829790132,
+            "onset_correlation": 0.8933117016990868,
+            "log_spectral_l1": 0.8981926441192627,
+            "source_rms_db": -14.89874301011258,
+            "render_rms_db": -13.446618972015656,
+            "source_side_mid_ratio": 0.2622339427471161,
+            "render_side_mid_ratio": 0.46305301785469055,
+            "render_peak": 1.3696115016937256,
+            "render_samples_ge_1_fraction": 0.0001996749638848761
+          },
+          "file": "keygen-3-v9.wav"
+        }
+      ],
+      "cached_full_context_tokens_sha256": "9ab8476ed9ed60612df79b7d39f5165f95054b7d9abe4fdcfe0749b22f31fd10",
+      "cached_token_provenance": "outputs\\lora-feasibility\\pilot\\keygen\\e5dc15a8d34f\\full-context\\provenance.json",
+      "neutral_prefix_sha256": "b2deb38f4bc9e599d819325d63f0e81839779d96e020632f529b89678bce2a21",
+      "source_file": "(SYNTHWAVE COVER) Blimp Bosses Multiverse - Blimps and bosses (Soundtrack).wav",
+      "source_sha256": "e5dc15a8d34fbe1b25e2c27f1e9e38d239e884da9ca1cb6b2b948029149c92bd",
+      "offset_seconds": 20.0
+    },
+    {
+      "name": "keygen-4",
+      "variants": [
+        {
+          "label": "Source",
+          "sha256": "cc84b123e91cba25395211bb2ba1f4cc3289a1c504396d963b1d774a32ffda24",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 12.0,
+            "compared_seconds": 12.0,
+            "chroma_correlation": 1.0,
+            "onset_correlation": 1.0,
+            "log_spectral_l1": 0.0,
+            "source_rms_db": -28.049463844313856,
+            "render_rms_db": -28.049463844313856,
+            "source_side_mid_ratio": 0.46251723170280457,
+            "render_side_mid_ratio": 0.46251723170280457,
+            "render_peak": 0.37763431668281555,
+            "render_samples_ge_1_fraction": 0.0
+          },
+          "file": "source.wav"
+        },
+        {
+          "label": "VAE only",
+          "sha256": "f9732c3507dda36a91ac52dff0f89a9467dc71684fa488fafeb7391e33a29720",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.995025712226424,
+            "onset_correlation": 0.9915253297275519,
+            "log_spectral_l1": 0.24093468487262726,
+            "source_rms_db": -28.049593136728905,
+            "render_rms_db": -28.03179217267779,
+            "source_side_mid_ratio": 0.4625149965286255,
+            "render_side_mid_ratio": 0.4583302438259125,
+            "render_peak": 0.3694196939468384,
+            "render_samples_ge_1_fraction": 0.0
+          },
+          "file": "vae-only.wav"
+        },
+        {
+          "label": "Audio tokens through native NAR",
+          "sha256": "10e644142a5f82f2be62d87b6edbb64bcf2a058feb1e55bdfbc26842b6924d4e",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.7353712784910621,
+            "onset_correlation": 0.5997863426037885,
+            "log_spectral_l1": 0.3784908950328827,
+            "source_rms_db": -28.049593136728905,
+            "render_rms_db": -27.90760959974645,
+            "source_side_mid_ratio": 0.4625149965286255,
+            "render_side_mid_ratio": 0.6605045199394226,
+            "render_peak": 0.4388435184955597,
+            "render_samples_ge_1_fraction": 0.0
+          },
+          "file": "keygen-4-native.wav"
+        },
+        {
+          "label": "Audio tokens through v9",
+          "sha256": "e72b69dad594a2d2ae7aef32d96f85b1615b22186acf869a5f78ed2c21c0bb44",
+          "comparison": {
+            "source_seconds": 12.0,
+            "render_seconds": 11.998666666666667,
+            "compared_seconds": 11.998666666666667,
+            "chroma_correlation": 0.797677834858512,
+            "onset_correlation": 0.7181292132549495,
+            "log_spectral_l1": 0.33847469091415405,
+            "source_rms_db": -28.049593136728905,
+            "render_rms_db": -25.83010845043324,
+            "source_side_mid_ratio": 0.4625149965286255,
+            "render_side_mid_ratio": 0.9780034422874451,
+            "render_peak": 0.5944783687591553,
+            "render_samples_ge_1_fraction": 0.0
+          },
+          "file": "keygen-4-v9.wav"
+        }
+      ],
+      "cached_full_context_tokens_sha256": "3f71daa1d461cb1f877c0053caa53a02fb817cec5968f72ea0cb8abd5a09c850",
+      "cached_token_provenance": "outputs\\lora-feasibility\\pilot\\keygen\\a06ea662b410\\full-context\\provenance.json",
+      "neutral_prefix_sha256": "6fa79328b0137f94296bf813b4a581e29484bf40cc429d58959e5bdd0a53262c",
+      "source_file": "299 - kZ   EncryptPDF 2 3crk.wav",
+      "source_sha256": "a06ea662b41081623ed3288c5b8243c66a32a25cc26869ce262da7228b415c54",
+      "offset_seconds": 20.0
+    }
+  ],
+  "model_sha256": "cca9ab2fc8efca09ddc04d68da63ae6c6e535848bb3b39dc52cb820857281ba9",
+  "vae_sha256": "b6d8d30e69ce997b50f25dbbdd610e9ac7e118bbda91af336550862a6d1aab1f",
+  "head_sha256": "e0005d6ea838e444c83561609624f85a0c0f6fc703bade2e477eb034a327a0cc",
+  "fixed_ar_sha256": "45a6ec461c968916bdd4d87269cff1324bb925e7ead35290524dfa82bf3f9c23",
+  "fixed_v9_sha256": "4b7bad23fd1e52b9a9540dde568b6226afc37229b756a4c2024f551be8a2557c",
+  "runtime": {
+    "yue2-render-tokens": {
+      "executable": {
+        "yue2-render-tokens.exe": "316f8e5abdbb58be4f533eb289f296081e49da7ac15056d8693ef4c9a287c7c3"
+      },
+      "shared_libraries": {
+        "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+        "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+        "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+        "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+        "yue2.dll": "329bad6377becdc07c103559f2d74d6f3cdbc6ccbd710318cc79ff9f61db1caf"
+      },
+      "precision_environment": {
+        "GGML_CUDA_TF32": null,
+        "NVIDIA_TF32_OVERRIDE": null,
+        "CUBLAS_WORKSPACE_CONFIG": null
+      }
+    },
+    "yue2-semantic-tokenize": {
+      "executable": {
+        "yue2-semantic-tokenize.exe": "2d5a2f17b8a108a21eb36e833f09a960afe3e42abed06a8e0166f319fb0ba3a9"
+      },
+      "shared_libraries": {
+        "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+        "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+        "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+        "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+        "yue2.dll": "329bad6377becdc07c103559f2d74d6f3cdbc6ccbd710318cc79ff9f61db1caf"
+      },
+      "precision_environment": {
+        "GGML_CUDA_TF32": null,
+        "NVIDIA_TF32_OVERRIDE": null,
+        "CUBLAS_WORKSPACE_CONFIG": null
+      }
+    },
+    "yue2-transcribe": {
+      "executable": {
+        "yue2-transcribe.exe": "b124b5a359af85fe4fc8fb8b137a4302049fb05ba04024b49480fc5c64a2ca14"
+      },
+      "shared_libraries": {
+        "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+        "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+        "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+        "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+        "yue2.dll": "329bad6377becdc07c103559f2d74d6f3cdbc6ccbd710318cc79ff9f61db1caf"
+      },
+      "precision_environment": {
+        "GGML_CUDA_TF32": null,
+        "NVIDIA_TF32_OVERRIDE": null,
+        "CUBLAS_WORKSPACE_CONFIG": null
+      }
+    },
+    "yue2-ar-train": {
+      "executable": {
+        "yue2-ar-train.exe": "0aba94365e1c628ec9eef5ac387d7641b838c10320b1daa29a6db974c439e39d"
+      },
+      "shared_libraries": {
+        "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+        "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+        "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+        "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+        "yue2.dll": "329bad6377becdc07c103559f2d74d6f3cdbc6ccbd710318cc79ff9f61db1caf"
+      },
+      "precision_environment": {
+        "GGML_CUDA_TF32": null,
+        "NVIDIA_TF32_OVERRIDE": null,
+        "CUBLAS_WORKSPACE_CONFIG": null
+      }
+    },
+    "yue2-generate": {
+      "executable": {
+        "yue2-generate.exe": "041d8af66b23f0da6b17f8c6f665c97ca01eabd0d614c5bf23380559b032e844"
+      },
+      "shared_libraries": {
+        "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+        "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+        "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+        "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+        "yue2.dll": "329bad6377becdc07c103559f2d74d6f3cdbc6ccbd710318cc79ff9f61db1caf"
+      },
+      "precision_environment": {
+        "GGML_CUDA_TF32": null,
+        "NVIDIA_TF32_OVERRIDE": null,
+        "CUBLAS_WORKSPACE_CONFIG": null
+      }
+    }
+  },
+  "subjective_target_quality_pending": false,
+  "limits": [
+    "VAE reconstruction does not validate semantic labels.",
+    "ID agreement and spectral distance do not decide preservation of dataset style.",
+    "Real-audio codes were inherited from the prior full-context audit; they are not regenerated or assumed exact labels."
+  ],
+  "user_target_feedback": {
+    "date": "2026-10-25",
+    "reviewer": "user",
+    "initial_answer": "Neither retains enough",
+    "scope": "Koan reconstruction arms; keygen and known-code controls were not separately rated.",
+    "clarification": "They retain the rhythmic quality, but I worry about the degradation. I think it is worth trying regardless since we have come this far.",
+    "rhythm_retained": true,
+    "degradation_concerning": true,
+    "target_quality_passed": false,
+    "exploratory_pilot_authorized_despite_imperfect_labels": true,
+    "interpretation": "Proceed with a small noisy-label AR pilot; do not relabel the reconstructions as high quality or assume training will repair degradation.",
+    "pilot_scope": {
+      "train_tracks": [
+        "Cobalt",
+        "Prism Pulse"
+      ],
+      "heldout_tracks": [
+        "Aeon",
+        "Silkwave"
+      ],
+      "frames_per_excerpt": 256,
+      "neutral_captions": true,
+      "fixed_vae": true,
+      "fixed_decoder": true,
+      "primary_decoder": "native NAR",
+      "v9": "separate matched diagnostic on the supplied source",
+      "subjective_axes": [
+        "Koan palette resemblance",
+        "score/content preservation",
+        "fidelity and degradation"
+      ]
+    }
+  }
+}

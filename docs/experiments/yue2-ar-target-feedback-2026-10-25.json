@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-25",
+  "reviewer": "user",
+  "initial_answer": "Neither retains enough",
+  "scope": "Koan reconstruction arms; keygen and known-code controls were not separately rated.",
+  "clarification": "They retain the rhythmic quality, but I worry about the degradation. I think it is worth trying regardless since we have come this far.",
+  "rhythm_retained": true,
+  "degradation_concerning": true,
+  "target_quality_passed": false,
+  "exploratory_pilot_authorized_despite_imperfect_labels": true,
+  "interpretation": "Proceed with a small noisy-label AR pilot; do not relabel the reconstructions as high quality or assume training will repair degradation.",
+  "pilot_scope": {
+    "train_tracks": [
+      "Cobalt",
+      "Prism Pulse"
+    ],
+    "heldout_tracks": [
+      "Aeon",
+      "Silkwave"
+    ],
+    "frames_per_excerpt": 256,
+    "neutral_captions": true,
+    "fixed_vae": true,
+    "fixed_decoder": true,
+    "primary_decoder": "native NAR",
+    "v9": "separate matched diagnostic on the supplied source",
+    "subjective_axes": [
+      "Koan palette resemblance",
+      "score/content preservation",
+      "fidelity and degradation"
+    ]
+  }
+}

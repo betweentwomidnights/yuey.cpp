@@ -1,0 +1,316 @@
+{
+  "date": "2026-10-25",
+  "status": "Native AR capacity and audible synthetic palette change confirmed; Koan transfer and target-quality gates pending",
+  "no_dataset_audio_trained": true,
+  "ggml_revision": "b77ae790e628270af46a8af1eca38441c23f1252",
+  "new_ggml_changes": false,
+  "gpu": "RTX 5070 Laptop 8 GB",
+  "observed_device_memory_peak_mib": 5396,
+  "workspace_mib": 752.7,
+  "precision": "F16 frozen storage, F32 projection compute and gradient graph",
+  "execution_environment": {
+    "GGML_CUDA_TF32": "0",
+    "note": "Every native subprocess explicitly receives this value in the archived driver source. identity.json runtime precision_environment is the parent-process snapshot, not the subprocess override; the original identity/hash is retained unchanged. Only the separately rebuilt, unloaded C ABI yue2.dll changed during test builds; executable and GGML DLL hashes match across the resume test, as recorded in unloaded-dll-rebuild.json."
+  },
+  "rank": 8,
+  "parameters": 8716288,
+  "prefix_tokens": 223,
+  "target_frames": 256,
+  "objective": "Target-only restricted semantic/EOS cross-entropy; EOS disabled on cropped capacity examples",
+  "neutral_control": {
+    "initial_loss": 3.49975,
+    "final_loss": 0.0286995,
+    "updates": 64
+  },
+  "synthetic_control": {
+    "initial_loss": 4.26281,
+    "final_loss": 0.0326234,
+    "updates": 64,
+    "description": "Known generated electronic target codes with neutral training/inference caption; fresh optimizer"
+  },
+  "oracles": {
+    "oracle": {
+      "reference_loss": 3.4997408390045166,
+      "native_loss": 3.499742031097412,
+      "logits_relative_l2": 3.6929598332856677e-06,
+      "target_tokens": 256,
+      "predict_end": false,
+      "gradient_relative_l2": 2.8451715605131385e-05,
+      "max_significant_gradient_relative_l2": 0.00010428086087128808,
+      "passed": true,
+      "adamw_max_absolute_error": 7.450580596923828e-09
+    },
+    "post-oracle": {
+      "reference_loss": 0.028698960319161415,
+      "native_loss": 0.028698910027742386,
+      "logits_relative_l2": 7.713866199136939e-06,
+      "target_tokens": 256,
+      "predict_end": false,
+      "gradient_relative_l2": 0.00015553731548235346,
+      "max_significant_gradient_relative_l2": 0.0007015697020363176,
+      "passed": true
+    },
+    "eos-cpu-oracle": {
+      "reference_loss": 5.648163318634033,
+      "native_loss": 5.648161888122559,
+      "logits_relative_l2": 5.276425609095454e-07,
+      "target_tokens": 9,
+      "predict_end": true,
+      "gradient_relative_l2": 1.0179768254645295e-05,
+      "max_significant_gradient_relative_l2": 1.865645691287974e-05,
+      "passed": true,
+      "adamw_max_absolute_error": 7.450580596923828e-09
+    },
+    "eos-cuda-oracle": {
+      "reference_loss": 5.648163318634033,
+      "native_loss": 5.648162841796875,
+      "logits_relative_l2": 8.544465055818274e-07,
+      "target_tokens": 9,
+      "predict_end": true,
+      "gradient_relative_l2": 4.003958101381765e-06,
+      "max_significant_gradient_relative_l2": 1.4989389057057912e-05,
+      "passed": true,
+      "adamw_max_absolute_error": 7.450580596923828e-09
+    }
+  },
+  "resume": {
+    "all_factor_and_optimizer_tensors_bit_identical": true,
+    "state_file_sha256_direct": "ed73eace3acaacf5a71538913f7770acb1347dc8be9c7daacc2248fbdd02b245",
+    "state_file_sha256_resumed": "ed73eace3acaacf5a71538913f7770acb1347dc8be9c7daacc2248fbdd02b245"
+  },
+  "zero_adapter": {
+    "semantic_streams_bit_identical": true,
+    "raw_wav_bit_identical": true,
+    "relative_wave_l2": 0.0
+  },
+  "factor_checks": {
+    "neutral": {
+      "factors": 392,
+      "targets": 196,
+      "rank": 8,
+      "all_factors_finite_nonzero": true,
+      "ar_only": true,
+      "sha256": "881f3676f8ad065cef94f39d84448c70ccd2135a07a58e21d702064bb90de06b"
+    },
+    "synthetic": {
+      "factors": 392,
+      "targets": 196,
+      "rank": 8,
+      "all_factors_finite_nonzero": true,
+      "ar_only": true,
+      "sha256": "bff539cfc463b0aa6bc7393e7dc0aa65d0b89996f2f1729a17df3d7b345c4dc0"
+    }
+  },
+  "auditions": {
+    "no_dataset_audio_trained": true,
+    "style_success_unassigned": true,
+    "neutral_caption_at_audition": true,
+    "decoder_weights_unchanged": true,
+    "zero_wave_relative_l2": 0.0,
+    "familiar_base_agreement_with_neutral_training_target": 0.00390625,
+    "familiar_neutral_fit_agreement_with_neutral_training_target": 0.99609375,
+    "familiar_electronic_fit_agreement_with_electronic_target": 0.0390625,
+    "familiar_electronic_fit_changed_token_fraction": 1.0,
+    "unseen_electronic_fit_changed_token_fraction": 1.0,
+    "synthetic_adapter_sha256": "bff539cfc463b0aa6bc7393e7dc0aa65d0b89996f2f1729a17df3d7b345c4dc0",
+    "neutral_adapter_sha256": "881f3676f8ad065cef94f39d84448c70ccd2135a07a58e21d702064bb90de06b",
+    "inference_runtime": {
+      "executable": {
+        "yue2-ar-sample.exe": "a1800daa63e316f6383c8acfd07c3c6018b6d660e57a8a4c238fbf2083a6a558"
+      },
+      "shared_libraries": {
+        "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+        "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+        "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+        "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+        "yue2.dll": "a5114271849ee72ca7c1460b73f322cad2d48250e6298ed2c89da37228a769e7"
+      },
+      "precision_environment": {
+        "GGML_CUDA_TF32": null,
+        "NVIDIA_TF32_OVERRIDE": null,
+        "CUBLAS_WORKSPACE_CONFIG": null
+      }
+    },
+    "limits": [
+      "Token changes and teacher-fit loss do not establish perceived style.",
+      "Single-example fitting may copy content or damage score adherence.",
+      "No ordinary-generation planning or full-song endings are tested."
+    ],
+    "user_palette_feedback": {
+      "date": "2026-10-25",
+      "reviewer": "user",
+      "statement": "Yes the sound palette changed!",
+      "context": "Reply to the displayed common-model versus synthetic-electronic-adapter unseen-score pair.",
+      "audible_palette_change_confirmed": true,
+      "scope": "Presented unseen-score comparison; not an inferred review of all controls.",
+      "score_adherence": null,
+      "fidelity": null,
+      "koan_resemblance": null,
+      "teacher_target_palette_match": null,
+      "real_audio_target_quality": null,
+      "interpretation": "Audible AR palette change confirmed on the presented unseen score. Direction toward the teacher palette was not separately rated. Neither adapter was trained on Koan audio; dataset-style success remains unestablished."
+    }
+  },
+  "file_checks": [
+    {
+      "file": "electronic-codes-neutral-context-listen.wav",
+      "sha256": "9f8db2a5a16de58c869c6518f13ad7d92b6bc87eeb5ee943b6fff18ab9b704ff",
+      "audio_frames": 491456,
+      "peak": 0.707065224647522,
+      "preview_quantization_residual": 5.452658488321664e-07
+    },
+    {
+      "file": "electronic-codes-neutral-context.wav",
+      "sha256": "3116e3a4a7d278aea99586f8d3df2966b0f483d20905cd2569e658a4348a2e79",
+      "audio_frames": 491456,
+      "peak": 1.49609375,
+      "preview_quantization_residual": null
+    },
+    {
+      "file": "electronic-target-listen.wav",
+      "sha256": "b6d4da14cd94cbfa543451f486daa28b230883eb696a779647138909ac89dfa8",
+      "audio_frames": 491456,
+      "peak": 0.6469264030456543,
+      "preview_quantization_residual": 5.45267537049634e-07
+    },
+    {
+      "file": "electronic-target.wav",
+      "sha256": "f87f9ca184ad246ef5e6005f30664edc7c89bb3783832f49ebacefa02dcc4d31",
+      "audio_frames": 491456,
+      "peak": 1.1826171875,
+      "preview_quantization_residual": null
+    },
+    {
+      "file": "familiar-base-123-listen.wav",
+      "sha256": "5cf1f499b313caa12dd1bb56e9367e9f05f269a12a1ca8cf08662ad9174d9d12",
+      "audio_frames": 491456,
+      "peak": 0.9800000190734863,
+      "preview_quantization_residual": 9.499609058558595e-07
+    },
+    {
+      "file": "familiar-base-123.wav",
+      "sha256": "a3da208f123840d4854dd2b4311b17106f7043e0fcd4bae677127b351fd06d98",
+      "audio_frames": 491456,
+      "peak": 0.53955078125,
+      "preview_quantization_residual": null
+    },
+    {
+      "file": "familiar-electronic-capacity-123-listen.wav",
+      "sha256": "8b6ed2b0bba60f5f5c29689d07b897aee56882ed89d1b72c2d07357e9fd77104",
+      "audio_frames": 491456,
+      "peak": 0.564306378364563,
+      "preview_quantization_residual": 9.501225669660202e-07
+    },
+    {
+      "file": "familiar-electronic-capacity-123.wav",
+      "sha256": "d88bd7cdc9c3a5f7fad4475bda675f6e69553e4f4c2219b9853507b305c063a3",
+      "audio_frames": 491456,
+      "peak": 1.3447265625,
+      "preview_quantization_residual": null
+    },
+    {
+      "file": "familiar-neutral-capacity-123-listen.wav",
+      "sha256": "280f23874475193d65f349ce3adc68137a5041bad83f6cd09de5b8597f8f4ad1",
+      "audio_frames": 491456,
+      "peak": 0.37276268005371094,
+      "preview_quantization_residual": 9.498487249327082e-07
+    },
+    {
+      "file": "familiar-neutral-capacity-123.wav",
+      "sha256": "f06ae3981d76ee32b19a468ea405e2de742973442646ebdea808788a10696cba",
+      "audio_frames": 491456,
+      "peak": 0.41064453125,
+      "preview_quantization_residual": null
+    },
+    {
+      "file": "familiar-zero-123.wav",
+      "sha256": "a3da208f123840d4854dd2b4311b17106f7043e0fcd4bae677127b351fd06d98",
+      "audio_frames": 491456,
+      "peak": 0.53955078125,
+      "preview_quantization_residual": null
+    },
+    {
+      "file": "unseen-base-123-listen.wav",
+      "sha256": "a0c45d7f18e98d6c05ed73e31f9bc387f0d06c6b9ea936f2bb0510e0f4bc66f3",
+      "audio_frames": 767936,
+      "peak": 0.9030109643936157,
+      "preview_quantization_residual": 5.448300568943926e-07
+    },
+    {
+      "file": "unseen-base-123.wav",
+      "sha256": "087e4b0c9aeb448394e46ae9943be8b6517baa0d5204b714cd5c7d5105d15e01",
+      "audio_frames": 767936,
+      "peak": 1.00390625,
+      "preview_quantization_residual": null
+    },
+    {
+      "file": "unseen-electronic-capacity-123-listen.wav",
+      "sha256": "afae5bc6b4684fee77739e851a91fb6e0673851d92c88c2fc81594dbd31d611d",
+      "audio_frames": 767936,
+      "peak": 0.9324048757553101,
+      "preview_quantization_residual": 5.447508201754859e-07
+    },
+    {
+      "file": "unseen-electronic-capacity-123.wav",
+      "sha256": "7c0b830a0401b23ad64b100c08f4cc696c989dc3589c6d18229387b98a64035a",
+      "audio_frames": 767936,
+      "peak": 1.0498046875,
+      "preview_quantization_residual": null
+    }
+  ],
+  "source_sha256": {
+    "include/yue2/ar_training.h": "e62a0c52ba04b90d94f708bb5901818052d115e4bd873da98499f1bc6662680a",
+    "src/ar_training.cpp": "6884a3cec2d6bcdf4c4c0661c61b6dac7917a6a49ff407eacc35099e315c18fa",
+    "src/lora.h": "6213ed43acb7e1944782bdee6143d4ec4b94705365cb14f03f0398aa7b395325",
+    "src/lora.cpp": "fe2e32eb74d0d31c6b3c3d3ca1d7ffb96ee3e4a38488bf8d76aa7093cd8f0fd2",
+    "tools/yue2-ar-train.cpp": "19b8485d06335544e94601e28457ab38b657c47608eade68f6b8b8e465a76910",
+    "tools/yue2-ar-sample.cpp": "e1de0cc91bbc96029841399882f3a71d988e749fa99ba33c6b7a9fa8faa4ce4d",
+    "tools/yue2-render-tokens.cpp": "39414c5ee7d40300f23879608212af3aeb4cb5bc0feac769718c09ef9e0b41c3",
+    "tools/check_ar_training_reference.py": "7448df8fecf0996900eea48c8be77626950b730c166eb2ad23d6ad0467326fb2",
+    "outputs/run_ar_probe.py": "1aba4dca89255a38a552ff8fbbf1a97273bf0f7f8bd81808ce4fd80faf4c5ea6",
+    "outputs/run_ar_capacity.py": "cc4d5ef947b2e84981bd9b07b03e5d4aa74f8f718fb40587ac3ef268c884610c",
+    "outputs/audition_ar_capacity.py": "ac80ad78d5e8dbf89971dfb29f3685a3b1cfde4f99440a3324338186489d12a7",
+    "outputs/audit_ar_targets.py": "b31b9c03621f78d1df7ffb1d1e080bf4cd90cc3ca6c50b40fb05c9dc204ad0d2"
+  },
+  "app_ctests": {
+    "passed": 17,
+    "total": 17,
+    "rebuilt_after_shared_projection_change": true
+  },
+  "python_tests": {
+    "passed": 23,
+    "total": 23
+  },
+  "superseded_f16_projection_probe": {
+    "reference_loss": 0.02860049158334732,
+    "native_loss": 0.02865663543343544,
+    "logits_relative_l2": 0.005391065880348092,
+    "target_tokens": 256,
+    "predict_end": false,
+    "gradient_relative_l2": 0.07758684441718143,
+    "max_significant_gradient_relative_l2": 0.23714971607023116,
+    "passed": false
+  },
+  "limitations": [
+    "Memorization and token changes do not establish learned dataset style.",
+    "Neither control was trained on Koan or keygen audio.",
+    "Real-audio target quality and audible palette transfer require listening.",
+    "AR weight updates affect planning unless inference uses a separate common planning pass.",
+    "NAR weights are frozen but their AR-state conditioning changes.",
+    "The full GGML CTest suite was not built; the 17 application tests are the reported regression suite."
+  ],
+  "user_palette_feedback": {
+    "date": "2026-10-25",
+    "reviewer": "user",
+    "statement": "Yes the sound palette changed!",
+    "context": "Reply to the displayed common-model versus synthetic-electronic-adapter unseen-score pair.",
+    "audible_palette_change_confirmed": true,
+    "scope": "Presented unseen-score comparison; not an inferred review of all controls.",
+    "score_adherence": null,
+    "fidelity": null,
+    "koan_resemblance": null,
+    "teacher_target_palette_match": null,
+    "real_audio_target_quality": null,
+    "interpretation": "Audible AR palette change confirmed on the presented unseen score. Direction toward the teacher palette was not separately rated. Neither adapter was trained on Koan audio; dataset-style success remains unestablished."
+  }
+}

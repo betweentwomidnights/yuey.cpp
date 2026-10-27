@@ -1,0 +1,274 @@
+{
+  "date": "2026-10-25",
+  "kind": "read-only-source-review",
+  "report": "docs/ai-toolkit-yue2-review-2026-10-25.md",
+  "repository": "ostris/ai-toolkit",
+  "revision": "73ebae13a468942ded8b47991b5d56eeeea25c36",
+  "source_files": {
+    "extensions_built_in/audio_models/yue2/yue2_model.py": {
+      "sha": "3b1c557cd0277b4f3a18c901b97f58d20b90aa4b",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/yue2_model.py"
+    },
+    "extensions_built_in/audio_models/yue2/src/model.py": {
+      "sha": "0cc1207a633e45b18bc9bbb2c5976019703a5dff",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/src/model.py"
+    },
+    "extensions_built_in/audio_models/yue2/src/tokenizer.py": {
+      "sha": "40fc2f3d36841fad2cfeacdf010b84ceabc2ac4d",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/src/tokenizer.py"
+    },
+    "extensions_built_in/audio_models/yue2/src/vae.py": {
+      "sha": "9e34ea6907bdf4c412b5e1c1c01d9b2c281d6058",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/src/vae.py"
+    },
+    "extensions_built_in/audio_models/yue2/src/pipeline.py": {
+      "sha": "e17d88466cffca964eab1f8f45f3bf1ea94bde19",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/src/pipeline.py"
+    },
+    "extensions_built_in/audio_models/ui.tsx": {
+      "sha": "a86eec95e0865fe86f4a5a933bace9a7b8162ee1",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/ui.tsx"
+    },
+    "toolkit/network_mixins.py": {
+      "sha": "a23d392996b2afe0b29f9eb038c1f90e47efc90c",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/network_mixins.py"
+    },
+    "toolkit/lora_special.py": {
+      "sha": "bd3c717e33ef79459534e83d663b6eda1464c6ba",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/lora_special.py"
+    },
+    "toolkit/lycoris_special.py": {
+      "sha": "1bce9dfeec14cc6165317a7718603f118a170e53",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/lycoris_special.py"
+    },
+    "toolkit/config_modules.py": {
+      "sha": "c45a3abd37edbba7348ced13c16802a07c526f36",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/config_modules.py"
+    },
+    "extensions_built_in/sd_trainer/SDTrainer.py": {
+      "sha": "3d8fb8f6477ab3cfb8f2c4d40e8202c722894f3c",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/sd_trainer/SDTrainer.py"
+    },
+    "toolkit/data_loader.py": {
+      "sha": "eddb68a5424a87bf9d0e34820f07a4cd44eac29f",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/data_loader.py"
+    },
+    "toolkit/dataloader_mixins.py": {
+      "sha": "770e69178eec6737b5a14e1d37f1b99d2bbc67c6",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/dataloader_mixins.py"
+    },
+    "toolkit/samplers/custom_flowmatch_sampler.py": {
+      "sha": "6ded6809777a9d4ecedbd1bc18206a757fefab16",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/samplers/custom_flowmatch_sampler.py"
+    },
+    "toolkit/kohya_lora.py": {
+      "sha": "a48f7cd471668f9c31ac011574152f77c4542c69",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/kohya_lora.py"
+    },
+    "toolkit/optimizer.py": {
+      "sha": "9a5ada7e878bb8517f6f52d4acff8b63eb9afaaf",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/optimizer.py"
+    },
+    "scripts/caption_audio_dataset.py": {
+      "sha": "8cddf7131921e5137cb2bbeed34ec7f4ef5d0de9",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/scripts/caption_audio_dataset.py"
+    },
+    "extensions_built_in/audio_models/base_audio_model.py": {
+      "sha": "f47b8f6d8c09fcd8946d52559d04393830e16adb",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/base_audio_model.py"
+    },
+    "jobs/process/BaseSDTrainProcess.py": {
+      "sha": "dd395af7ba144d01e2ae3c7739fc9d3d1e325fb5",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/jobs/process/BaseSDTrainProcess.py"
+    },
+    "toolkit/models/DoRA.py": {
+      "sha": "b08377f84962e72590e7b5e163d7f488ffe2e190",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/models/DoRA.py"
+    },
+    "toolkit/models/base_model.py": {
+      "sha": "4e577680e89b47589b9427376e806ca6a17dd967",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/models/base_model.py"
+    },
+    "toolkit/dto.py": {
+      "sha": "f28dbf67c0afa007b1533d24b0033eba0356827b",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/dto.py"
+    },
+    "extensions_built_in/captioner/AceStepCaptioner.py": {
+      "sha": "80bc9ce4977a307bbd34bf7ad12ab817f5dc1a52",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/captioner/AceStepCaptioner.py"
+    },
+    "ui/src/helpers/captionOptions.ts": {
+      "sha": "6f669f95457341bc6668ae61d1b27b64050df287",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/ui/src/helpers/captionOptions.ts"
+    },
+    "ui/src/helpers/defaultSamples.ts": {
+      "sha": "b2d894a91d2ca5320bb7e7216bcd29332c2dac80",
+      "url": "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/ui/src/helpers/defaultSamples.ts"
+    }
+  },
+  "provenance": {
+    "downloaded_python_executed": false,
+    "new_training_started": false,
+    "runtime_code_changed": false,
+    "running_ui_restarted": false,
+    "billie_exact_training_commit_and_config": "unverified",
+    "archive": "outputs/ai-toolkit-review-2026-10-25",
+    "native_baseline": "docs/experiments/yue2-koan-rank32-2026-10-25.json"
+  },
+  "native_baseline": {
+    "training_tracks": 12,
+    "real_windows": 18,
+    "frames_per_window": 256,
+    "distinct_real_seconds": 184.32,
+    "heldout_tracks": 6,
+    "selected_ar_step": 150,
+    "selected_nar_step": 400,
+    "rank": 32,
+    "ar_parameters": 34865152,
+    "nar_parameters": 34865152,
+    "semantic_head_sha256": "cffb673cd663517c8978ba73d186a87517958025f7e409371ea56df3bb364db2",
+    "semantic_head_file": "tokenizer_head_joint_v9.bf16.safetensors",
+    "acoustic_base": "native NAR, no fixed v9 NAR companion",
+    "ar_base": "BF16 base plus fixed instrumental AR companion"
+  },
+  "findings": [
+    {
+      "id": "head-version",
+      "status": "confirmed difference; quality implication unproven",
+      "priority": 1,
+      "toolkit": "Default tokenizer_head_joint_v4.pt; later heads configurable.",
+      "native": "v9 head established by GGUF source SHA matching Hugging Face LFS oid.",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/src/tokenizer.py#L23-L30",
+        "https://github.com/ostris/ai-toolkit/pull/1055",
+        "https://huggingface.co/api/models/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/tree/main"
+      ],
+      "caution": "PR author's 22-31% frame agreement is on three other songs, not Koan and not a quality metric. Billie head variant unknown.",
+      "recommendation": "Small matched v4/v9 native-NAR target audit with VAE-only and separately matched head/decoder controls; preserve current caches and production continuation setup."
+    },
+    {
+      "id": "coverage-context",
+      "status": "confirmed difference",
+      "priority": 2,
+      "toolkit": "Whole-song caches; random NAR spans up to default 1500 frames (60 seconds); AR sees song beginning.",
+      "native": "18 fixed 256-frame real windows, 184.32 distinct seconds, including mid-song windows.",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/yue2_model.py"
+      ],
+      "recommendation": "Increase distinct audio and accurate score coverage; profile 512/750-frame NAR spans before attempting 1500 frames on 8 GB. Preserve whole-track holdouts."
+    },
+    {
+      "id": "ar-supervision",
+      "status": "confirmed objective difference; not proof of native implementation error",
+      "priority": 2,
+      "toolkit": "Full-vocabulary next-token CE/KL on ABC, boundaries, codec sequence and MUSIC_END when song complete.",
+      "native": "32769-class semantic/EOS readout; direct targets only semantic sequence; cropped real Koan targets omit positive EOS.",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/yue2_model.py#L506-L589",
+        "src/ar_training.cpp"
+      ],
+      "caution": "ABC context still receives indirect gradient. Loss/KL means differ across objectives. Missing EOS supervision is not proven cause of UI duration behavior.",
+      "recommendation": "Add genuine complete musical units/endings; do not append false EOS to middle-of-song crops. Full-vocabulary ABC supervision is a separate later planning/parity experiment."
+    },
+    {
+      "id": "score-dropout",
+      "status": "confirmed curriculum difference",
+      "priority": 2,
+      "toolkit": "Rebuilds symbolic-off instruction and empty ABC when dropping score.",
+      "native": "Paired views empty ABC interior while retaining full instruction.",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/yue2_model.py#L477-L490"
+      ],
+      "recommendation": "For current always-scored UI objective, test zero score dropout. Add actual off-mode prefixes only if that mode becomes a target."
+    },
+    {
+      "id": "flow-noise-times",
+      "status": "confirmed default difference; benefit untested",
+      "priority": 3,
+      "toolkit": "YuE2 UI sigmoid-normal time distribution; about 72.8 percent probability in [.25,.75].",
+      "native": "Uniform sigma [.05,.95]; 55.6 percent probability in [.25,.75].",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/ui.tsx#L78-L110",
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/samplers/custom_flowmatch_sampler.py#L107-L143"
+      ],
+      "recommendation": "Fixed-AR NAR-only distribution ablation with identical data, optimizer, update budget and evaluation noise; listen and report per-sigma metrics."
+    },
+    {
+      "id": "caption-specificity",
+      "status": "confirmed available tooling and current single-caption practice; effectiveness hypothesis",
+      "toolkit": "Per-item rich musical/production captions supported.",
+      "native": "One shared Koan caption and trigger for all real examples.",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/ui/src/helpers/captionOptions.ts"
+      ],
+      "recommendation": "Accurate per-track/passage descriptions retaining koan_palette; audit automatic captions."
+    },
+    {
+      "id": "dora",
+      "status": "generic toolkit capability; not verified Billie/YuE2 DoRA recipe",
+      "priority": 4,
+      "toolkit": "Generic output-magnitude DoRA with detached norm denominator.",
+      "native": "Additive LoRA only; SA3 has reusable GGML low-rank magnitude/norm computation.",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/lora_special.py#L401-L405",
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/toolkit/models/DoRA.py#L111-L150"
+      ],
+      "additional_magnitudes_per_expert": 573440,
+      "caution": "Billie factors contain no magnitude vectors. User preference for SA3 is not a controlled DoRA comparison. Need explicit norm-gradient convention and fresh gradient/export/inference checks.",
+      "recommendation": "Separate matched NAR LoRA/DoRA comparison after label and coverage checks, freezing AR150."
+    },
+    {
+      "id": "joint-training",
+      "status": "confirmed retained gradient boundary",
+      "toolkit": "AR/NAR updated in one run but NAR conditioning cache detached.",
+      "native": "AR selected first; NAR calibrated against frozen selected AR.",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/yue2_model.py#L656-L705"
+      ],
+      "implication": "Different optimization trajectory, not omission of an essential flow-loss gradient into AR. Alternation can be tested later."
+    },
+    {
+      "id": "loss-and-numerics",
+      "status": "no missing default perceptual loss found in inspected path",
+      "retained": [
+        "AR teacher KL",
+        "both experts' relevant projection adapters",
+        "separate expert learning rates",
+        "clean posterior-mean VAE targets",
+        "prompt/score conditioning",
+        "midpoint integration controls"
+      ],
+      "toolkit_default_loss": "flow prediction MSE plus AR CE/KL",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/sd_trainer/SDTrainer.py",
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/src/vae.py#L150-L162"
+      ],
+      "caution": "Generic latent FFT/video-audio options are not evidence of a YuE2 waveform perceptual loss. Current native LoRA oracles validate the implemented objective, not toolkit-objective equivalence."
+    },
+    {
+      "id": "feature-normalization",
+      "status": "confirmed small preprocessing difference; audible effect unproven",
+      "toolkit": "Sample standard deviation T-1.",
+      "native": "Population standard deviation T.",
+      "evidence": [
+        "https://github.com/ostris/ai-toolkit/blob/73ebae13a468942ded8b47991b5d56eeeea25c36/extensions_built_in/audio_models/yue2/src/tokenizer.py#L221-L245",
+        "src/mert2_encoder.cpp"
+      ],
+      "recommendation": "Fixed-feature token/logit parity check holding head, precision and resampling fixed.",
+      "denominator_ratio_at_4500_frames": 1.0001111296330596
+    }
+  ],
+  "upstream_listener_report": {
+    "url": "https://github.com/ostris/ai-toolkit/issues/1052",
+    "observation": "Firsthand report of burnt high-frequency noise-like sounds increasing with repeated training of small sets.",
+    "relevance": "Resembles native listener descriptions.",
+    "caution": "Not established cause, not a maintainer-endorsed fix, not evidence that our problem has the same mechanism."
+  },
+  "recommended_sequence": [
+    "head-version target/preprocessing audit",
+    "more distinct coverage, accurate scored supervision/captions and complete musical units",
+    "fixed-AR uniform-versus-sigmoid NAR trial",
+    "separate matched NAR LoRA-versus-DoRA trial"
+  ],
+  "acceptance": "Fresh unrelated scores/input audio, Koan palette, melody/chord retention, fidelity and termination assessed separately; training losses alone insufficient."
+}

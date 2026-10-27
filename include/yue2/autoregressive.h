@@ -39,6 +39,16 @@ struct AutoregressiveResult {
 struct FlowOptions {
     std::uint32_t ode_steps = 32;
     std::uint32_t context_length = 24576;
+    // Integrate from this noise fraction to zero. Caller-supplied state must
+    // already be mixed at this fraction; 1 retains ordinary generation.
+    float start_noise_level = 1.0F;
+};
+
+struct FrozenNarConditioning {
+    std::uint32_t token_count = 0;
+    // Layer-major [28,8,token_count,128], already RoPE transformed, F32.
+    std::vector<float> keys;
+    std::vector<float> values;
 };
 
 struct AutoregressiveControl {
@@ -91,6 +101,16 @@ public:
 
     // Returns the 184704 logits predicting the token after token_ids.back().
     std::vector<float> logits(const std::vector<std::int32_t> & token_ids);
+
+    FrozenNarConditioning freeze_nar_conditioning(
+        const std::vector<std::int32_t> & generation_prefix,
+        const std::vector<std::int32_t> & semantic_codec_ids);
+
+    // Diagnostic velocity at a noise fraction in (0,1), before ODE solving.
+    std::vector<float> flow_velocity(
+        const std::vector<std::int32_t> & generation_prefix,
+        const std::vector<std::int32_t> & semantic_codec_ids,
+        const std::vector<float> & state, float noise_fraction);
 
     std::unique_ptr<AutoregressiveSession> create_session(std::size_t capacity);
 

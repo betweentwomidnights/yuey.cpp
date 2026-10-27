@@ -1,0 +1,680 @@
+{
+  "date": "2026-10-24",
+  "status": "renders complete; seed 831001 and long renders reviewed; four seed-123 clips reviewed; remaining pairs pending",
+  "ggml": "b77ae790e628270af46a8af1eca38441c23f1252",
+  "adapter_sha256": "48ec6d227b8cd4915a908b42958e5918035a18bbb788636c242edee453ed5c24",
+  "new_training": false,
+  "short_cases": 8,
+  "short_seeds": [
+    831001,
+    123,
+    2026
+  ],
+  "short_pairs": 24,
+  "long_pairs": 3,
+  "all_pairs_same_semantic_tokens": true,
+  "cases": [
+    {
+      "id": "clip-01",
+      "role": "previous-validation",
+      "offset": 20.0,
+      "frames": 256,
+      "seeds": [
+        831001,
+        123,
+        2026
+      ],
+      "source_sha256": "c93b690c0e676cbb065386cd241fe8d180c0ca3e0610942275b62cc5d236eca3",
+      "abc_sha256": "7d50efaad27272f928bc891722b363d57846e0ae266d6fdc66717a5b2120ac42",
+      "track": "koan_sound_aeon_114bpm_46bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "d7273d166b789907e0744bbfc5c7ce7cf52d98c04bbeed682f046c6c32b86ff7",
+          "tokens": "d9d935157e12bff13f17897633821c71e6d02ac2b73130e7daf08999456bbf83",
+          "rms_db": -10.853938427920797,
+          "peak": 1.341796875
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "c61668f9a742cc0ba1c74002f69d13ef29f9db438435ef1773d9e963b5349629",
+          "tokens": "d9d935157e12bff13f17897633821c71e6d02ac2b73130e7daf08999456bbf83",
+          "rms_db": -10.85530041786777,
+          "peak": 1.2900390625
+        },
+        {
+          "variant": "v9",
+          "seed": 123,
+          "wav": "aeaef96feaa5fe4e0e67a8cd77cca3f07b999707c731df4ef455eedcd75e1a1f",
+          "tokens": "a7957d9df2591fff7b756e0f040265a4d45b0aa65b987815dc8abbcee9f68327",
+          "rms_db": -8.98611961592083,
+          "peak": 1.3056640625
+        },
+        {
+          "variant": "step48",
+          "seed": 123,
+          "wav": "6159139a5c7d2448e3d82d53b5d124560b8dd5ba538c08b78c5286ded02b21ea",
+          "tokens": "a7957d9df2591fff7b756e0f040265a4d45b0aa65b987815dc8abbcee9f68327",
+          "rms_db": -9.36405315905395,
+          "peak": 1.3291015625
+        },
+        {
+          "variant": "v9",
+          "seed": 2026,
+          "wav": "57e18dfd4be0e29aad4bb24eb36504541d35fc821f8bcc46de65206844a82c8e",
+          "tokens": "5bad22f0f6bd853c214d3727a7b038a4474e87a4177dee27b32917396fd9af60",
+          "rms_db": -8.842682273104195,
+          "peak": 1.5029296875
+        },
+        {
+          "variant": "step48",
+          "seed": 2026,
+          "wav": "da239bdb5325c756c62ce315561b046155c5ec94e9ec273039f5ffc7b5632c34",
+          "tokens": "5bad22f0f6bd853c214d3727a7b038a4474e87a4177dee27b32917396fd9af60",
+          "rms_db": -8.474133594461133,
+          "peak": 1.4775390625
+        }
+      ]
+    },
+    {
+      "id": "clip-02",
+      "role": "previous-validation",
+      "offset": 20.0,
+      "frames": 256,
+      "seeds": [
+        831001,
+        123,
+        2026
+      ],
+      "source_sha256": "5e38bb3858302dc7c4616a4ff1ae2bde31afb629d8d18059c5dcb990e81da606",
+      "abc_sha256": "c43802ab1cd7da4eb1a00370d665792de44848c5dfba3a15ff8253ac1539da2b",
+      "track": "koan_sound_silkwave_88bpm_80bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "d498039893661e70a6fd6b9bcc72c20e5b3ab4b670f069562a13b0d378cc288e",
+          "tokens": "741d1fb7712b508dca4a2f1c06831e373c0a17807e19b94663191da1c484295d",
+          "rms_db": -11.514562800760391,
+          "peak": 1.4443359375
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "71a1c27174d003724c2b4b6c92160361e80cb83fb9c3424bff1f373220e6463c",
+          "tokens": "741d1fb7712b508dca4a2f1c06831e373c0a17807e19b94663191da1c484295d",
+          "rms_db": -12.550980180194983,
+          "peak": 1.3974609375
+        },
+        {
+          "variant": "v9",
+          "seed": 123,
+          "wav": "f2e02122ff9a2189e157a1cd19506048b43be9140513e60d5a8161aa4d99c231",
+          "tokens": "6bc1b4019fed863f66f9d1b741893bb12282a30300411c80c43c78c882d5dbb5",
+          "rms_db": -11.739495696147891,
+          "peak": 1.1884765625
+        },
+        {
+          "variant": "step48",
+          "seed": 123,
+          "wav": "14d117a0afde4087db23262a4f4072a74463f0227d4ab0e28af1bb0619c6ed37",
+          "tokens": "6bc1b4019fed863f66f9d1b741893bb12282a30300411c80c43c78c882d5dbb5",
+          "rms_db": -11.507612075639177,
+          "peak": 1.2353515625
+        },
+        {
+          "variant": "v9",
+          "seed": 2026,
+          "wav": "493ab2a49b74db38ca16e15f40d66ad9a0fa302134c1b3dd665bc7d9a44a6b25",
+          "tokens": "c34398f6757e394981d4608713ec7402f562895c9e94d5aee76c67fb252c2a1d",
+          "rms_db": -10.885506432848482,
+          "peak": 1.2900390625
+        },
+        {
+          "variant": "step48",
+          "seed": 2026,
+          "wav": "cd2a9183fd1886f3dbc4c3ec00d6a42dd1b461f0fccf8b51eb26776ba567b150",
+          "tokens": "c34398f6757e394981d4608713ec7402f562895c9e94d5aee76c67fb252c2a1d",
+          "rms_db": -10.99317133031153,
+          "peak": 1.212890625
+        }
+      ]
+    },
+    {
+      "id": "clip-03",
+      "role": "new-holdout",
+      "offset": 20.0,
+      "frames": 256,
+      "seeds": [
+        831001,
+        123,
+        2026
+      ],
+      "source_sha256": "154dcd476bdfeef1de395348106114a1b013aa28ffe4acf45d90bac3fb2d642d",
+      "abc_sha256": "3fa21acd4d18d9ececa898aa8a560e261c57c822a209a209f4409e9982c32d1f",
+      "track": "koan_sound_boundless_70bpm_46bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "b897b24fdaccb3b6e4adfc87be1e12a8cb6f782b3af25da4e9a1c1bc6ea9d6a4",
+          "tokens": "7ade1bd9c4c49f789a2b58b4e4e691c39f12698b5fb73b4eb4973300a37d64ab",
+          "rms_db": -11.007971194377129,
+          "peak": 1.375
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "42dc9585778a03f9c6437bf6c81901cdc551a5d8149d2c1423a93d4fb92c2a72",
+          "tokens": "7ade1bd9c4c49f789a2b58b4e4e691c39f12698b5fb73b4eb4973300a37d64ab",
+          "rms_db": -12.041831103877056,
+          "peak": 1.2138671875
+        },
+        {
+          "variant": "v9",
+          "seed": 123,
+          "wav": "13c4820b081fa8434bb7e5ae2fc94abde182378c6a487378ee3c5fa6bed86941",
+          "tokens": "94466bd5a26810c9f5635eafd31eb6a9ddb8eccd6d2d25ed778eba1e18c37030",
+          "rms_db": -17.70743971280595,
+          "peak": 1.1455078125
+        },
+        {
+          "variant": "step48",
+          "seed": 123,
+          "wav": "907d37205ca89007bc5b0f6486faeb44e0bbb3a5295999b205171f8cf9fb0d5a",
+          "tokens": "94466bd5a26810c9f5635eafd31eb6a9ddb8eccd6d2d25ed778eba1e18c37030",
+          "rms_db": -17.11760284235919,
+          "peak": 1.169921875
+        },
+        {
+          "variant": "v9",
+          "seed": 2026,
+          "wav": "f88014d4cbba072aec1dd521b9e93937a56e15292dfa1601d1ffb9d0ea46a48c",
+          "tokens": "8694c9248b15a64d74f6d83fb00e68b4e1b11ae7a507e78835466a9c038dfe4b",
+          "rms_db": -12.086297932956953,
+          "peak": 1.1142578125
+        },
+        {
+          "variant": "step48",
+          "seed": 2026,
+          "wav": "959987f4989b6eb50c85593c5d96a7deda76ad2ed15b4b5f8028067732b5f44b",
+          "tokens": "8694c9248b15a64d74f6d83fb00e68b4e1b11ae7a507e78835466a9c038dfe4b",
+          "rms_db": -11.78857408733067,
+          "peak": 1.1689453125
+        }
+      ]
+    },
+    {
+      "id": "clip-04",
+      "role": "new-holdout",
+      "offset": 20.0,
+      "frames": 256,
+      "seeds": [
+        831001,
+        123,
+        2026
+      ],
+      "source_sha256": "394c4e8def6204a5597ae7e1c28281700aeb5271e2b324772d0e308a2fb01f32",
+      "abc_sha256": "8675e5fb9061105bcc85f025da518e76805a3ebd47a3e5037bfbb53d3259e1fb",
+      "track": "koan_sound_exigence_172bpm_80bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "6edd1374bfc4dc7b2dc26e604e8d00229bb79f43bc090029b322f8df065abbdf",
+          "tokens": "111740556a870b9365b89e2d04c49bdfa5ef2a4d731830ef8414bc1e99782418",
+          "rms_db": -11.143301085244639,
+          "peak": 1.5166015625
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "1174dedb0f321ca2c0a67c5a5ae1f6bd8153d40328eaf68be81b0341411efa22",
+          "tokens": "111740556a870b9365b89e2d04c49bdfa5ef2a4d731830ef8414bc1e99782418",
+          "rms_db": -11.781778114877614,
+          "peak": 1.423828125
+        },
+        {
+          "variant": "v9",
+          "seed": 123,
+          "wav": "b3d894f0109d3dbfb71641e17697b7fe7ba2e63722e3372eccba0df94d03c18a",
+          "tokens": "2b828e12c09cae45e6570ca19d9d67991479aa4d90bb2c30d33cec2cbccb4eed",
+          "rms_db": -15.123843182722174,
+          "peak": 1.5390625
+        },
+        {
+          "variant": "step48",
+          "seed": 123,
+          "wav": "6140fb682efc19704e2c8ec1c16be974d41be2a7da044bb902fbd7e458e1245b",
+          "tokens": "2b828e12c09cae45e6570ca19d9d67991479aa4d90bb2c30d33cec2cbccb4eed",
+          "rms_db": -15.002395253727101,
+          "peak": 1.40625
+        },
+        {
+          "variant": "v9",
+          "seed": 2026,
+          "wav": "3023420bb66bf8c843425a4b85a84d282c2b469ec8b522701601111635a10f00",
+          "tokens": "ec308f39afe9f88895be49e2ad0bcb4a4e1eae880bfccf58624bcaf33d95359c",
+          "rms_db": -12.865133163240191,
+          "peak": 1.33984375
+        },
+        {
+          "variant": "step48",
+          "seed": 2026,
+          "wav": "f4b428bffb190f5c33024f95c21892eb31ff22fa0606a74229ab5416ca99b484",
+          "tokens": "ec308f39afe9f88895be49e2ad0bcb4a4e1eae880bfccf58624bcaf33d95359c",
+          "rms_db": -12.059866376707431,
+          "peak": 1.4287109375
+        }
+      ]
+    },
+    {
+      "id": "clip-05",
+      "role": "new-holdout",
+      "offset": 20.0,
+      "frames": 256,
+      "seeds": [
+        831001,
+        123,
+        2026
+      ],
+      "source_sha256": "bf149a5b7d3b514d965d1ace564d604c940c61dbb49f3d87b8cd191ae18bc91d",
+      "abc_sha256": "332905f473dbddbae3a0c39519dd968d3f28afe95d6d96f46c2eeed3bc7f18c8",
+      "track": "koan_sound_sentient_95bpm_66bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "70c21579eb4b94cb61b350b933021637d95f8c0b065a5c1f07df0c08fae9cea7",
+          "tokens": "bec9930dd28042a80fca6ffff90b39568348d7ecb87205331c285457221e8475",
+          "rms_db": -10.568865059389418,
+          "peak": 1.48046875
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "390b43cef805acf97bb5fbef49537bcaf89e8f44259ad3cd94d73e7d0b07b6c5",
+          "tokens": "bec9930dd28042a80fca6ffff90b39568348d7ecb87205331c285457221e8475",
+          "rms_db": -10.256337786473273,
+          "peak": 1.330078125
+        },
+        {
+          "variant": "v9",
+          "seed": 123,
+          "wav": "064709fc29ee15513ecafb6fed0008f306e433e51bdddae6f3dad3708260ede7",
+          "tokens": "0df625d38a97058152c06f97986716719496ca315a3830a756c11c520ebbf952",
+          "rms_db": -21.202324038197673,
+          "peak": 1.11328125
+        },
+        {
+          "variant": "step48",
+          "seed": 123,
+          "wav": "f1fa9ad2efc7a6962cdfdb6ecf583b3116a1633bc9f8393c3aa7d72e17aed2f3",
+          "tokens": "0df625d38a97058152c06f97986716719496ca315a3830a756c11c520ebbf952",
+          "rms_db": -21.041696612332853,
+          "peak": 1.1337890625
+        },
+        {
+          "variant": "v9",
+          "seed": 2026,
+          "wav": "79d7049eae38ccad230daba34b06f6ba2887e40b8b7da0d7fa38b7c7a5e50bd3",
+          "tokens": "e4e5d01fe0e0b5d5ebd786e00eeb235768efb0151a0d37713336f841b640c71f",
+          "rms_db": -8.02636165162448,
+          "peak": 1.876953125
+        },
+        {
+          "variant": "step48",
+          "seed": 2026,
+          "wav": "e0837c32a521bceda087282c72038a2472076b9044a2ba6b6d421bf7df318c37",
+          "tokens": "e4e5d01fe0e0b5d5ebd786e00eeb235768efb0151a0d37713336f841b640c71f",
+          "rms_db": -7.839384926263675,
+          "peak": 1.9326171875
+        }
+      ]
+    },
+    {
+      "id": "clip-06",
+      "role": "new-holdout",
+      "offset": 20.0,
+      "frames": 256,
+      "seeds": [
+        831001,
+        123,
+        2026
+      ],
+      "source_sha256": "945c448ca43bb1bfb736cb15fce5e2f482175f9069c52dd6e8fb43b2906db95b",
+      "abc_sha256": "a0981341ac82d0c0bdf73c7064e1ecbbb0562622c33ec91faab9d30fcd73d41c",
+      "track": "koan_sound_tetsuos_redemption_140bpm_168bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "3a34c29934d0e32948f937ba2e5208391a567eaeb51714ef9729325d17e2ce3d",
+          "tokens": "d12caada38d0926a813b231fe5e71f3d8231b32f171dd79a2016e0ed3d64edd7",
+          "rms_db": -11.199016445505608,
+          "peak": 1.439453125
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "5a130d38e7ad291b40cec153678747499a31fd3585f04a5fda6fbc8ba11adb92",
+          "tokens": "d12caada38d0926a813b231fe5e71f3d8231b32f171dd79a2016e0ed3d64edd7",
+          "rms_db": -13.31968049648221,
+          "peak": 1.447265625
+        },
+        {
+          "variant": "v9",
+          "seed": 123,
+          "wav": "ca0d10c10fb4b227f8cd71035c6e2547fa8107b3dc2ab05f244a6e3143ef105b",
+          "tokens": "127aee3cba4db3f9ce3316f0e84983c88fe8bec3437f5635a63aecbd30cdbb8b",
+          "rms_db": -26.54358502373906,
+          "peak": 0.55126953125
+        },
+        {
+          "variant": "step48",
+          "seed": 123,
+          "wav": "1d846236d685462efb4cd2121ebcecf80fd24fb458f8d6e3e6adff68f7f43738",
+          "tokens": "127aee3cba4db3f9ce3316f0e84983c88fe8bec3437f5635a63aecbd30cdbb8b",
+          "rms_db": -27.206319822054855,
+          "peak": 0.517578125
+        },
+        {
+          "variant": "v9",
+          "seed": 2026,
+          "wav": "ba5b64327436f58aac1e6fbcf857fd8609375fee0f6f1d0fb51d33d4b93a8650",
+          "tokens": "e80640bf2f3c5024af0b2a9bb91847394600a1f495bc41479ef4113137b3ee7d",
+          "rms_db": -11.794639547025941,
+          "peak": 1.0537109375
+        },
+        {
+          "variant": "step48",
+          "seed": 2026,
+          "wav": "0f76dbb82e4d81aef3d2d10f9a043b9067aafadab60988fd21266a081d4c7f54",
+          "tokens": "e80640bf2f3c5024af0b2a9bb91847394600a1f495bc41479ef4113137b3ee7d",
+          "rms_db": -11.318771277041959,
+          "peak": 1.0927734375
+        }
+      ]
+    },
+    {
+      "id": "clip-07",
+      "role": "out-of-domain",
+      "offset": 20.0,
+      "frames": 256,
+      "seeds": [
+        831001,
+        123,
+        2026
+      ],
+      "source_sha256": "e5dc15a8d34fbe1b25e2c27f1e9e38d239e884da9ca1cb6b2b948029149c92bd",
+      "abc_sha256": "b78939f3f135f2dec21463e56526218b273de2b909e5fcb71d85e7a7bf020b72",
+      "track": "(SYNTHWAVE COVER) Blimp Bosses Multiverse - Blimps and bosses (Soundtrack).wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "a202ecc4afa3cd989918cd3fa30d9cf4afe9762f0533626ce66322a01a826d7e",
+          "tokens": "be7268fc7a8dd125458ae9ed452834924abfdd91d041784b4e5668f31ccdacdc",
+          "rms_db": -10.0019966502562,
+          "peak": 1.361328125
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "8bb17cd6a6a44a2d990b45bafd7e0c645707c796057e6c68a864a2406842a687",
+          "tokens": "be7268fc7a8dd125458ae9ed452834924abfdd91d041784b4e5668f31ccdacdc",
+          "rms_db": -10.378344755620766,
+          "peak": 1.2216796875
+        },
+        {
+          "variant": "v9",
+          "seed": 123,
+          "wav": "1d2d4fe795439e6e86ed53bad61837dfc11f7db4a2cffaa37c308b075f80da6f",
+          "tokens": "ab889518999de6214088d4ee34e905729aa5dc186fb454972c70fe7f8c143b85",
+          "rms_db": -9.061482574057782,
+          "peak": 1.37109375
+        },
+        {
+          "variant": "step48",
+          "seed": 123,
+          "wav": "e48b826cea371913bfee70b15d0541a1363f4bbdaac1413fd4fc2278f897184c",
+          "tokens": "ab889518999de6214088d4ee34e905729aa5dc186fb454972c70fe7f8c143b85",
+          "rms_db": -8.78678282649785,
+          "peak": 1.46875
+        },
+        {
+          "variant": "v9",
+          "seed": 2026,
+          "wav": "ff19abaaeeb5118cd9cf4926263bf49dac4eb32524aed6c77184768faf8eadb4",
+          "tokens": "da37017c4a83bd01f93a3e84a68a01c05dbcb60e47cae0df48c0cda9f74c992e",
+          "rms_db": -18.82388082757387,
+          "peak": 0.66650390625
+        },
+        {
+          "variant": "step48",
+          "seed": 2026,
+          "wav": "7fb8790355e31b4d90b2135fca1d0b5ff9987d0f2f38b4970df968757729ee05",
+          "tokens": "da37017c4a83bd01f93a3e84a68a01c05dbcb60e47cae0df48c0cda9f74c992e",
+          "rms_db": -19.856515108522082,
+          "peak": 0.59765625
+        }
+      ]
+    },
+    {
+      "id": "clip-08",
+      "role": "out-of-domain",
+      "offset": 20.0,
+      "frames": 256,
+      "seeds": [
+        831001,
+        123,
+        2026
+      ],
+      "source_sha256": "db653ea186621a7c003518b25c6dada4dc0486e232c8241a8c01ee70fb67de0e",
+      "abc_sha256": "0bcb9aa9f9612a9963175708bb6bc6115ce1f71562139f65fc2405d758669170",
+      "track": "039 - PARADOX   3dS MAX7 0kg.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "4fa987809b2bbba73c5c3432894d75c22b8bffa63462f2c6fea1dc52c6c1e153",
+          "tokens": "3cea11996c3cde0baf4797b1c3927929ff60c6d58b2c710ce9fb934b672e4caf",
+          "rms_db": -9.043518060894467,
+          "peak": 1.55859375
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "bd1ef1930a27547073d69f0c37e7b7615a72203b6cd53a76ac69a208843bdd26",
+          "tokens": "3cea11996c3cde0baf4797b1c3927929ff60c6d58b2c710ce9fb934b672e4caf",
+          "rms_db": -9.413853064502733,
+          "peak": 1.51171875
+        },
+        {
+          "variant": "v9",
+          "seed": 123,
+          "wav": "177276f40d996d7e1cc86867034e3c7668acea13bc2468d198ab813575a487cb",
+          "tokens": "0382fe015f2fa6e164ae74c899587bb753d986c8f9a56e52bbcfb1ba91a9fa0c",
+          "rms_db": -14.268876755620042,
+          "peak": 0.95166015625
+        },
+        {
+          "variant": "step48",
+          "seed": 123,
+          "wav": "954781e88d4b0887ed5e64b6d97ae2ea752f4b6da1570a364bf805291165797d",
+          "tokens": "0382fe015f2fa6e164ae74c899587bb753d986c8f9a56e52bbcfb1ba91a9fa0c",
+          "rms_db": -13.337700128684391,
+          "peak": 1.216796875
+        },
+        {
+          "variant": "v9",
+          "seed": 2026,
+          "wav": "de3c84f4417c104b2025b61711bb188a84cd695d65b595750e68787b6b6d89e1",
+          "tokens": "381e065134b860f49e645f9ec453118d77030c3a3c210d3b41ecbad61318b321",
+          "rms_db": -11.881509590269488,
+          "peak": 1.8095703125
+        },
+        {
+          "variant": "step48",
+          "seed": 2026,
+          "wav": "b4b30acf0f96636e201c589c84ca6a54f70bc0a7300c4ba101bb229f238453c9",
+          "tokens": "381e065134b860f49e645f9ec453118d77030c3a3c210d3b41ecbad61318b321",
+          "rms_db": -10.940556820176216,
+          "peak": 1.3349609375
+        }
+      ]
+    },
+    {
+      "id": "long-30",
+      "role": "long-render-new-holdout",
+      "offset": 20.0,
+      "frames": 750,
+      "seeds": [
+        831001
+      ],
+      "source_sha256": "945c448ca43bb1bfb736cb15fce5e2f482175f9069c52dd6e8fb43b2906db95b",
+      "abc_sha256": "11025d978b9c5bd877df7cf43ed6cd65be4f876274b0401df71410160451181f",
+      "track": "koan_sound_tetsuos_redemption_140bpm_168bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "eb697afac2d2e9e794eb5cf5e2760d1bb580582262f92c9d344733310c94a914",
+          "tokens": "2f2eb663af367ee7dcabba5f13cce73e65f30439dbfb114746409d120f8b78eb",
+          "rms_db": -12.593118686181274,
+          "peak": 0.9833984375
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "e8059b9ccad907d756be21758a31dcceb17be1fef0f0ea8c19208fd9d2241b6f",
+          "tokens": "2f2eb663af367ee7dcabba5f13cce73e65f30439dbfb114746409d120f8b78eb",
+          "rms_db": -13.673474342021068,
+          "peak": 0.9541015625
+        }
+      ]
+    },
+    {
+      "id": "long-60",
+      "role": "long-render-new-holdout",
+      "offset": 20.0,
+      "frames": 1500,
+      "seeds": [
+        831001
+      ],
+      "source_sha256": "945c448ca43bb1bfb736cb15fce5e2f482175f9069c52dd6e8fb43b2906db95b",
+      "abc_sha256": "418295c3f7958f9b4358ca0f2dc5d4cce4dbf2c5a44c843686ca424fafaae132",
+      "track": "koan_sound_tetsuos_redemption_140bpm_168bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "663a5369ae8827e732d2dc2a4ef072a039c2a2c8be3c5d91c32b530c2eb26d82",
+          "tokens": "5dde7c2403dfd18c49fbc78a4cbb2cd20741c595f48c61059fb599956dc81c08",
+          "rms_db": -12.661985102146767,
+          "peak": 1.171875
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "87d50ffe338bbf6f9decd003f9b347b267c879df1992d6faabab02ed060a0eaf",
+          "tokens": "5dde7c2403dfd18c49fbc78a4cbb2cd20741c595f48c61059fb599956dc81c08",
+          "rms_db": -13.560204278760239,
+          "peak": 1.0869140625
+        }
+      ]
+    },
+    {
+      "id": "long-120",
+      "role": "long-render-new-holdout",
+      "offset": 20.0,
+      "frames": 3000,
+      "seeds": [
+        831001
+      ],
+      "source_sha256": "945c448ca43bb1bfb736cb15fce5e2f482175f9069c52dd6e8fb43b2906db95b",
+      "abc_sha256": "bb86a2158c9d126ede74c7e12e1cf9c13ca865c97e71b41812cd3565a2cfede9",
+      "track": "koan_sound_tetsuos_redemption_140bpm_168bars.wav",
+      "renders": [
+        {
+          "variant": "v9",
+          "seed": 831001,
+          "wav": "9a0889d62edbc8a716b40d158a7ae97cb6a2c023a8f4964badfe37ee748899fe",
+          "tokens": "8c1cf79b14e940cfb9ce1555640b4d7ae31f84740c1d73a823ef234bcc63ce8e",
+          "rms_db": -12.062068607334929,
+          "peak": 1.3837890625
+        },
+        {
+          "variant": "step48",
+          "seed": 831001,
+          "wav": "47ac18c7db397baa98d61d74df7d65b5831ef9259c2a132e9e0f1826a6b9ec2d",
+          "tokens": "8c1cf79b14e940cfb9ce1555640b4d7ae31f84740c1d73a823ef234bcc63ce8e",
+          "rms_db": -13.427385168481809,
+          "peak": 1.2490234375
+        }
+      ]
+    }
+  ],
+  "listening_note": "Blind A/B order and answer key are local artifacts. No preference inferred from signal checks.",
+  "token_limit_note": "Fixed token counts intentionally bound duration; natural stopping was not tested.",
+  "preview_checks": {
+    "pairs": 27,
+    "finite": true,
+    "nonempty": true,
+    "max_rms_difference_db": 9.10472266468787e-08,
+    "max_peak": 0.9800000190734863,
+    "format": "PCM_24; RMS matched, shared pairwise peak-prevention gain"
+  },
+  "subjective_feedback": {
+    "reviewed_seeds": [
+      831001,
+      123
+    ],
+    "reviewer": "user",
+    "seed_reviews": {
+      "831001": {
+        "short_clips": {
+          "reviewed": 8,
+          "clear_step48_preferences": 6,
+          "near_ties_leaning_step48": 2,
+          "clear_v9_preferences": 0
+        },
+        "long_clips": {
+          "seconds_30": "slight step48 preference",
+          "seconds_60": "tie",
+          "seconds_120": "tie"
+        },
+        "limits": [
+          "One reviewer and one seed reviewed.",
+          "Two tracks were previous validation tracks.",
+          "The three long comparisons share one source track, also used for short clip 06.",
+          "Seeds 123 and 2026 remain unrated; do not infer their results.",
+          "Clip 01 is recorded as a tie with an A lean; clip 04 is a tentative B preference.",
+          "Clip 02 A preference is inferred from the reported degraded high end in B."
+        ]
+      },
+      "123": {
+        "short_clips": {
+          "reviewed": 4,
+          "step48_preferences": 3,
+          "v9_preferences": 0,
+          "no_preference_stated": 1,
+          "clear_win_count_not_assigned": true
+        },
+        "limits": [
+          "One reviewer; partial second-seed review on four previously reviewed source tracks.",
+          "Every trained adapter in this selected subset is B; label balance is not established by this subset alone.",
+          "The prior seed swaps A/B for clips 03 and 08; preferences on those tracks still follow step48.",
+          "Clip 07 is very close; clip 08 is a slight preference; do not report three decisive wins.",
+          "No preference or tie was explicitly stated for clip 05; leave preference null.",
+          "Other seed-123 clips and all seed-2026 pairs remain unrated."
+        ]
+      }
+    },
+    "reviewed_pairs": 15,
+    "unrated_pairs": 12,
+    "interpretation": "Consistent directional NAR fidelity preference across two seeds; one reviewer, repeated tracks and partial second-seed coverage. Source adherence and dataset-specific style remain separate questions."
+  }
+}

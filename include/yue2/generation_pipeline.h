@@ -19,6 +19,9 @@ struct GenerationPipelineOptions {
     GenerationDefaults generation;
     FlowOptions flow;
     bool semantic_budget_explicit = false;
+    // Additional style adapters for semantic generation and flow only.
+    // Symbolic planning retains autoregressive.lora_adapters.
+    std::vector<LoraAdapterSpec> render_lora_adapters;
 };
 
 // Per-call controls. A server can vary these without reconstructing

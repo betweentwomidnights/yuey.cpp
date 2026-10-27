@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -243,6 +244,8 @@ public:
     }
 
 private:
+    friend GgufModel load_gguf_selected(const char *, const char *, int,
+        const std::function<bool(const std::string &)> &);
     friend GgufModel load_gguf(const char *, const char *, int);
     friend GgufModel load_gguf_raw(const char *, const char *, int);
     friend GgufModel load_gguf_raw_impl(const char *, ggml_backend_t, bool);
@@ -278,6 +281,58 @@ private:
     ggml_backend_buffer_t buffer_ = nullptr;
     std::map<std::string, ggml_tensor *> tensors_;
 };
+
+// Training loads only the frozen NAR expert. BF16 sources are represented in
+// F16 for the existing frozen-weight backward kernels; quantized sources are
+// rejected until their training gradients have an independent validation.
+inline GgufModel load_gguf_selected(const char * path, const char * device, int threads,
+    const std::function<bool(const std::string &)> & select) {
+    GgufModel model;
+    model.backend_ = make_backend(device, threads);
+    model.owns_backend_ = true;
+    ggml_context * source = nullptr;
+    model.gguf_ = gguf_init_from_file(path, {true, &source});
+    std::unique_ptr<ggml_context, decltype(&ggml_free)> metadata(source, ggml_free);
+    if (!model.gguf_ || !source) throw gguf_error("cannot read training model");
+    model.context_ = ggml_init({ggml_get_mem_size(source), nullptr, true});
+    if (!model.context_) throw gguf_error("cannot create selected model context");
+    std::unique_ptr<FILE, decltype(&std::fclose)> file(std::fopen(path, "rb"), std::fclose);
+    if (!file) throw gguf_error("cannot open training weights");
+    struct Read { ggml_tensor * from; ggml_tensor * to; int64_t index; };
+    std::vector<Read> reads;
+    for (auto * tensor = ggml_get_first_tensor(source); tensor; tensor = ggml_get_next_tensor(source, tensor)) {
+        const std::string name = ggml_get_name(tensor);
+        if (!select(name)) continue;
+        if (tensor->type!=GGML_TYPE_F32 && tensor->type!=GGML_TYPE_F16 && tensor->type!=GGML_TYPE_BF16)
+            throw gguf_error("training requires unquantized F16/BF16/F32 weights: "+name);
+        auto * copy = ggml_new_tensor(model.context_, tensor->type==GGML_TYPE_BF16 ? GGML_TYPE_F16 : tensor->type,
+                                     GGML_MAX_DIMS, tensor->ne);
+        ggml_set_name(copy, name.c_str());
+        model.tensors_[name] = copy;
+        reads.push_back({tensor,copy,gguf_find_tensor(model.gguf_,name.c_str())});
+    }
+    model.buffer_ = ggml_backend_alloc_ctx_tensors(model.context_, model.backend_);
+    if (!model.buffer_) throw gguf_error("cannot allocate selected frozen weights");
+    std::vector<std::uint8_t> bytes;
+    std::vector<float> floats;
+    std::vector<ggml_fp16_t> halves;
+    const auto length = file_size(file.get());
+    for (const auto & read : reads) {
+        const auto offset = gguf_get_data_offset(model.gguf_)+gguf_get_tensor_offset(model.gguf_,read.index);
+        const auto size = ggml_nbytes(read.from);
+        if (offset>length || size>length-offset || !file_seek(file.get(),offset)) throw gguf_error("truncated training weights");
+        bytes.resize(size);
+        if (std::fread(bytes.data(),1,size,file.get())!=size) throw gguf_error("short training weight read");
+        if (read.from->type==GGML_TYPE_BF16) {
+            const auto count = ggml_nelements(read.from);
+            floats.resize(count); halves.resize(count);
+            ggml_bf16_to_fp32_row(reinterpret_cast<const ggml_bf16_t *>(bytes.data()),floats.data(),count);
+            ggml_fp32_to_fp16_row(floats.data(),halves.data(),count);
+            ggml_backend_tensor_set(read.to,halves.data(),0,halves.size()*sizeof(halves[0]));
+        } else ggml_backend_tensor_set(read.to,bytes.data(),0,size);
+    }
+    return model;
+}
 
 inline GgufModel load_gguf_raw_impl(
     const char * path,

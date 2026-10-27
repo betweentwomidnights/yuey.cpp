@@ -170,6 +170,21 @@
       <div><div class="eyebrow">local music workspace</div><h1 id="page-title">create with yuey</h1></div>
     </div>
 
+    <div class="card" style="margin-bottom:20px">
+      <h2>style &amp; sampling</h2>
+      <div class="row two">
+        <div><label for="style-lora">style adapter</label><select id="style-lora"><option value="">none · base model</option></select></div>
+        <div><label for="style-strength">style strength</label><input id="style-strength" type="number" min="0" max="2" step="0.05" value="1"><div class="help">1 = trained strength · 0 = bypass</div></div>
+      </div>
+      <details class="advanced"><summary>sampling controls</summary><div class="row two">
+        <div><label for="style-temperature">temperature</label><input id="style-temperature" type="number" min="0.1" max="2" step="0.05" value="1"></div>
+        <div><label for="style-steps">decoder steps</label><input id="style-steps" type="number" min="1" max="256" step="1" value="32"><div class="help">try 32 or 100; more steps take longer</div></div>
+      </div><label for="style-ceiling">audio ceiling (seconds)</label><input id="style-ceiling" type="number" min="0" max="900" step="1" value="0"><div class="help">0 uses automatic stopping. set a ceiling for short tests; it can cut off a phrase.</div></details>
+      <div class="help" id="style-help">checking installed style adapters…</div>
+      <div class="help">to compare adapters, keep the seed, prompt, score and sampling controls fixed. transcribe once and render the same edited score for the closest remix comparison.</div>
+      <div class="actions"><button class="secondary" id="style-prompt" type="button">use Koan prompt</button></div>
+    </div>
+
     <section class="view active" id="view-create">
       <div class="grid">
         <div class="card">
@@ -214,6 +229,7 @@
           </div>
           <div id="remix-lyrics-field" hidden><label for="remix-lyrics">lyrics <span class="help">· required when retaining vocals</span></label><textarea id="remix-lyrics" placeholder="type the source lyrics here, including section labels when available…"></textarea></div>
           <div class="help" id="remix-vocal-help">keep instrumental rests SheetSage2's Vocal lane and supplies empty lyric sections. turn it off when the source contains vocals you want yuey to retain.</div>
+          <label for="remix-seed">seed</label><input id="remix-seed" type="number" value="-1"><div class="help">−1 picks a new seed. reuse a fixed seed when comparing adapters.</div>
           <div id="continuation-controls" hidden>
             <label>continuation method</label><div class="mode-switch"><button id="continue-method-score" class="active" type="button" aria-pressed="true">score continuation</button><button id="continue-method-audio" type="button" aria-pressed="false">audio continuation</button></div>
             <div class="help" id="continue-method-help">transcribes the composition and renders a fresh continuation from its score. this is the default because it avoids real-audio codec loss.</div>
@@ -260,7 +276,7 @@
             <label for="score-prompt">prompt</label><textarea id="score-prompt" placeholder="more intimate, brushed drums, darker synth textures…"></textarea>
             <div class="field-title"><label for="score-lyrics">lyrics</label><label class="check"><input id="score-instrumental" type="checkbox"><span>instrumental <small>(best effort)</small></span></label></div>
             <div id="score-lyrics-field"><textarea id="score-lyrics" placeholder="write or retain lyrics here…"></textarea></div>
-            <label for="score-seed">seed</label><input id="score-seed" type="number" value="-1"><div class="help">audio length follows the edited score; there is no seconds cutoff.</div>
+            <label for="score-seed">seed</label><input id="score-seed" type="number" value="-1"><div class="help">audio follows the edited score, subject to the optional audio ceiling above.</div>
             <div class="actions"><button id="score-generate" class="primary">render edited score</button><button id="export-abc" class="secondary">save abc</button></div>
             <div class="status" id="score-status"><div class="status-head"><b id="score-stage">queued</b><span id="score-percent">0%</span></div><div class="bar"><i id="score-bar"></i></div><div class="help" id="score-detail"></div></div>
           </div>
@@ -296,6 +312,68 @@
   const $ = id => document.getElementById(id);
   const state = { props: null, health: null, encoding: 'auto', file: null, wavUrls: { create: null, transform: null }, result: null, plannedRequest: null, scoreContext: null, transformMode: 'remix', continuationMethod: 'score', instrumentalAdapterEnabled: null, audioContinuationAdapterEnabled: null, rollZoom: 1, scoreHistory: [], selection: [], runtimeOnline: false, runtimeChecking: false, runtimeTimer: null, deviceLabel: 'local backend', naturalMaxSeconds: null };
   const titles = { create: 'create with yuey', transform: 'remix or continue', models: 'models and runtime' };
+  const koanPrompt = 'koan_palette. Instrumental glitch hop and electronica, intricate syncopated breakbeats, detailed bass sound design, layered synthesizers and evolving textures.';
+  let stylePreference = null;
+  try { stylePreference = JSON.parse(localStorage.getItem('yuey-style-v1')); } catch (_) {}
+  if (stylePreference) {
+    for (const [id, key] of [['style-strength','strength'], ['style-temperature','temperature'], ['style-steps','steps'], ['style-ceiling','ceiling']]) {
+      if (Number.isFinite(stylePreference[key])) $(id).value = stylePreference[key];
+    }
+  }
+  function styleControls() {
+    const strength = Number($('style-strength').value), temperature = Number($('style-temperature').value), steps = Number($('style-steps').value);
+    const ceiling = Number($('style-ceiling').value);
+    if (!Number.isFinite(strength) || strength < 0 || strength > 2) throw new Error('style strength must be between 0 and 2');
+    if (!Number.isFinite(temperature) || temperature < .1 || temperature > 2) throw new Error('temperature must be between 0.1 and 2');
+    if (!Number.isInteger(steps) || steps < 1 || steps > 256) throw new Error('decoder steps must be between 1 and 256');
+    if (!Number.isFinite(ceiling) || ceiling < 0 || ceiling > 900) throw new Error('audio ceiling must be between 0 and 900 seconds');
+    return { render_loras: $('style-lora').value ? [{name: $('style-lora').value, strength}] : [], temperature, ode_steps: steps, max_seconds: ceiling || undefined };
+  }
+  function rememberStyle() {
+    try { localStorage.setItem('yuey-style-v1', JSON.stringify({name:$('style-lora').value, strength:Number($('style-strength').value), temperature:Number($('style-temperature').value), steps:Number($('style-steps').value), ceiling:Number($('style-ceiling').value)})); } catch (_) {}
+  }
+  function syncStyle(fillEmpty = false) {
+    const koan = $('style-lora').value.startsWith('koan-');
+    if (koan && fillEmpty) {
+      for (const id of ['prompt','remix-prompt','score-prompt']) if (!$(id).value.trim()) $(id).value = koanPrompt;
+      for (const id of ['instrumental','remix-instrumental','score-instrumental']) $(id).checked = true;
+      state.instrumentalAdapterEnabled = !!state.props?.capabilities?.instrumental_adapter;
+      syncInstrumental(); syncRemixInstrumental(); syncScoreInstrumental();
+    }
+    $('style-prompt').hidden = !koan;
+    $('style-strength').disabled = !$('style-lora').value;
+    $('style-help').textContent = $('style-lora').value
+      ? 'style applies to new audio in create, remix and score rendering. change the prompt or strength to experiment; use none for a base-model comparison.'
+      : 'no style adapter selected. the instrumental planner setting still applies.';
+    if (koan) $('style-help').textContent += ' include koan_palette in your description, or start with the Koan prompt.';
+    if (koan && state.instrumentalAdapterEnabled === false) $('style-help').textContent += ' enable instrumental planner in models & runtime for the trained Koan setup.';
+    syncContinuationMethod();
+  }
+  function renderStyleOptions(loras) {
+    const current = state.styleOptionsLoaded ? $('style-lora').value : stylePreference?.name;
+    const styles = loras.filter(x => !/^yue2-(instrumental-cot|realaudio-nar)/.test(x.name));
+    $('style-lora').replaceChildren(new Option('none · base model', ''));
+    for (const item of styles) {
+      const labels = {
+        'koan-yue2-r32-ar150': 'Koan · AR LoRA 150 + native NAR',
+        'koan-yue2-r32-ar150-nar400': 'Koan · AR LoRA 150 + NAR LoRA 400',
+        'koan-yue2-r32-ar200': 'Koan · AR LoRA 200 + native NAR',
+        'koan-yue2-r32-ar200-nar400': 'Koan · AR LoRA 200 + NAR LoRA 400',
+        'koan-yue2-r32-ar-dora150': 'Koan · AR DoRA 150 + native NAR',
+        'koan-yue2-r32-ar-dora150-nar400': 'Koan · AR DoRA 150 + NAR LoRA 400'
+      };
+      const label = labels[item.name] || item.name;
+      $('style-lora').add(new Option(label, item.name));
+    }
+    const preferred = current ?? (styles.find(x => x.name === 'koan-yue2-r32-ar150-nar400')?.name || '');
+    $('style-lora').value = styles.some(x => x.name === preferred) ? preferred : '';
+    const first = !state.styleOptionsLoaded; state.styleOptionsLoaded = true;
+    $('style-lora').disabled = !state.props?.capabilities?.render_loras;
+    syncStyle(first); rememberStyle();
+  }
+  $('style-lora').onchange = () => { syncStyle(true); rememberStyle(); if (state.props) renderProps(); };
+  for (const id of ['style-strength','style-temperature','style-steps','style-ceiling']) $(id).onchange = rememberStyle;
+  $('style-prompt').onclick = () => { for (const id of ['prompt','remix-prompt','score-prompt']) $(id).value = koanPrompt; };
   const chordRoots = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
   const chordQualities = [
     ['', 'major'], ['m', 'minor'], ['6', 'major 6'], ['m6', 'minor 6'], ['7', 'dominant 7'],
@@ -346,7 +424,7 @@
   }
   $('continue-ending').onchange = syncContinueLength;
   function syncContinuationMethod() {
-    const audioAvailable = state.audioContinuationAdapterEnabled !== false &&
+    const audioAvailable = !$('style-lora').value && state.audioContinuationAdapterEnabled !== false &&
       state.props?.capabilities?.continuation_adapter !== false;
     if (state.continuationMethod === 'audio' && !audioAvailable) state.continuationMethod = 'score';
     const audio = state.continuationMethod === 'audio';
@@ -357,7 +435,7 @@
     $('continue-method-audio').disabled = !audioAvailable;
     $('continue-method-help').textContent = audio
       ? "opt-in: extends the source's semantic audio tokens as well as its score. continuity is stronger, but the complete result is reconstructed and may lose fidelity."
-      : 'transcribes the composition and renders a fresh continuation from its score. this is the default because it avoids real-audio codec loss.';
+      : ($('style-lora').value ? 'style adapters use score continuation: the source supplies the composition and the selected adapter supplies the sound palette.' : 'transcribes the composition and renders a fresh continuation from its score. this is the default because it avoids real-audio codec loss.');
     if (state.transformMode === 'continue') {
       $('transform-run').textContent = audio ? 'continue from audio' : 'continue from score';
     }
@@ -951,6 +1029,7 @@
     $('use-continuation-adapter').checked = state.audioContinuationAdapterEnabled;
     $('continuation-adapter-state').textContent = continuationAvailable ? (state.audioContinuationAdapterEnabled ? 'enabled' : 'bypassed') : 'not installed';
     $('continuation-adapter-state').className = `pill ${state.audioContinuationAdapterEnabled ? 'good' : ''}`;
+    syncStyle();
     syncContinuationMethod();
     const installed = p.models.tiers.filter(t => t.installed);
     if (!installed.some(t => t.encoding === state.encoding)) {
@@ -986,7 +1065,9 @@
       state.health = await api('/health');
       state.runtimeOnline = true;
       if (full || !wasOnline || !state.props) {
-        state.props = await api('/props');
+        const [props, adapters] = await Promise.all([api('/props'), api('/loras')]);
+        state.props = props;
+        renderStyleOptions(adapters.loras || []);
         renderProps();
       }
       renderConnection();
@@ -1011,6 +1092,7 @@
     $(prefix + '-detail').classList.toggle('error', !!error);
   }
   async function run(path, payload, prefix) {
+    if (path !== '/transcribe') payload = { ...payload, ...styleControls() };
     status(prefix, { progress: 0, stage: 'queued' });
     const queued = await api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     for (;;) {
@@ -1043,9 +1125,10 @@
     state.wavUrls[destination] = wavUrl;
     const warning = result.warnings?.length ? ` · warning: ${result.warnings.join('; ')}` : '';
     const bars = result.meta?.score_bars ? ` · ${result.meta.score_bars} bars` : '';
-    const adapters = [result.meta?.instrumental_adapter ? 'instrumental adapter' : '', result.meta?.continuation_adapter ? 'real-audio adapter' : ''].filter(Boolean);
+    const adapters = [result.meta?.instrumental_adapter ? 'instrumental adapter' : '', result.meta?.continuation_adapter ? 'real-audio adapter' : '', ...(result.meta?.render_loras || []).map(x => `${x.name} × ${x.strength}`)].filter(Boolean);
     const adapterText = adapters.length ? ` · ${adapters.join(' + ')}` : ' · no automatic adapter';
-    const meta = `${Number(result.meta?.duration || 0).toFixed(1)} sec${bars} · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${adapterText}${warning}`;
+    const sampling = result.meta?.ode_steps ? ` · temp ${result.meta.temperature} · ${result.meta.ode_steps} decoder steps` : '';
+    const meta = `${Number(result.meta?.duration || 0).toFixed(1)} sec${bars} · seed ${result.seed} · ${result.encoding || result.meta?.encoding || state.encoding}${adapterText}${sampling}${warning}`;
     if (destination === 'transform') {
       $('remix-player').src = wavUrl; $('save-remix').href = wavUrl;
       $('remix-audio').hidden = false; $('save-remix').hidden = false;
@@ -1090,7 +1173,9 @@
     if (!state.plannedRequest || !$('abc').value.trim()) return;
     $('render-plan').disabled = true;
     try {
-      const payload = { ...state.plannedRequest, abc: $('abc').value, target_bars: 0, ending: 'natural' };
+      const payload = { ...state.plannedRequest, style: $('prompt').value, instrumental: $('instrumental').checked,
+        lyrics: $('lyrics').value, use_instrumental_adapter: state.instrumentalAdapterEnabled !== false,
+        abc: $('abc').value, target_bars: 0, ending: 'natural' };
       delete payload.planning;
       const result = await run('/generate', payload, 'create');
       renderAudio(result);
@@ -1118,7 +1203,7 @@
     const instrumental = $('remix-instrumental').checked;
     const lyrics = instrumental ? '' : $('remix-lyrics').value.trim();
     if (!instrumental && !lyrics) throw new Error('add the source lyrics, or enable keep instrumental');
-    return { style: $('remix-prompt').value, lyrics, instrumental, encoding: state.encoding,
+    return { style: $('remix-prompt').value, lyrics, instrumental, seed: seed('remix-seed'), encoding: state.encoding,
       use_instrumental_adapter: state.instrumentalAdapterEnabled !== false };
   }
   function continuationLength(abc) {

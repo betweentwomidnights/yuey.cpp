@@ -181,6 +181,18 @@ Things worth knowing on a Mac:
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [LoRA training feasibility and local dataset pilot](docs/lora-training-feasibility.md)
+- [Experimental native NAR LoRA trainer and checkpoint results](docs/nar-training.md)
+- [Experimental semantic AR LoRA capacity probe and target audit](docs/ar-training.md)
+- [Prompted rank-32 Koan AR/NAR experiment](docs/koan-rank32-2026-10-25.md)
+- [AI Toolkit YuE2 recipe review and remaining experiments](docs/ai-toolkit-yue2-review-2026-10-25.md)
+- [Koan toolkit follow-up: target, sampling and scored-coverage experiments](docs/koan-toolkit-followup-2026-10-25.md)
+- [AR200 matched acoustic calibration and current UI exports](docs/koan-ar200-nar-calibration-2026-10-26.md)
+- [Matched NAR DoRA comparison](docs/koan-nar-dora-2026-10-26.md)
+- [Matched AR DoRA comparison with companion-aware normalization](docs/koan-ar-dora-2026-10-26.md)
+- [Acoustic calibration for listener-preferred AR DoRA150](docs/koan-ar-dora-nar-calibration-2026-10-26.md)
+- [DoRA UI presets and fixed-seed comparisons](docs/koan-ar-dora-webui-2026-10-26.md)
+- [Future generation and trainer control boundaries](docs/yue2-adapter-controls.md)
 - [Server and web API](docs/server.md)
 - [C/C++ embedding](docs/embedding.md)
 - [C ABI V1 contract](docs/C_ABI_V1.md)

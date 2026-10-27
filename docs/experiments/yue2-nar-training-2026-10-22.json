@@ -1,0 +1,595 @@
+{
+  "date": "2026-10-22",
+  "status": "native NAR trainer implemented; bounded pilot completed; listening review pending",
+  "ggml_candidate": "c7491b1c223799e6026ec7a1963925c97d414fb2",
+  "ggml_pr": "https://github.com/betweentwomidnights/ggml/pull/18",
+  "base_model_sha256": "9e1e3bb89dce35703345cd39c57a43f996d62e5ca87afb6784ff5ecfcad27a55",
+  "training_precision": "BF16 checkpoint represented as F16 frozen NAR weights; F32 LoRA, gradients and AdamW state",
+  "hardware": "Intel Core Ultra 9 275HX; RTX 5070 Laptop 8 GB; Windows",
+  "gpu_memory_observed_mib": 3897,
+  "gpu_memory_note": "Total GPU memory, including other applications; not a sampled process peak",
+  "frames": 256,
+  "seconds_per_window": 10.24,
+  "training_tracks": 4,
+  "training_windows": 4,
+  "heldout_tracks": 2,
+  "heldout_windows": 2,
+  "rank": 8,
+  "steps": 48,
+  "learning_rate": 5e-05,
+  "weight_decay": 0.01,
+  "gradient_clip": 1.0,
+  "seed": 831001,
+  "native_training_inference_velocity_relative_l2": 0.004205884162348515,
+  "oracles": {
+    "known-probe": {
+      "reference_loss": 0.17195597290992737,
+      "native_loss": 0.1717149019241333,
+      "velocity_relative_l2": 0.0029275619079653275,
+      "gradient_relative_l2": 0.008212985175162469,
+      "passed": true,
+      "adamw_max_absolute_error": 7.450580596923828e-09
+    },
+    "koan-probe": {
+      "reference_loss": 1.321256160736084,
+      "native_loss": 1.3213679790496826,
+      "velocity_relative_l2": 0.003293071595825241,
+      "gradient_relative_l2": 0.0067271282714819825,
+      "passed": true
+    },
+    "known-cpu-probe": {
+      "reference_loss": 0.17195597290992737,
+      "native_loss": 0.17197564244270325,
+      "velocity_relative_l2": 0.0003072996088892618,
+      "gradient_relative_l2": 0.0005221891623602246,
+      "passed": true
+    },
+    "known-post-update-probe": {
+      "reference_loss": 0.16400553286075592,
+      "native_loss": 0.16426536440849304,
+      "velocity_relative_l2": 0.002806647872167758,
+      "gradient_relative_l2": 0.0060337560997457415,
+      "max_significant_gradient_relative_l2": 0.03222363567690883,
+      "passed": true
+    }
+  },
+  "runs": {
+    "koan-run": {
+      "evaluations": [
+        {
+          "step": 0,
+          "train_eval": 1.16739,
+          "heldout_eval": 1.14443
+        },
+        {
+          "step": 8,
+          "train_eval": 1.16143,
+          "heldout_eval": 1.13954
+        },
+        {
+          "step": 16,
+          "train_eval": 1.15384,
+          "heldout_eval": 1.13342
+        },
+        {
+          "step": 24,
+          "train_eval": 1.14491,
+          "heldout_eval": 1.12681
+        },
+        {
+          "step": 32,
+          "train_eval": 1.13514,
+          "heldout_eval": 1.12038
+        },
+        {
+          "step": 40,
+          "train_eval": 1.12711,
+          "heldout_eval": 1.11574
+        },
+        {
+          "step": 48,
+          "train_eval": 1.12225,
+          "heldout_eval": 1.11311
+        }
+      ],
+      "first_training_step": {
+        "step": 1,
+        "loss": 1.1941,
+        "grad_norm": 0.0859648
+      },
+      "last_training_step": {
+        "step": 48,
+        "loss": 1.00525,
+        "grad_norm": 0.15928
+      }
+    },
+    "koan-oneclip": {
+      "evaluations": [
+        {
+          "step": 0,
+          "train_eval": 1.22787,
+          "heldout_eval": 1.14443
+        },
+        {
+          "step": 16,
+          "train_eval": 1.18468,
+          "heldout_eval": 1.12045
+        },
+        {
+          "step": 32,
+          "train_eval": 1.15225,
+          "heldout_eval": 1.11557
+        },
+        {
+          "step": 48,
+          "train_eval": 1.11616,
+          "heldout_eval": 1.11959
+        },
+        {
+          "step": 64,
+          "train_eval": 1.07342,
+          "heldout_eval": 1.12941
+        }
+      ],
+      "first_training_step": {
+        "step": 1,
+        "loss": 1.26246,
+        "grad_norm": 0.0844738
+      },
+      "last_training_step": {
+        "step": 64,
+        "loss": 1.10295,
+        "grad_norm": 0.138184
+      }
+    },
+    "known-overfit": {
+      "evaluations": [
+        {
+          "step": 0,
+          "train_eval": 1.35524
+        },
+        {
+          "step": 8,
+          "train_eval": 1.35342
+        },
+        {
+          "step": 16,
+          "train_eval": 1.39693
+        }
+      ],
+      "first_training_step": {
+        "step": 1,
+        "loss": 0.171715,
+        "grad_norm": 0.146301
+      },
+      "last_training_step": {
+        "step": 16,
+        "loss": 0.040735,
+        "grad_norm": 0.0857471
+      }
+    }
+  },
+  "resume": {
+    "step-48.gguf": {
+      "continuous": "48ec6d227b8cd4915a908b42958e5918035a18bbb788636c242edee453ed5c24",
+      "resumed": "48ec6d227b8cd4915a908b42958e5918035a18bbb788636c242edee453ed5c24",
+      "identical": true
+    },
+    "step-48.state.gguf": {
+      "continuous": "31bbcff590a99a4becfeaa4ec0c25c986bb1e503f791a90cbde2e8285f78285e",
+      "resumed": "31bbcff590a99a4becfeaa4ec0c25c986bb1e503f791a90cbde2e8285f78285e",
+      "identical": true
+    }
+  },
+  "endpoint_controls": {
+    "koan_sound_aeon_114bpm_46bars.wav": {
+      "strength_zero_matches_vae_only": true,
+      "zero_adapter_matches_baseline": true,
+      "strength_one_matches_baseline": true
+    },
+    "koan_sound_silkwave_88bpm_80bars.wav": {
+      "strength_zero_matches_vae_only": true,
+      "zero_adapter_matches_baseline": true,
+      "strength_one_matches_baseline": true
+    }
+  },
+  "ctests": {
+    "passed": 17,
+    "total": 17
+  },
+  "python_tests": {
+    "passed": 19,
+    "total": 19
+  },
+  "auditions": [
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6668594318201808,
+      "onset_correlation": 0.8993708610763731,
+      "log_spectral_l1": 0.9499484896659851,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -11.626184627281615,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.2840780019760132,
+      "render_peak": 1.3182224035263062,
+      "render_samples_ge_1_fraction": 0.00015057299127490558,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "baseline"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6668594318201808,
+      "onset_correlation": 0.8993708610763731,
+      "log_spectral_l1": 0.9499484896659851,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -11.626184627281615,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.2840780019760132,
+      "render_peak": 1.3182224035263062,
+      "render_samples_ge_1_fraction": 0.00015057299127490558,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "step-0"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6666087995031299,
+      "onset_correlation": 0.8992097359268756,
+      "log_spectral_l1": 0.9120035767555237,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -11.644697966479658,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.2617749869823456,
+      "render_peak": 1.3502322435379028,
+      "render_samples_ge_1_fraction": 8.952988670399792e-05,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "step-24"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6795362059603764,
+      "onset_correlation": 0.9019377705143939,
+      "log_spectral_l1": 0.8476946949958801,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -12.509048743496551,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.2248268723487854,
+      "render_peak": 1.1236841678619385,
+      "render_samples_ge_1_fraction": 1.2208620914181533e-05,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "step-48"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6961557499076235,
+      "onset_correlation": 0.9068329033739242,
+      "log_spectral_l1": 0.809357762336731,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -13.168936728401775,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.35993725061416626,
+      "render_peak": 1.0960431098937988,
+      "render_samples_ge_1_fraction": 2.4417241828363067e-05,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "step-64"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.9726493817665277,
+      "onset_correlation": 0.9956149905869143,
+      "log_spectral_l1": 0.6644155979156494,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -9.91438314563635,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.29547378420829773,
+      "render_peak": 1.217294692993164,
+      "render_samples_ge_1_fraction": 0.00011598189868472458,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "strength-0"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.905704583253915,
+      "onset_correlation": 0.974335646587178,
+      "log_spectral_l1": 0.7232222557067871,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -10.183714217028273,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.31541329622268677,
+      "render_peak": 1.2598062753677368,
+      "render_samples_ge_1_fraction": 0.00014446868081781483,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "strength-0.35"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.7479034452202314,
+      "onset_correlation": 0.9260225037736397,
+      "log_spectral_l1": 0.8232784271240234,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -10.084938944290577,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.33739063143730164,
+      "render_peak": 1.2550132274627686,
+      "render_samples_ge_1_fraction": 0.00032759799453053784,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "strength-0.7"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6668594318201808,
+      "onset_correlation": 0.8993708610763731,
+      "log_spectral_l1": 0.9499484896659851,
+      "source_rms_db": -10.272980507844373,
+      "render_rms_db": -11.626184627281615,
+      "source_side_mid_ratio": 0.3020394444465637,
+      "render_side_mid_ratio": 0.2840780019760132,
+      "render_peak": 1.3182224035263062,
+      "render_samples_ge_1_fraction": 0.00015057299127490558,
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "split": "validation",
+      "variant": "strength-1"
+    },
+    {
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "variant": "baseline",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "d9d935157e12bff13f17897633821c71e6d02ac2b73130e7daf08999456bbf83"
+    },
+    {
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "variant": "step-0",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "d9d935157e12bff13f17897633821c71e6d02ac2b73130e7daf08999456bbf83"
+    },
+    {
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "variant": "step-24",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "d9d935157e12bff13f17897633821c71e6d02ac2b73130e7daf08999456bbf83"
+    },
+    {
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "variant": "step-48",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "d9d935157e12bff13f17897633821c71e6d02ac2b73130e7daf08999456bbf83"
+    },
+    {
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "variant": "step-64",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "d9d935157e12bff13f17897633821c71e6d02ac2b73130e7daf08999456bbf83"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6594580263866655,
+      "onset_correlation": 0.7809858689858002,
+      "log_spectral_l1": 1.0273078680038452,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -8.237827330764711,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.39368900656700134,
+      "render_peak": 1.7226907014846802,
+      "render_samples_ge_1_fraction": 0.003117267873421018,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "baseline"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6594580263866655,
+      "onset_correlation": 0.7809858689858002,
+      "log_spectral_l1": 1.0273078680038452,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -8.237827330764711,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.39368900656700134,
+      "render_peak": 1.7226907014846802,
+      "render_samples_ge_1_fraction": 0.003117267873421018,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "step-0"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6565670075375438,
+      "onset_correlation": 0.7886930977632184,
+      "log_spectral_l1": 0.9446088671684265,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -8.477558950585088,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.3503980338573456,
+      "render_peak": 1.5869359970092773,
+      "render_samples_ge_1_fraction": 0.0021365086599817685,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "step-24"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6619352640054164,
+      "onset_correlation": 0.7976747504446647,
+      "log_spectral_l1": 0.8635210990905762,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -9.277683840889939,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.24057096242904663,
+      "render_peak": 1.536907434463501,
+      "render_samples_ge_1_fraction": 0.0010377327777054304,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "step-48"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6939311829369709,
+      "onset_correlation": 0.8328400857247823,
+      "log_spectral_l1": 0.8626555800437927,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -9.845803520937316,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.301916241645813,
+      "render_peak": 1.3688154220581055,
+      "render_samples_ge_1_fraction": 0.0006185701263185311,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "step-64"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.9712642419684896,
+      "onset_correlation": 0.9874590852397419,
+      "log_spectral_l1": 0.700557291507721,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -6.94291865530395,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.19977732002735138,
+      "render_peak": 1.369186282157898,
+      "render_samples_ge_1_fraction": 0.002238247167599948,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "strength-0"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.9246737550112906,
+      "onset_correlation": 0.9439099368407283,
+      "log_spectral_l1": 0.7329649329185486,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -7.28913528053709,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.22216197848320007,
+      "render_peak": 1.426406979560852,
+      "render_samples_ge_1_fraction": 0.002006283370230499,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "strength-0.35"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.7857460930042807,
+      "onset_correlation": 0.843801781099101,
+      "log_spectral_l1": 0.8045413494110107,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -7.239712075305269,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.2509712874889374,
+      "render_peak": 1.712640643119812,
+      "render_samples_ge_1_fraction": 0.004211974215392629,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "strength-0.7"
+    },
+    {
+      "source_seconds": 10.24,
+      "render_seconds": 10.238666666666667,
+      "compared_seconds": 10.238666666666667,
+      "chroma_correlation": 0.6594580263866655,
+      "onset_correlation": 0.7809858689858002,
+      "log_spectral_l1": 1.0273078680038452,
+      "source_rms_db": -7.207106634385669,
+      "render_rms_db": -8.237827330764711,
+      "source_side_mid_ratio": 0.20748746395111084,
+      "render_side_mid_ratio": 0.39368900656700134,
+      "render_peak": 1.7226907014846802,
+      "render_samples_ge_1_fraction": 0.003117267873421018,
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "split": "validation",
+      "variant": "strength-1"
+    },
+    {
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "variant": "baseline",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "741d1fb7712b508dca4a2f1c06831e373c0a17807e19b94663191da1c484295d"
+    },
+    {
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "variant": "step-0",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "741d1fb7712b508dca4a2f1c06831e373c0a17807e19b94663191da1c484295d"
+    },
+    {
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "variant": "step-24",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "741d1fb7712b508dca4a2f1c06831e373c0a17807e19b94663191da1c484295d"
+    },
+    {
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "variant": "step-48",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "741d1fb7712b508dca4a2f1c06831e373c0a17807e19b94663191da1c484295d"
+    },
+    {
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "variant": "step-64",
+      "workflow": "ABC-to-fresh-AR-tokens",
+      "tokens_sha256": "741d1fb7712b508dca4a2f1c06831e373c0a17807e19b94663191da1c484295d"
+    }
+  ],
+  "rms_matched_metrics": [
+    {
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "variant": "baseline",
+      "rms_matched_log_spectral_l1": 0.9586446285247803
+    },
+    {
+      "source": "koan_sound_aeon_114bpm_46bars.wav",
+      "variant": "step-48",
+      "rms_matched_log_spectral_l1": 0.8910361528396606
+    },
+    {
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "variant": "baseline",
+      "rms_matched_log_spectral_l1": 1.0192469358444214
+    },
+    {
+      "source": "koan_sound_silkwave_88bpm_80bars.wav",
+      "variant": "step-48",
+      "rms_matched_log_spectral_l1": 0.8541742563247681
+    }
+  ],
+  "pilot_checkpoint_sha256": "48ec6d227b8cd4915a908b42958e5918035a18bbb788636c242edee453ed5c24"
+}

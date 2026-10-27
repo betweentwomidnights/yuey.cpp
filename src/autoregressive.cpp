@@ -738,6 +738,7 @@ public:
         const std::vector<std::int32_t> & ar_tokens,
         const std::vector<float> & noise,
         std::uint32_t ode_steps,
+        float start_noise_level,
         const AutoregressiveControl & control);
 
     // Scratch for the per-call ggml context. Building a graph needs room for
@@ -1024,6 +1025,7 @@ std::vector<float> AutoregressiveState::solve_flow_chunk(
     const std::vector<std::int32_t> & ar_tokens,
     const std::vector<float> & noise,
     std::uint32_t ode_steps,
+    float start_noise_level,
     const AutoregressiveControl & control) {
     std::lock_guard<std::mutex> lock(mutex);
     if (ar_tokens.empty() || noise.empty() || noise.size() % 64 != 0 || ode_steps < 1) {
@@ -1064,12 +1066,12 @@ std::vector<float> AutoregressiveState::solve_flow_chunk(
                 static_cast<double>(ar_cache.rows()) / 1048576.0);
     }
     auto state = noise;
-    const double dt = 1.0 / static_cast<double>(ode_steps);
+    const double dt = start_noise_level / static_cast<double>(ode_steps);
     for (std::uint32_t step = 0; step < ode_steps; ++step) {
         if (control.should_cancel && control.should_cancel()) {
             throw std::runtime_error("YuE2 generation cancelled");
         }
-        const double t = 1.0 - static_cast<double>(step) * dt;
+        const double t = start_noise_level - static_cast<double>(step) * dt;
         const auto first = graph.velocity(state, static_cast<float>(logit_clamped(t)));
         std::vector<float> midpoint(state.size());
         for (std::size_t index = 0; index < state.size(); ++index) {
@@ -1390,6 +1392,59 @@ AutoregressiveResult AutoregressiveModel::generate_cfg(
     return result;
 }
 
+FrozenNarConditioning AutoregressiveModel::freeze_nar_conditioning(
+    const std::vector<std::int32_t> & prefix,
+    const std::vector<std::int32_t> & codec) {
+    if (prefix.empty() || codec.empty() || prefix.size()+codec.size()*2+3 > 24576)
+        throw std::invalid_argument("invalid training conditioning length");
+    auto ids = prefix;
+    for (auto code : codec) {
+        if (code < 0 || code >= kCodecSize) throw std::invalid_argument("invalid codec ID");
+        ids.push_back(kCodecOffset+code);
+    }
+    ids.push_back(kMusicEndToken);
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    KvCache cache(state_->model.backend(), ids.size());
+    state_->append_locked(cache, ids, {0,1});
+    FrozenNarConditioning result;
+    result.token_count = static_cast<std::uint32_t>(ids.size());
+    const auto per_layer = ids.size()*kKvHeads*kHeadDim;
+    result.keys.resize(kLayers*per_layer);
+    result.values.resize(kLayers*per_layer);
+    std::vector<ggml_fp16_t> half(ids.size()*kHeadDim);
+    for (int layer = 0; layer < kLayers; ++layer) {
+        for (int head = 0; head < kKvHeads; ++head) {
+            const auto at = layer*per_layer+head*half.size();
+            for (int which = 0; which < 2; ++which) {
+                auto * tensor = which ? cache.value(layer) : cache.key(layer);
+                ggml_backend_tensor_get(tensor, half.data(), head*tensor->nb[2], half.size()*sizeof(half[0]));
+                ggml_fp16_to_fp32_row(half.data(), (which ? result.values : result.keys).data()+at, half.size());
+            }
+        }
+    }
+    return result;
+}
+
+std::vector<float> AutoregressiveModel::flow_velocity(
+    const std::vector<std::int32_t> & prefix,
+    const std::vector<std::int32_t> & codec,
+    const std::vector<float> & values, float noise_fraction) {
+    if (prefix.empty() || codec.empty() || values.size()!=codec.size()*64 ||
+        prefix.size()+codec.size()*2+3>24576 || !std::isfinite(noise_fraction) || noise_fraction<=0 || noise_fraction>=1)
+        throw std::invalid_argument("invalid flow diagnostic request");
+    auto ids = prefix;
+    for (auto code : codec) {
+        if (code<0 || code>=kCodecSize) throw std::invalid_argument("invalid codec ID");
+        ids.push_back(kCodecOffset+code);
+    }
+    ids.push_back(kMusicEndToken);
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    KvCache cache(state_->model.backend(), ids.size()+codec.size()+2);
+    state_->append_locked(cache, ids, {0,1});
+    FlowGraph graph(*state_, cache, codec.size());
+    return graph.velocity(values, static_cast<float>(logit_clamped(noise_fraction)));
+}
+
 std::vector<float> AutoregressiveModel::synthesize_latents(
     const std::vector<std::int32_t> & generation_prefix,
     const std::vector<std::int32_t> & semantic_codec_ids,
@@ -1399,7 +1454,8 @@ std::vector<float> AutoregressiveModel::synthesize_latents(
     if (generation_prefix.empty() || semantic_codec_ids.empty() ||
         noise.size() != semantic_codec_ids.size() * 64 || options.ode_steps < 1 ||
         options.context_length < 1 || options.context_length > 24576 ||
-        generation_prefix.size() + 3 >= options.context_length) {
+        generation_prefix.size() + 3 >= options.context_length ||
+        !std::isfinite(options.start_noise_level) || options.start_noise_level <= 0 || options.start_noise_level > 1) {
         throw std::invalid_argument("invalid YuE2 flow synthesis request");
     }
     for (const auto token : generation_prefix) {
@@ -1454,7 +1510,7 @@ std::vector<float> AutoregressiveModel::synthesize_latents(
             };
         }
         auto chunk = state_->solve_flow_chunk(
-            ar_tokens, chunk_noise, options.ode_steps, chunk_control);
+            ar_tokens, chunk_noise, options.ode_steps, options.start_noise_level, chunk_control);
         output.insert(output.end(), chunk.begin(), chunk.end());
         ++chunk_index;
     }

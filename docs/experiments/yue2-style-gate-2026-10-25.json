@@ -1,0 +1,190 @@
+{
+  "date": "2026-10-25",
+  "status": "failed style gate: user reports no Koan resemblance and near-identical A/B/C outputs",
+  "groups": 6,
+  "primary_renders": 18,
+  "strength_diagnostic_renders": 2,
+  "no_new_training": true,
+  "no_dataset_recordings_or_captions_as_inference_inputs": true,
+  "no_supplied_score_or_audio_for_standard_generation": true,
+  "used_scores_and_semantic_tokens_match_within_groups": true,
+  "max_preview_peak": 0.9800000190734863,
+  "max_group_rms_difference_db": 1.0090951008123739e-07,
+  "source_sha256": "6764c79b45b9812269a91505d1f01653909fdb71b87c407fab442aa12ec5cbb6",
+  "source_unchanged": true,
+  "plain_nar_control_renders": 2,
+  "plain_nar_controls_keep_the_same_ar_tokens_and_score": true,
+  "source": {
+    "name": "gary4juce_1792943821821.wav",
+    "seconds": 44.718666666666664,
+    "sha256": "6764c79b45b9812269a91505d1f01653909fdb71b87c407fab442aa12ec5cbb6",
+    "copied_without_modification": true,
+    "transcription_meter": "2/4",
+    "transcription_bars": 32,
+    "transcription_bpm": 86,
+    "note": "User describes sixteen bars; thirty-two half-length bars are equivalent in duration. Underlying composition provenance is unknown."
+  },
+  "cases": [
+    {
+      "id": "source-16bar",
+      "mode": "source-to-score",
+      "caption": "Instrumental music.",
+      "frames": 1118,
+      "seeds": [
+        831001,
+        123
+      ],
+      "notes": "Full user-provided passage, transcribed to ABC; no source latents or source semantic tokens supplied.",
+      "score_sha256": "5ee15177e649a8876c442dd387ab29897b3516be02217326920ae4b88f3497fe"
+    },
+    {
+      "id": "score-waltz",
+      "mode": "new-authored-score",
+      "caption": "Instrumental music.",
+      "frames": 400,
+      "seeds": [
+        831001
+      ],
+      "notes": "Newly authored eight-bar score. Dry melody guide is for the listener only and is never a model input.",
+      "score_sha256": "06d71e3727b7b508ca9e094424bdf5f62c827ce99d3dd3cda59958cc5dda5e3d"
+    },
+    {
+      "id": "score-syncopation",
+      "mode": "new-authored-score",
+      "caption": "Instrumental music.",
+      "frames": 400,
+      "seeds": [
+        831001
+      ],
+      "notes": "Newly authored eight-bar score. Dry melody guide is for the listener only and is never a model input.",
+      "score_sha256": "e9f0dbc5ca835e04f18faf83edde29ada97d58427ac1c7555caa436cbda9d7da"
+    },
+    {
+      "id": "generate-01",
+      "mode": "standard-generation",
+      "caption": "Instrumental music.",
+      "frames": 400,
+      "seeds": [
+        831001
+      ],
+      "bpm": 120,
+      "key": "D minor",
+      "meter": "4/4",
+      "notes": "No supplied audio or score; fresh model-generated plan."
+    },
+    {
+      "id": "generate-02",
+      "mode": "standard-generation",
+      "caption": "Instrumental music with changing dynamics.",
+      "frames": 400,
+      "seeds": [
+        831001
+      ],
+      "bpm": 90,
+      "key": "C major",
+      "meter": "3/4",
+      "notes": "No supplied audio or score; fresh model-generated plan."
+    }
+  ],
+  "controlled_conditions": {
+    "neutral_captions": true,
+    "no_training_audio_at_inference": true,
+    "no_dataset_captions_at_inference": true,
+    "generated_case_no_supplied_audio_or_score": true,
+    "all_upstream_scores_and_codes_match_within_groups": true,
+    "primary_label_orders_counterbalanced": true
+  },
+  "roles": {
+    "base": "Fixed companions only",
+    "reference": "Original four-track step48",
+    "candidate": "Expanded twelve-track step192",
+    "candidate-x2": "Expanded adapter strength 2; diagnostic only"
+  },
+  "plain_nar_control": "Removes v9 and all learned NAR deltas, retains the same fixed instrumental AR adapter.",
+  "identity": {
+    "version": 1,
+    "source_sha256": "6764c79b45b9812269a91505d1f01653909fdb71b87c407fab442aa12ec5cbb6",
+    "source_info": {
+      "samplerate": 48000,
+      "channels": 2,
+      "seconds": 44.718666666666664
+    },
+    "models": {
+      "yue2-3.6B-v1.0-Q4_K_M.gguf": "cca9ab2fc8efca09ddc04d68da63ae6c6e535848bb3b39dc52cb820857281ba9",
+      "yue2-vae-v1.0-F16.gguf": "b6d8d30e69ce997b50f25dbbdd610e9ac7e118bbda91af336550862a6d1aab1f",
+      "yue2-qwen.tiktoken": "b2b1b8dfb5cc5f024bafc373121c6aba3f66f9a5a0269e243470a1de16a33186",
+      "sheetsage2-mert2-f16.gguf": "29902ab4c24a5dd4571673210af4c93f9e70f3ad9fcd18dc5b923a839d4bcad0",
+      "yue2-realaudio-nar-v9-v1.0-F16-LoRA.gguf": "4b7bad23fd1e52b9a9540dde568b6226afc37229b756a4c2024f551be8a2557c",
+      "yue2-instrumental-cot-full-v1.0-F16-LoRA.gguf": "45a6ec461c968916bdd4d87269cff1324bb925e7ead35290524dfa82bf3f9c23",
+      "step-48.gguf": "48ec6d227b8cd4915a908b42958e5918035a18bbb788636c242edee453ed5c24",
+      "step-192.gguf": "4391b2e8b544b363eba255cb5807e5589f03066862935e075c8863f32d0be725"
+    },
+    "generation_runtime": {
+      "executable": {
+        "yue2-generate.exe": "69b3736eb69488812c45eaba7563410690d70cfcc7039e0a61355813a26b0a40"
+      },
+      "shared_libraries": {
+        "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+        "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+        "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+        "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+        "yue2.dll": "329bad6377becdc07c103559f2d74d6f3cdbc6ccbd710318cc79ff9f61db1caf"
+      },
+      "precision_environment": {
+        "GGML_CUDA_TF32": "0",
+        "NVIDIA_TF32_OVERRIDE": null,
+        "CUBLAS_WORKSPACE_CONFIG": null
+      }
+    },
+    "transcription_runtime": {
+      "executable": {
+        "yue2-transcribe.exe": "b124b5a359af85fe4fc8fb8b137a4302049fb05ba04024b49480fc5c64a2ca14"
+      },
+      "shared_libraries": {
+        "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+        "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+        "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+        "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+        "yue2.dll": "329bad6377becdc07c103559f2d74d6f3cdbc6ccbd710318cc79ff9f61db1caf"
+      },
+      "precision_environment": {
+        "GGML_CUDA_TF32": "0",
+        "NVIDIA_TF32_OVERRIDE": null,
+        "CUBLAS_WORKSPACE_CONFIG": null
+      }
+    },
+    "evaluator_sha256": "e9b4447f61fc37e4f646a0bc974499b9c46c6fb7fdf24a5bd660ef1e632ab364",
+    "device": "cuda",
+    "steps": 32,
+    "seeds": [
+      831001,
+      123
+    ],
+    "neutral_caption": "Instrumental music.",
+    "strength_probe": 2.0,
+    "source_provenance": "User-provided piano/orchestral recording; no assertion that its underlying composition was absent from training."
+  },
+  "source_evaluator_sha256": "e9b4447f61fc37e4f646a0bc974499b9c46c6fb7fdf24a5bd660ef1e632ab364",
+  "limitations": [
+    "No subjective style verdict is inferred from successful execution or signal checks.",
+    "NAR-only adapters leave the AR planning/semantic distribution fixed.",
+    "Neutral evaluation captions differ from the genre-rich training captions; failure here may require a different conditioning/training protocol, not prove architectural impossibility.",
+    "The long source is much longer than the 10.24-second training windows; context generalization is another possible limit.",
+    "Source-to-score transcription can omit performance, instrumentation or musical detail. Source-latent warm start is not tested.",
+    "Fixed semantic budgets do not establish natural ending behavior.",
+    "The no-v9 control is needed to distinguish fresh-AR inference behavior from compensation for the v9 companion."
+  ],
+  "acceptance": "Audible dataset-specific style on new content and standard generation, with acceptable content preservation and fidelity; cleaner audio alone is insufficient.",
+  "style_feedback": {
+    "date": "2026-10-25",
+    "reviewer": "user",
+    "outcome": "failed dataset-style capability gate",
+    "statement": "A, B and C essentially all sound identical in all these tests. None match the Koan style.",
+    "scope": "Six primary A/B/C groups; aggregate statement, not separate per-case scores.",
+    "not_assumed_reviewed": [
+      "Doubled-strength labeled diagnostic",
+      "Native NAR without-v9 labeled controls"
+    ],
+    "interpretation": "Current NAR-only checkpoints do not demonstrate the requested learned style transfer. Prior fidelity preferences do not change this outcome."
+  }
+}

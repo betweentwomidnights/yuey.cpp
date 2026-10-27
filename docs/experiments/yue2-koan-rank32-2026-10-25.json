@@ -1,0 +1,2019 @@
+{
+  "date": "2026-10-25",
+  "scope": "Prompted rank-32 semantic AR training followed by matched frozen-AR acoustic calibration",
+  "trigger": "koan_palette",
+  "prompt": "koan_palette. Instrumental glitch hop and electronica, intricate syncopated breakbeats, detailed bass sound design, layered synthesizers and evolving textures.",
+  "rank_ar": 32,
+  "rank_nar": 32,
+  "parameters_per_expert": 34865152,
+  "total_parameters": 69730304,
+  "data": {
+    "training_windows": 18,
+    "training_tracks": 12,
+    "heldout_windows": 6,
+    "heldout_tracks": 6,
+    "frames": 256,
+    "unique_train_seconds": 184.32,
+    "ar_views": 36,
+    "ar_replay_examples": 2,
+    "retention_only_examples": 1,
+    "nar_real_examples": 18,
+    "nar_replay_examples": 2,
+    "semantic_target_quality": "Rhythmically useful but degraded, user authorized exploratory training",
+    "acoustic_target_quality": "Clean real-audio VAE posterior means; replay is generated native-decoder latents",
+    "windows": [
+      {
+        "track_file": "koan_sound_altercast_130bpm_64bars.wav",
+        "track_sha256": "b9cddc5fab207cd1cac57380dcb9cb408ca6609706191688a05f80c3d4b3d6a7",
+        "split": "train",
+        "source_offset_seconds": 38.36,
+        "start_frame": 959,
+        "frames": 256,
+        "audio_sha256": "adcc83d6fb5dfb40969d46fc67462773b1c07032ca87c1f5050e70e622680dd3",
+        "codes_sha256": "5b32d66318ab6a2ef10cf6371b0f1e64708c13df1d036673300b6c5b34f4dff7",
+        "events": 31,
+        "note_payloads": 25,
+        "distinct_pitches": 7,
+        "score_sha256": "73ad11250283caea36d20e8a555b2ce20f72d823e56f9234c9ed29d152af9a2c"
+      },
+      {
+        "track_file": "koan_sound_altercast_130bpm_64bars.wav",
+        "track_sha256": "b9cddc5fab207cd1cac57380dcb9cb408ca6609706191688a05f80c3d4b3d6a7",
+        "split": "train",
+        "source_offset_seconds": 64.32,
+        "start_frame": 1608,
+        "frames": 256,
+        "audio_sha256": "f2824a0691ae988acfffc9c45468060ec2f8915e0fe6b2bb52c20715aae6ef09",
+        "codes_sha256": "3210a479eb4e85eea16adecae62d3c1f1032441f19c9fb16bddbfa3fde2e0f05",
+        "events": 27,
+        "note_payloads": 19,
+        "distinct_pitches": 9,
+        "score_sha256": "2dbc3d9a1e352403d07076376a7207b563b25cab4772d656570266464e9cddf5"
+      },
+      {
+        "track_file": "koan_sound_cobalt_92bpm_60bars.wav",
+        "track_sha256": "600d290c2cfc0800731ead40c4f52c3de96b70d8666aac38343089e0c781cac2",
+        "split": "train",
+        "source_offset_seconds": 51.8,
+        "start_frame": 1295,
+        "frames": 256,
+        "audio_sha256": "55121a4cdbdb1226c024fa5e010431209a15f84c26a05c45511977e6ea5951a5",
+        "codes_sha256": "4974a8982c76ab84081f69a8d53e774b690da77eb47306f8d0d29b22b0c753f9",
+        "events": 25,
+        "note_payloads": 18,
+        "distinct_pitches": 8,
+        "score_sha256": "57cde6f09173af96b802d6822601aa51a9912bcbbdc9844ebb09c0df3595078f"
+      },
+      {
+        "track_file": "koan_sound_cobalt_92bpm_60bars.wav",
+        "track_sha256": "600d290c2cfc0800731ead40c4f52c3de96b70d8666aac38343089e0c781cac2",
+        "split": "train",
+        "source_offset_seconds": 87.36,
+        "start_frame": 2184,
+        "frames": 256,
+        "audio_sha256": "638e6593a9d582edba0f4806ff895068c43715f4acce0655ea1ad494367821ce",
+        "codes_sha256": "81ac3e1f3aa5299338cbbd2990b5510306d3743121a3a00080683541771122c5",
+        "events": 29,
+        "note_payloads": 21,
+        "distinct_pitches": 8,
+        "score_sha256": "b3a6c93a57f299b350ad3b9a05f5412df220d71be8788453fc062fccb1b002d3"
+      },
+      {
+        "track_file": "koan_sound_drift_86bpm_94bars.wav",
+        "track_sha256": "0d1e0786638b099d8a37482a4d0d1cff1085da6e064ca0908535f7a39dc9c1b0",
+        "split": "train",
+        "source_offset_seconds": 88.84,
+        "start_frame": 2221,
+        "frames": 256,
+        "audio_sha256": "e8c483e37d00ad8d6a134dae964ef46ed9b0eabbac4e733e43af6bb497491783",
+        "codes_sha256": "ece2bb4094894bf3fb5422eb032ced3b432e1cc7311478b22a1178dd03eb9e9d",
+        "events": 48,
+        "note_payloads": 37,
+        "distinct_pitches": 4,
+        "score_sha256": "9a3144d037d1da552f0c6f0b73318b88181040737ae1ae2c5a99dc2aec13bfc9"
+      },
+      {
+        "track_file": "koan_sound_drift_86bpm_94bars.wav",
+        "track_sha256": "0d1e0786638b099d8a37482a4d0d1cff1085da6e064ca0908535f7a39dc9c1b0",
+        "split": "train",
+        "source_offset_seconds": 150.84,
+        "start_frame": 3771,
+        "frames": 256,
+        "audio_sha256": "4bd37dbf1ce0f57f0c3c34bf27d7e399c6d10d3e9df05ff372d92415f2a51e2a",
+        "codes_sha256": "591a82544fe5f2ee7216b115a70374d1ed1cbcb1ef8b7f49b108a680b1ddb233",
+        "events": 29,
+        "note_payloads": 12,
+        "distinct_pitches": 6,
+        "score_sha256": "6976bf8cf444ea215fd50cdfd676d13aca2bd4368fe24e2f9e3c9d8248e31ca2"
+      },
+      {
+        "track_file": "koan_sound_evocation_90bpm_40bars.wav",
+        "track_sha256": "bb7d85916fcf5914d098ecc4d10d7446abed56b4dcebeb89528f358c54e0f54c",
+        "split": "train",
+        "source_offset_seconds": 35.28,
+        "start_frame": 882,
+        "frames": 256,
+        "audio_sha256": "bfd83c2dfc16470b82fa09a18f7a4ca8060f63d3fe69563e50b03319e462f0fa",
+        "codes_sha256": "41aeea286248d6c2cffe61f2108806e2ba15e5e504f313bb96cac3b0428b76f8",
+        "events": 17,
+        "note_payloads": 13,
+        "distinct_pitches": 5,
+        "score_sha256": "8805512da83a49cac79b1fd1c65f386d6da432fac0b65da8230c61e569dc89a2"
+      },
+      {
+        "track_file": "koan_sound_evocation_90bpm_40bars.wav",
+        "track_sha256": "bb7d85916fcf5914d098ecc4d10d7446abed56b4dcebeb89528f358c54e0f54c",
+        "split": "train",
+        "source_offset_seconds": 59.04,
+        "start_frame": 1476,
+        "frames": 256,
+        "audio_sha256": "1611b2cb3629eaaf530e975430954c8ee47308a748eef2970cb604a3259b44f6",
+        "codes_sha256": "2fdc592804e33162f367b6b7942e3eb74f6b023375222240eac064ad23ec91ae",
+        "events": 38,
+        "note_payloads": 36,
+        "distinct_pitches": 16,
+        "score_sha256": "c70f6cb437c4d3bccfd2b5ac917a0792e7891ab7af2d947d80912f16f0c83aa3"
+      },
+      {
+        "track_file": "koan_sound_hydroplane_172bpm_176bars.wav",
+        "track_sha256": "8f21e275499b5429f1976a04bcfd292e47905dac43688715409a7d1308431d85",
+        "split": "train",
+        "source_offset_seconds": 82.96,
+        "start_frame": 2074,
+        "frames": 256,
+        "audio_sha256": "ff0d5df0dfd0c97b2c8160ad719f07594a5f667fef991f96378a52db5b5117f5",
+        "codes_sha256": "850cf8e39b8b80030987052e168b8a89d0c4720844fd93c8cf9adff8dff843e2",
+        "events": 30,
+        "note_payloads": 12,
+        "distinct_pitches": 8,
+        "score_sha256": "e493aa7ca7f896d49e229a272b3da32fe1a9364c61813368579c2097c081abf7"
+      },
+      {
+        "track_file": "koan_sound_prism_pulse_101bpm_88bars.wav",
+        "track_sha256": "4dd40604023084377cd5376b24b7e0b9ce30c03b227931b0f46ac17c63406bb8",
+        "split": "train",
+        "source_offset_seconds": 70.2,
+        "start_frame": 1755,
+        "frames": 256,
+        "audio_sha256": "ded610d805a993cb19a78677e852dfc1f7d8b19b68d88004407d918a1df5ea80",
+        "codes_sha256": "703cf2124f22ec39065ab6671d853f390e44f4a7422f469699e2665b18ad598f",
+        "events": 31,
+        "note_payloads": 28,
+        "distinct_pitches": 13,
+        "score_sha256": "e6ffaf1194c6c9590416d411071235656b62532b225ce595c7487f476cbebf89"
+      },
+      {
+        "track_file": "koan_sound_slyfox_101bpm_76bars.wav",
+        "track_sha256": "80407d6c2527bc4f2b38f3bb3aaadcfeb3677c5f08ceab95df855173f38d2184",
+        "split": "train",
+        "source_offset_seconds": 60.2,
+        "start_frame": 1505,
+        "frames": 256,
+        "audio_sha256": "e45b4067753c33d7409ef5ba99edf1ddd432d4066a68305c4ee0ae3a7fecde71",
+        "codes_sha256": "d2cc937d01a775633d1c0b75c2497ebb837a6b67832845910fa7194213793509",
+        "events": 36,
+        "note_payloads": 33,
+        "distinct_pitches": 9,
+        "score_sha256": "36f576392f0ebd39d6b67c01e288312bd415920c5200e550dae51582d699160b"
+      },
+      {
+        "track_file": "koan_sound_slyfox_101bpm_76bars.wav",
+        "track_sha256": "80407d6c2527bc4f2b38f3bb3aaadcfeb3677c5f08ceab95df855173f38d2184",
+        "split": "train",
+        "source_offset_seconds": 101.8,
+        "start_frame": 2545,
+        "frames": 256,
+        "audio_sha256": "0f12afcb03aa20dba0cfb1be96a93967632b93fe59cf8dc10dfb6856cdb8ca59",
+        "codes_sha256": "b84e37debd906f165b8ad878050607eeee3e1f3bbe611ca9c60c72d63200e52c",
+        "events": 33,
+        "note_payloads": 31,
+        "distinct_pitches": 11,
+        "score_sha256": "3f10b6630d5df73621d973cfe35feb8626f9fbe316946a1255558a2a86e57036"
+      },
+      {
+        "track_file": "koan_sound_templeoffervor_123bpm_50bars.wav",
+        "track_sha256": "874c84a4f51b570da74ee55635e2da28db7b709e83f6d3fc280abeb88d171e19",
+        "split": "train",
+        "source_offset_seconds": 52.0,
+        "start_frame": 1300,
+        "frames": 256,
+        "audio_sha256": "0e9876bff23864e9cbbd574defc7cabf449879d4eca5fa1b85871bee90cf174a",
+        "codes_sha256": "b71f2bafe94c135c0ddf7f2c0c64bdf1dfe7d38e509d483fb95ed52595983b5a",
+        "events": 34,
+        "note_payloads": 29,
+        "distinct_pitches": 6,
+        "score_sha256": "cb58d0a5c8d21f03cf4d642d756c3264343e4ce4bedaae2864e8ea11feea0267"
+      },
+      {
+        "track_file": "koan_sound_traverse2_86bpm_52bars.wav",
+        "track_sha256": "85c05e5e70f530011e3eabc3c7eaa64f988bcc8ccdb2e3b91870f74034afd267",
+        "split": "train",
+        "source_offset_seconds": 37.0,
+        "start_frame": 925,
+        "frames": 256,
+        "audio_sha256": "bfeda4970681ae3330c2f5a3d03bb02350cc75c69250af58f464c2c96bd0a6ff",
+        "codes_sha256": "e7ba048a4c53ce7ee4fbd2dbf6bf9ce3fd4c321eca6b09d05cc378b730b28833",
+        "events": 30,
+        "note_payloads": 30,
+        "distinct_pitches": 6,
+        "score_sha256": "65ad2aef28055da22f78488075370f36ad8eaa7caa8d30afa9b2014630919cf2"
+      },
+      {
+        "track_file": "koan_sound_traverse_86bpm_54bars.wav",
+        "track_sha256": "6c62aaf395f93fd94d57b6c2f6059c30986c57bf491b392b96c8df576925f2f8",
+        "split": "train",
+        "source_offset_seconds": 38.64,
+        "start_frame": 966,
+        "frames": 256,
+        "audio_sha256": "c050bc816f7d70ee35ad00821a36c8a6be5ceb3bae3b1c027510ad2eb4cf1794",
+        "codes_sha256": "459ba50ea09e1a036950f27e871666edc09c11089d840b6d85f81d3fcf81f6ea",
+        "events": 37,
+        "note_payloads": 17,
+        "distinct_pitches": 6,
+        "score_sha256": "9e71c002e9b4f5fb7f0eea0f49948e7abf8a18afcd5ca0f33e8fa46381b148f2"
+      },
+      {
+        "track_file": "koan_sound_veridiandream_140bpm_68bars.wav",
+        "track_sha256": "66e454e115c0ff8c0a8885243e3b8a88b2246f0e1c8a2096ddf0f446bf7828c3",
+        "split": "train",
+        "source_offset_seconds": 37.8,
+        "start_frame": 945,
+        "frames": 256,
+        "audio_sha256": "4137180b6670bcaaeba6ce8a4d1f8d0dedb18039244abb68cefeead55c5a3a6c",
+        "codes_sha256": "2e918d14b00b418d188841e08a539946a64ba2aabc702ae4c44ac82ea719a5df",
+        "events": 35,
+        "note_payloads": 25,
+        "distinct_pitches": 5,
+        "score_sha256": "895b17135ab62ed6185401aa1303caa1203f4882bf4d6b7204a05177d4b36c97"
+      },
+      {
+        "track_file": "koan_sound_veridiandream_140bpm_68bars.wav",
+        "track_sha256": "66e454e115c0ff8c0a8885243e3b8a88b2246f0e1c8a2096ddf0f446bf7828c3",
+        "split": "train",
+        "source_offset_seconds": 63.4,
+        "start_frame": 1585,
+        "frames": 256,
+        "audio_sha256": "0cda0ec15f1c79fc04e840fedc88d92bd969bdb1d22dcee2d2d4a6a08e2cc2fb",
+        "codes_sha256": "4e4873750f49ada18aab923fccd6089308145ffad7232732b5572499948b6ae2",
+        "events": 41,
+        "note_payloads": 33,
+        "distinct_pitches": 3,
+        "score_sha256": "ef5271732105528678a166ff7ed35bf64649637fdd5584375116f56a629d22ae"
+      },
+      {
+        "track_file": "koan_sound_virtue_justokay_128bpm_84bars.wav",
+        "track_sha256": "88bdcd138d6823093af4b355f2116ef7bc8b323f687c4d4544cb167ccd01001a",
+        "split": "train",
+        "source_offset_seconds": 52.12,
+        "start_frame": 1303,
+        "frames": 256,
+        "audio_sha256": "459dea4752407aa75287d9a136d5b0fbb95d30d6e9440e978d8f776134e962a2",
+        "codes_sha256": "869ff7635939178e6d1967dbba2b27973c3c19f9cbd15a63c2a1d6c72d2c3b69",
+        "events": 24,
+        "note_payloads": 21,
+        "distinct_pitches": 4,
+        "score_sha256": "2152a7ae89c4066d3642ad7d901996c5a4f817df6d92a5ac0b6a98dece2adbd5"
+      },
+      {
+        "track_file": "koan_sound_aeon_114bpm_46bars.wav",
+        "track_sha256": "c93b690c0e676cbb065386cd241fe8d180c0ca3e0610942275b62cc5d236eca3",
+        "split": "validation",
+        "source_offset_seconds": 20.0,
+        "start_frame": 500,
+        "frames": 256,
+        "audio_sha256": "0e5cce6e5a9ad922abdcda89d32f23083e9e24b049a2560605b829827be980cc",
+        "codes_sha256": "d18b4a5b525303d4401c8043b6f446ed067464f4da1dad1b36fba5c08c31d485",
+        "events": 30,
+        "note_payloads": 0,
+        "distinct_pitches": 0,
+        "score_sha256": "72d88d6e3f7649fee8c417f25eaeac47a96cce950644454106ce4ec512fb0a60"
+      },
+      {
+        "track_file": "koan_sound_boundless_70bpm_46bars.wav",
+        "track_sha256": "154dcd476bdfeef1de395348106114a1b013aa28ffe4acf45d90bac3fb2d642d",
+        "split": "validation",
+        "source_offset_seconds": 20.0,
+        "start_frame": 500,
+        "frames": 256,
+        "audio_sha256": "caff883272e73a6e9cfb99a258ade65d05923f0767179a45fdd7a7ac64561600",
+        "codes_sha256": "ed306febb1e473264321833abfda571315de367af35663b1b2cf41bd69a14fe9",
+        "events": 19,
+        "note_payloads": 13,
+        "distinct_pitches": 7,
+        "score_sha256": "f63e1a3c0bd891d46072460b6f8d1e62a002d2a9d0021e57e23e4b1f7fdd71fe"
+      },
+      {
+        "track_file": "koan_sound_exigence_172bpm_80bars.wav",
+        "track_sha256": "394c4e8def6204a5597ae7e1c28281700aeb5271e2b324772d0e308a2fb01f32",
+        "split": "validation",
+        "source_offset_seconds": 20.0,
+        "start_frame": 500,
+        "frames": 256,
+        "audio_sha256": "6046581ca591f803dba50ffa348b022b41955c45a3e3c9b48711981c5a91a39e",
+        "codes_sha256": "af16bf9594c3fdd65a60338f5fdca5a7e4972233efd24d11cc4333450c2656bc",
+        "events": 40,
+        "note_payloads": 24,
+        "distinct_pitches": 6,
+        "score_sha256": "69d0a86bc60e072fd2273bd35a2c0e6b740c8907d702096b70c5e5babb823b0b"
+      },
+      {
+        "track_file": "koan_sound_sentient_95bpm_66bars.wav",
+        "track_sha256": "bf149a5b7d3b514d965d1ace564d604c940c61dbb49f3d87b8cd191ae18bc91d",
+        "split": "validation",
+        "source_offset_seconds": 20.0,
+        "start_frame": 500,
+        "frames": 256,
+        "audio_sha256": "cf92e8432bdb817a7241c4a9c7733ccd180132c6e03ef967b2c9592c754b438d",
+        "codes_sha256": "e3cd0fce7252adb8c6d796faaba474cc3266914ef6a0adf738c3630b31d48581",
+        "events": 30,
+        "note_payloads": 30,
+        "distinct_pitches": 2,
+        "score_sha256": "48ca74fc32909496ae425f757e08191b3b750af52e741620b655c3591f36910a"
+      },
+      {
+        "track_file": "koan_sound_silkwave_88bpm_80bars.wav",
+        "track_sha256": "5e38bb3858302dc7c4616a4ff1ae2bde31afb629d8d18059c5dcb990e81da606",
+        "split": "validation",
+        "source_offset_seconds": 20.0,
+        "start_frame": 500,
+        "frames": 256,
+        "audio_sha256": "3ab8a05af1fe65b6f0fd57e7bf7c06747854f0d0949e934e6cc06974ec5e1580",
+        "codes_sha256": "6d6f3b3a63678ce81d7b8662a009b850fe07676f4339ed916ab089cd00740fa9",
+        "events": 18,
+        "note_payloads": 0,
+        "distinct_pitches": 0,
+        "score_sha256": "2cd0685e713dd01b2cd91d87161e1e32f77cb8b2d900e22a7a302a5d2e3d4e70"
+      },
+      {
+        "track_file": "koan_sound_tetsuos_redemption_140bpm_168bars.wav",
+        "track_sha256": "945c448ca43bb1bfb736cb15fce5e2f482175f9069c52dd6e8fb43b2906db95b",
+        "split": "validation",
+        "source_offset_seconds": 20.0,
+        "start_frame": 500,
+        "frames": 256,
+        "audio_sha256": "c3f68ed736dc7144cb84b992e467271f5d04cea2685840cdfd65a0c2fcb8e794",
+        "codes_sha256": "5cdc827832d768509691866badba226284271fedf477da14d2ab6e7173161528",
+        "events": 24,
+        "note_payloads": 3,
+        "distinct_pitches": 2,
+        "score_sha256": "d7dc0a0d2c3a8f9244bdee3d769f5c1880b76fe360421d59c67f92ee90216649"
+      }
+    ]
+  },
+  "ar": {
+    "identity": {
+      "data_manifest": "bbb2364fe29baa4bec82e6a719595a00698f596ee9ea3771c30697f098467662",
+      "base_model": "9e1e3bb89dce35703345cd39c57a43f996d62e5ca87afb6784ff5ecfcad27a55",
+      "fixed_ar": "45a6ec461c968916bdd4d87269cff1324bb925e7ead35290524dfa82bf3f9c23",
+      "runtime": {
+        "executable": {
+          "yue2-ar-train.exe": "6362c7335be12395f3dbe9bb0d1f66895ddcc80508730f04aac81e1014ce9068"
+        },
+        "shared_libraries": {
+          "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+          "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+          "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+          "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+          "yue2.dll": "9aea9498e5c222b8cad0b24c41036c641951c7557d8a05de4c95fe3844d6a013"
+        },
+        "precision_environment": {
+          "GGML_CUDA_TF32": "0",
+          "NVIDIA_TF32_OVERRIDE": null,
+          "CUBLAS_WORKSPACE_CONFIG": null
+        }
+      },
+      "rank": 32,
+      "lr": 2e-05,
+      "kl_weight": 0.2,
+      "max_steps": 950,
+      "save_every": 50,
+      "early_stop_patience": 5,
+      "early_stop_min_steps": 200,
+      "replay_rows": [
+        {
+          "kind": "replay",
+          "track": "score-waltz",
+          "prefix": "outputs/koan-rank32-2026-10-25/ar-replay/score-waltz/prefix.i32",
+          "codes": "outputs/koan-rank32-2026-10-25/ar-replay/score-waltz/codes.i32"
+        },
+        {
+          "kind": "replay",
+          "track": "score-syncopation",
+          "prefix": "outputs/koan-rank32-2026-10-25/ar-replay/score-syncopation/prefix.i32",
+          "codes": "outputs/koan-rank32-2026-10-25/ar-replay/score-syncopation/codes.i32"
+        }
+      ],
+      "sampler": "balanced shuffled epochs; complete shuffle and early-stop state saved"
+    },
+    "selection": {
+      "method": "Minimum saved heldout semantic CE, with KL/replay; subjective review pending",
+      "baseline": {
+        "step": 0,
+        "train_per_sample": [
+          5.9708848,
+          6.218889713,
+          5.3393116,
+          5.591946125,
+          7.115966797,
+          7.411997795,
+          6.457485199,
+          6.669461727,
+          5.6407094,
+          5.886722088,
+          5.604376316,
+          5.807333946,
+          5.710379124,
+          6.115376472,
+          6.537218094,
+          6.957700729,
+          6.619841576,
+          6.867246628,
+          5.785971642,
+          6.13546896,
+          5.655203819,
+          5.845603943,
+          4.560365677,
+          4.716787815,
+          6.437973022,
+          6.623096466,
+          6.146402359,
+          6.451068401,
+          6.300828934,
+          6.568897247,
+          6.483139992,
+          6.694549561,
+          6.196876526,
+          6.370245934,
+          5.91663456,
+          6.157467365,
+          3.499745846,
+          3.470137596
+        ],
+        "train_mean": 6.014192468,
+        "heldout_per_sample": [
+          7.55147028,
+          7.568599701,
+          5.778852463,
+          5.91253376,
+          5.930551052,
+          6.227895737,
+          6.505706787,
+          6.641845703,
+          6.546028614,
+          6.6739254,
+          5.425820827,
+          5.676005363
+        ],
+        "heldout_mean": 6.369936307,
+        "retention_per_sample": [
+          3.714231968
+        ],
+        "retention_mean": 3.714231968
+      },
+      "selected": {
+        "step": 150,
+        "train_per_sample": [
+          5.448543549,
+          5.658006668,
+          4.94248724,
+          5.162396431,
+          6.7041502,
+          6.97120285,
+          5.948169231,
+          6.110862732,
+          5.184672356,
+          5.28576231,
+          5.176033974,
+          5.340224266,
+          5.324268341,
+          5.684926033,
+          6.142820835,
+          6.522867203,
+          6.111737728,
+          6.339038849,
+          5.18708992,
+          5.593169689,
+          5.118924141,
+          5.325996876,
+          4.115221024,
+          4.235223293,
+          6.01388216,
+          6.177312374,
+          5.657982349,
+          5.829902172,
+          5.810821533,
+          6.072669029,
+          6.072994709,
+          6.22870636,
+          5.733941555,
+          5.848827362,
+          5.436227322,
+          5.566558838,
+          3.339942455,
+          3.293245316
+        ],
+        "train_mean": 5.545179191,
+        "heldout_per_sample": [
+          7.481662273,
+          7.477071762,
+          5.738050461,
+          5.870074749,
+          5.782214165,
+          6.084481716,
+          6.420269966,
+          6.567849159,
+          6.408368587,
+          6.522520542,
+          5.360836506,
+          5.602170467
+        ],
+        "heldout_mean": 6.27629753,
+        "retention_per_sample": [
+          3.74401927
+        ],
+        "retention_mean": 3.74401927
+      },
+      "final": {
+        "step": 400,
+        "train_per_sample": [
+          3.721434355,
+          3.780715227,
+          3.42936945,
+          3.641387939,
+          4.756111622,
+          4.948999882,
+          4.069629669,
+          4.131307125,
+          3.61563158,
+          3.670156479,
+          3.494825602,
+          3.6468153,
+          3.65337801,
+          3.805062294,
+          4.511270046,
+          4.710225105,
+          4.463035583,
+          4.607625961,
+          3.512097836,
+          3.79497385,
+          3.798936605,
+          4.058633804,
+          2.89406848,
+          2.944985628,
+          4.360860825,
+          4.386922359,
+          3.909284115,
+          3.973155975,
+          4.388989449,
+          4.592022896,
+          4.353470802,
+          4.454351902,
+          4.029278278,
+          4.106013298,
+          3.866502047,
+          3.931567669,
+          2.798718452,
+          2.537328005
+        ],
+        "train_mean": 3.930240619,
+        "heldout_per_sample": [
+          8.09838295,
+          8.180628777,
+          6.136463642,
+          6.381468773,
+          6.418535233,
+          6.736035347,
+          7.160397053,
+          7.304856777,
+          6.823286533,
+          6.964875698,
+          5.734150887,
+          5.97565937
+        ],
+        "heldout_mean": 6.82622842,
+        "retention_per_sample": [
+          3.853734016
+        ],
+        "retention_mean": 3.853734016
+      },
+      "adapter": "outputs/koan-rank32-2026-10-25/ar-run/step-150.gguf",
+      "adapter_sha256": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132"
+    },
+    "heldout_improvement_percent": 1.4700111977116515,
+    "evaluations": [
+      {
+        "step": 0,
+        "train_per_sample": [
+          5.9708848,
+          6.218889713,
+          5.3393116,
+          5.591946125,
+          7.115966797,
+          7.411997795,
+          6.457485199,
+          6.669461727,
+          5.6407094,
+          5.886722088,
+          5.604376316,
+          5.807333946,
+          5.710379124,
+          6.115376472,
+          6.537218094,
+          6.957700729,
+          6.619841576,
+          6.867246628,
+          5.785971642,
+          6.13546896,
+          5.655203819,
+          5.845603943,
+          4.560365677,
+          4.716787815,
+          6.437973022,
+          6.623096466,
+          6.146402359,
+          6.451068401,
+          6.300828934,
+          6.568897247,
+          6.483139992,
+          6.694549561,
+          6.196876526,
+          6.370245934,
+          5.91663456,
+          6.157467365,
+          3.499745846,
+          3.470137596
+        ],
+        "train_mean": 6.014192468,
+        "heldout_per_sample": [
+          7.55147028,
+          7.568599701,
+          5.778852463,
+          5.91253376,
+          5.930551052,
+          6.227895737,
+          6.505706787,
+          6.641845703,
+          6.546028614,
+          6.6739254,
+          5.425820827,
+          5.676005363
+        ],
+        "heldout_mean": 6.369936307,
+        "retention_per_sample": [
+          3.714231968
+        ],
+        "retention_mean": 3.714231968
+      },
+      {
+        "step": 50,
+        "train_per_sample": [
+          5.810905933,
+          6.041880131,
+          5.224766254,
+          5.476818085,
+          6.98084259,
+          7.246527195,
+          6.304068089,
+          6.497074604,
+          5.526359558,
+          5.684828281,
+          5.481804848,
+          5.669717789,
+          5.608097553,
+          5.994573593,
+          6.427370071,
+          6.845757484,
+          6.479777813,
+          6.718516827,
+          5.574743748,
+          5.960960388,
+          5.50788784,
+          5.732625008,
+          4.436258316,
+          4.594097137,
+          6.280842781,
+          6.475135803,
+          5.990213871,
+          6.240142345,
+          6.152322769,
+          6.406448364,
+          6.375900269,
+          6.563292503,
+          6.050633907,
+          6.21494627,
+          5.758812428,
+          5.947006226,
+          3.477607012,
+          3.434149027
+        ],
+        "train_mean": 5.873518756,
+        "heldout_per_sample": [
+          7.499756336,
+          7.507616997,
+          5.736300468,
+          5.864876747,
+          5.863370895,
+          6.162968636,
+          6.433151245,
+          6.570830345,
+          6.471539021,
+          6.597841263,
+          5.385431767,
+          5.632604122
+        ],
+        "heldout_mean": 6.310523987,
+        "retention_per_sample": [
+          3.726502895
+        ],
+        "retention_mean": 3.726502895
+      },
+      {
+        "step": 100,
+        "train_per_sample": [
+          5.688914299,
+          5.918117523,
+          5.110463619,
+          5.356136322,
+          6.808472633,
+          7.067994595,
+          6.157698154,
+          6.317810059,
+          5.37817049,
+          5.475767612,
+          5.324334621,
+          5.505124569,
+          5.458286285,
+          5.814463615,
+          6.281972408,
+          6.696526527,
+          6.298508644,
+          6.51155138,
+          5.374211311,
+          5.78578186,
+          5.331091404,
+          5.554020882,
+          4.28112936,
+          4.419421196,
+          6.208390713,
+          6.394313812,
+          5.856508255,
+          6.046578884,
+          5.996654987,
+          6.229564667,
+          6.248006821,
+          6.390967369,
+          5.881210327,
+          6.020023346,
+          5.635680676,
+          5.827265263,
+          3.394871473,
+          3.358024597
+        ],
+        "train_mean": 5.721158699,
+        "heldout_per_sample": [
+          7.492164135,
+          7.484098434,
+          5.73919487,
+          5.867099285,
+          5.808185101,
+          6.110092163,
+          6.409377098,
+          6.552474499,
+          6.427826881,
+          6.546403408,
+          5.365350246,
+          5.60162735
+        ],
+        "heldout_mean": 6.283657789,
+        "retention_per_sample": [
+          3.738289833
+        ],
+        "retention_mean": 3.738289833
+      },
+      {
+        "step": 150,
+        "train_per_sample": [
+          5.448543549,
+          5.658006668,
+          4.94248724,
+          5.162396431,
+          6.7041502,
+          6.97120285,
+          5.948169231,
+          6.110862732,
+          5.184672356,
+          5.28576231,
+          5.176033974,
+          5.340224266,
+          5.324268341,
+          5.684926033,
+          6.142820835,
+          6.522867203,
+          6.111737728,
+          6.339038849,
+          5.18708992,
+          5.593169689,
+          5.118924141,
+          5.325996876,
+          4.115221024,
+          4.235223293,
+          6.01388216,
+          6.177312374,
+          5.657982349,
+          5.829902172,
+          5.810821533,
+          6.072669029,
+          6.072994709,
+          6.22870636,
+          5.733941555,
+          5.848827362,
+          5.436227322,
+          5.566558838,
+          3.339942455,
+          3.293245316
+        ],
+        "train_mean": 5.545179191,
+        "heldout_per_sample": [
+          7.481662273,
+          7.477071762,
+          5.738050461,
+          5.870074749,
+          5.782214165,
+          6.084481716,
+          6.420269966,
+          6.567849159,
+          6.408368587,
+          6.522520542,
+          5.360836506,
+          5.602170467
+        ],
+        "heldout_mean": 6.27629753,
+        "retention_per_sample": [
+          3.74401927
+        ],
+        "retention_mean": 3.74401927
+      },
+      {
+        "step": 200,
+        "train_per_sample": [
+          5.232279778,
+          5.441064835,
+          4.727817535,
+          4.965931892,
+          6.411792278,
+          6.676345825,
+          5.728952885,
+          5.892560959,
+          4.949682713,
+          5.044845581,
+          4.949832916,
+          5.100054741,
+          5.139663219,
+          5.437427044,
+          5.947827816,
+          6.312782288,
+          5.891573429,
+          6.065340042,
+          4.963741779,
+          5.349651337,
+          4.948302269,
+          5.123973846,
+          3.902204037,
+          4.025129318,
+          5.782898426,
+          5.956454277,
+          5.457357883,
+          5.612246037,
+          5.620690346,
+          5.858742237,
+          5.900233746,
+          6.05638504,
+          5.543019295,
+          5.636857033,
+          5.210766315,
+          5.334655285,
+          3.276033878,
+          3.219931602
+        ],
+        "train_mean": 5.334080257,
+        "heldout_per_sample": [
+          7.502207756,
+          7.509746552,
+          5.756727219,
+          5.893834591,
+          5.803062916,
+          6.11411953,
+          6.469776154,
+          6.605113983,
+          6.405992985,
+          6.514691353,
+          5.376650333,
+          5.622441292
+        ],
+        "heldout_mean": 6.297863722,
+        "retention_per_sample": [
+          3.75360775
+        ],
+        "retention_mean": 3.75360775
+      },
+      {
+        "step": 250,
+        "train_per_sample": [
+          5.10038805,
+          5.288095474,
+          4.512741089,
+          4.754283428,
+          6.118133545,
+          6.401051521,
+          5.368197441,
+          5.553491116,
+          4.769127846,
+          4.819814205,
+          4.710221767,
+          4.853601456,
+          4.952692986,
+          5.214829922,
+          5.696659088,
+          6.024844646,
+          5.541488171,
+          5.667300701,
+          4.71273613,
+          5.109241486,
+          4.661794186,
+          4.806633949,
+          3.774699688,
+          3.861778021,
+          5.518638611,
+          5.645616531,
+          5.21135664,
+          5.337948799,
+          5.276833057,
+          5.518891811,
+          5.59543705,
+          5.738507271,
+          5.208429337,
+          5.27731514,
+          4.94831562,
+          5.043783188,
+          3.197380066,
+          3.128215075
+        ],
+        "train_mean": 5.076855634,
+        "heldout_per_sample": [
+          7.582863331,
+          7.597491264,
+          5.798758984,
+          5.949246407,
+          5.895778656,
+          6.208609581,
+          6.572830677,
+          6.709546566,
+          6.444493294,
+          6.558799744,
+          5.421593666,
+          5.687713146
+        ],
+        "heldout_mean": 6.36897711,
+        "retention_per_sample": [
+          3.768939018
+        ],
+        "retention_mean": 3.768939018
+      },
+      {
+        "step": 300,
+        "train_per_sample": [
+          4.715242386,
+          4.861300945,
+          4.229335785,
+          4.460215569,
+          5.802096844,
+          6.112911701,
+          4.965892315,
+          5.106245995,
+          4.406989098,
+          4.483102322,
+          4.38356781,
+          4.523905754,
+          4.554687977,
+          4.752160549,
+          5.288505554,
+          5.626860142,
+          5.266418457,
+          5.390625477,
+          4.332592487,
+          4.670534134,
+          4.44153738,
+          4.536390305,
+          3.536603928,
+          3.587780714,
+          5.167575836,
+          5.31737566,
+          4.866080284,
+          4.967651367,
+          5.015755177,
+          5.251161575,
+          5.378328323,
+          5.464513779,
+          4.927025795,
+          4.982705593,
+          4.73923111,
+          4.849655628,
+          3.047137737,
+          3.013143301
+        ],
+        "train_mean": 4.763759073,
+        "heldout_per_sample": [
+          7.684495926,
+          7.723121643,
+          5.858528137,
+          6.027981758,
+          6.003072262,
+          6.313855171,
+          6.711455345,
+          6.850145817,
+          6.518443108,
+          6.645058632,
+          5.499020576,
+          5.766158104
+        ],
+        "heldout_mean": 6.46677804,
+        "retention_per_sample": [
+          3.787096024
+        ],
+        "retention_mean": 3.787096024
+      },
+      {
+        "step": 350,
+        "train_per_sample": [
+          4.302589893,
+          4.445140839,
+          3.917913437,
+          4.115658283,
+          5.295864105,
+          5.557878971,
+          4.559094429,
+          4.674228668,
+          3.997809887,
+          4.054869652,
+          4.069725513,
+          4.212419033,
+          4.258100033,
+          4.438313484,
+          4.933983803,
+          5.267080307,
+          4.867651939,
+          4.984244347,
+          3.808601379,
+          4.150168896,
+          4.203478813,
+          4.29388237,
+          3.159694195,
+          3.209529161,
+          4.83468914,
+          4.958601952,
+          4.424263954,
+          4.547393799,
+          4.725892067,
+          4.946928024,
+          4.851971149,
+          5.004940987,
+          4.507041454,
+          4.583702087,
+          4.295926094,
+          4.357419014,
+          2.926526546,
+          2.785684824
+        ],
+        "train_mean": 4.38233954,
+        "heldout_per_sample": [
+          7.851793289,
+          7.907758236,
+          5.983298302,
+          6.191357613,
+          6.180830002,
+          6.493596554,
+          6.93057251,
+          7.073389053,
+          6.645931721,
+          6.778202057,
+          5.597215176,
+          5.863060474
+        ],
+        "heldout_mean": 6.624750415,
+        "retention_per_sample": [
+          3.814059496
+        ],
+        "retention_mean": 3.814059496
+      },
+      {
+        "step": 400,
+        "train_per_sample": [
+          3.721434355,
+          3.780715227,
+          3.42936945,
+          3.641387939,
+          4.756111622,
+          4.948999882,
+          4.069629669,
+          4.131307125,
+          3.61563158,
+          3.670156479,
+          3.494825602,
+          3.6468153,
+          3.65337801,
+          3.805062294,
+          4.511270046,
+          4.710225105,
+          4.463035583,
+          4.607625961,
+          3.512097836,
+          3.79497385,
+          3.798936605,
+          4.058633804,
+          2.89406848,
+          2.944985628,
+          4.360860825,
+          4.386922359,
+          3.909284115,
+          3.973155975,
+          4.388989449,
+          4.592022896,
+          4.353470802,
+          4.454351902,
+          4.029278278,
+          4.106013298,
+          3.866502047,
+          3.931567669,
+          2.798718452,
+          2.537328005
+        ],
+        "train_mean": 3.930240619,
+        "heldout_per_sample": [
+          8.09838295,
+          8.180628777,
+          6.136463642,
+          6.381468773,
+          6.418535233,
+          6.736035347,
+          7.160397053,
+          7.304856777,
+          6.823286533,
+          6.964875698,
+          5.734150887,
+          5.97565937
+        ],
+        "heldout_mean": 6.82622842,
+        "retention_per_sample": [
+          3.853734016
+        ],
+        "retention_mean": 3.853734016
+      }
+    ],
+    "subjective_review": {
+      "date": "2026-10-25",
+      "case": "source-831001",
+      "comparison": "Previous rank-8 AR step 32 versus rank-32 AR step 150; same Koan prompt, native fixed NAR",
+      "user_rating": "Better balance of palette and melody",
+      "scope": "Preference for the presented full-source seed-831001 AR-only preview. Other seeds/modes and acoustic-calibration fidelity remain unrated.",
+      "selected_ar_step": 150,
+      "selected_ar_sha256": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132"
+    }
+  },
+  "nar": {
+    "identity": {
+      "data_manifest": "bca40d44aef11cf42b90bf5cf9a97704c13bbe154ab4c411f295722ae5e5d9b7",
+      "model_sha256": "9e1e3bb89dce35703345cd39c57a43f996d62e5ca87afb6784ff5ecfcad27a55",
+      "fixed_ar_sha256": "45a6ec461c968916bdd4d87269cff1324bb925e7ead35290524dfa82bf3f9c23",
+      "selected_ar_sha256": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132",
+      "runtime": {
+        "executable": {
+          "yue2-train.exe": "b40bcdf5ed3a5381bf6fcf19e30bc9bbd24fca98079760d579860c1a29076811"
+        },
+        "shared_libraries": {
+          "ggml-base.dll": "38e4f923e5ca623cf7322006e2a61592bbd61bc12182fdb16436807dae4dce1f",
+          "ggml-cpu.dll": "553c1e31fecc74de8f7102ef3d4fc3f9a862bbbe94835e438c63faac42f653c5",
+          "ggml-cuda.dll": "c1e0696cc35d52e81e6c66243859bb0e49d02a89fc4c660fef3b97d6009541d7",
+          "ggml.dll": "250554c16a47e8b572a0699324651626cb354bca70de068dc55281cb5fb63642",
+          "yue2.dll": "1faf90f15f92cc3a29a4ca1402458924b21bb15bf85dac1d40788ad54e82881f"
+        },
+        "precision_environment": {
+          "GGML_CUDA_TF32": "0",
+          "NVIDIA_TF32_OVERRIDE": null,
+          "CUBLAS_WORKSPACE_CONFIG": null
+        }
+      },
+      "rank": 32,
+      "lr": 3e-05,
+      "f32_projections": true,
+      "shuffle": true,
+      "max_steps": 950,
+      "eval_every": 100,
+      "selection": "minimum heldout flow MSE; early stop after three non-improving evaluations at step >=300"
+    },
+    "selection": {
+      "method": "minimum heldout flow MSE; early stop after three non-improving evaluations at step >=300",
+      "initial": {
+        "step": 0,
+        "train_eval": 1.40991,
+        "heldout_eval": 1.36803,
+        "heldout_per_sample": [
+          1.35683,
+          1.15506,
+          1.48539,
+          1.53384,
+          1.45932,
+          1.21772
+        ]
+      },
+      "selected": {
+        "metrics": {
+          "step": 400,
+          "train_eval": 1.12479,
+          "heldout_eval": 1.07936,
+          "heldout_per_sample": [
+            1.12215,
+            0.970527,
+            1.06143,
+            1.1353,
+            1.09413,
+            1.09261
+          ]
+        },
+        "adapter": "outputs/koan-rank32-2026-10-25/nar-run-0300/step-400.gguf"
+      },
+      "final": {
+        "step": 700,
+        "train_eval": 1.08889,
+        "heldout_eval": 1.08554,
+        "heldout_per_sample": [
+          1.12547,
+          0.975888,
+          1.06543,
+          1.14364,
+          1.1007,
+          1.10213
+        ]
+      },
+      "adapter": "outputs/koan-rank32-2026-10-25/nar-run-0300/step-400.gguf",
+      "adapter_sha256": "18bb8dcccaeab97bf91d905e93a7bd10360c601c15b11ed61e00c14dc1230efb",
+      "evaluations": [
+        {
+          "step": 0,
+          "train_eval": 1.40991,
+          "heldout_eval": 1.36803,
+          "heldout_per_sample": [
+            1.35683,
+            1.15506,
+            1.48539,
+            1.53384,
+            1.45932,
+            1.21772
+          ]
+        },
+        {
+          "step": 100,
+          "train_eval": 1.17358,
+          "heldout_eval": 1.10094,
+          "heldout_per_sample": [
+            1.14025,
+            0.979218,
+            1.09328,
+            1.16713,
+            1.12256,
+            1.1032
+          ]
+        },
+        {
+          "step": 200,
+          "train_eval": 1.15091,
+          "heldout_eval": 1.08503,
+          "heldout_per_sample": [
+            1.12662,
+            0.971221,
+            1.06904,
+            1.144,
+            1.10401,
+            1.09531
+          ]
+        },
+        {
+          "step": 300,
+          "train_eval": 1.1375,
+          "heldout_eval": 1.08045,
+          "heldout_per_sample": [
+            1.12167,
+            0.968418,
+            1.06492,
+            1.13788,
+            1.09758,
+            1.09223
+          ]
+        },
+        {
+          "step": 400,
+          "train_eval": 1.12479,
+          "heldout_eval": 1.07936,
+          "heldout_per_sample": [
+            1.12215,
+            0.970527,
+            1.06143,
+            1.1353,
+            1.09413,
+            1.09261
+          ]
+        },
+        {
+          "step": 500,
+          "train_eval": 1.11479,
+          "heldout_eval": 1.08196,
+          "heldout_per_sample": [
+            1.12218,
+            0.969312,
+            1.06645,
+            1.14135,
+            1.09733,
+            1.09514
+          ]
+        },
+        {
+          "step": 600,
+          "train_eval": 1.10151,
+          "heldout_eval": 1.08215,
+          "heldout_per_sample": [
+            1.12183,
+            0.97182,
+            1.06579,
+            1.13804,
+            1.09943,
+            1.09601
+          ]
+        },
+        {
+          "step": 700,
+          "train_eval": 1.08889,
+          "heldout_eval": 1.08554,
+          "heldout_per_sample": [
+            1.12547,
+            0.975888,
+            1.06543,
+            1.14364,
+            1.1007,
+            1.10213
+          ]
+        }
+      ]
+    },
+    "heldout_improvement_percent": 21.101145442716895,
+    "subjective_review": {
+      "date": "2026-10-25",
+      "case": "source-831001",
+      "comparison": "Rank-32 AR step 150 alone versus the same AR plus rank-32 NAR step 400; exact matched prefix, tokens, seed and 32-step renderer",
+      "user_rating": "About the same",
+      "scope": "No audible NAR advantage established for this full-source comparison. Additional seeds/modes and early-NAR/ODE/temperature diagnostics remain unrated.",
+      "ar_sha256": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132",
+      "nar_sha256": "18bb8dcccaeab97bf91d905e93a7bd10360c601c15b11ed61e00c14dc1230efb"
+    }
+  },
+  "correctness": {
+    "ar-kl-oracle": {
+      "reference_loss": 4.713479042053223,
+      "native_loss": 4.713480472564697,
+      "reference_cross_entropy": 3.7031290531158447,
+      "reference_teacher_kl": 1.0103497505187988,
+      "teacher_distribution_relative_l2": 5.0002048042756635e-06,
+      "active_kl_weight": 1.0,
+      "logits_relative_l2": 8.332566049903038e-07,
+      "target_tokens": 16,
+      "predict_end": false,
+      "actual_prefix_tokens": 78,
+      "prefix_padding_tokens": 226,
+      "gradient_relative_l2": 1.2864931977211663e-05,
+      "max_significant_gradient_relative_l2": 3.641395338325459e-05,
+      "passed": true
+    },
+    "ar-full-oracle": {
+      "reference_loss": 5.970882415771484,
+      "native_loss": 5.970880508422852,
+      "reference_cross_entropy": 5.970883369445801,
+      "reference_teacher_kl": -3.6979547530791024e-06,
+      "teacher_distribution_relative_l2": 1.478164957050219e-05,
+      "active_kl_weight": 0.20000000298023224,
+      "logits_relative_l2": 5.506974284322194e-06,
+      "target_tokens": 256,
+      "predict_end": false,
+      "actual_prefix_tokens": 304,
+      "prefix_padding_tokens": 55,
+      "gradient_relative_l2": 1.97351845202775e-05,
+      "max_significant_gradient_relative_l2": 4.091298703704821e-05,
+      "passed": true,
+      "adamw_max_absolute_error": 7.450580596923828e-09
+    },
+    "nar-oracle": {
+      "reference_loss": 1.7440282106399536,
+      "native_loss": 1.7440284490585327,
+      "velocity_relative_l2": 2.5145098060751865e-06,
+      "gradient_relative_l2": 7.14462595854248e-06,
+      "max_significant_gradient_relative_l2": 2.4184371705600308e-05,
+      "passed": true
+    },
+    "nar-post-oracle": {
+      "reference_loss": 1.7080779075622559,
+      "native_loss": 1.7080793380737305,
+      "velocity_relative_l2": 3.2015862732340386e-06,
+      "gradient_relative_l2": 1.239242366344641e-05,
+      "max_significant_gradient_relative_l2": 2.7070780910278936e-05,
+      "passed": true
+    },
+    "nar-gpu-full-oracle": {
+      "reference_loss": 1.2974133491516113,
+      "native_loss": 1.2974131107330322,
+      "velocity_relative_l2": 1.1645376047500444e-05,
+      "gradient_relative_l2": 6.415246217326075e-05,
+      "max_significant_gradient_relative_l2": 0.0004368044253377256,
+      "passed": true
+    }
+  },
+  "resume": {
+    "ar-resume-parity": {
+      "state_files_bit_identical": true,
+      "sampler_and_teacher_rebuilt": true
+    },
+    "ar-stopping-resume-parity": {
+      "state_files_bit_identical": true,
+      "includes_best_loss_and_stopping_history": true
+    },
+    "nar-resume-parity": {
+      "state_files_bit_identical": true
+    }
+  },
+  "conditioning_guard": {
+    "rejected_missing_ar_adapter": true,
+    "no_training_output_created": true,
+    "returncode": 1,
+    "error": "ggml_cuda_init: found 1 CUDA devices (Total VRAM: 8123 MiB):\n  Device 0: NVIDIA GeForce RTX 5070 Laptop GPU, compute capability 12.0, VMM: yes, VRAM: 8123 MiB\n[yue2] backend: CPU (Intel(R) Core(TM) Ultra 9 275HX)\nyue2-train: sample was prepared with different base weights or fixed adapters"
+  },
+  "resources": {
+    "ar_peak_mib": 5646,
+    "nar_peak_mib": 3694,
+    "real_cache_peak_mib": 7488,
+    "real_cache_preparation_seconds": 123.41999999980908
+  },
+  "export": {
+    "adapter": "models/koan-yue2-r32-ar150-nar400-F32-LoRA.gguf",
+    "sha256": "bbbcbf5bdcfb56eed8b27900fbac9d685d403b5d1e0c9d1c7c255e9be4400838",
+    "ar_step": 150,
+    "nar_step": 400,
+    "ar_only_adapter": "models/koan-yue2-r32-ar150-F32-LoRA.gguf",
+    "ar_only_sha256": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132",
+    "tensors": 784,
+    "parameters": 69730304,
+    "all_factors_bit_identical": true,
+    "common_instrumental_companion_required": true
+  },
+  "auditions": {
+    "cases": [
+      {
+        "case": "source-831001",
+        "frames": 1118,
+        "seed": 831001,
+        "prefix_sha256": "7dc1bea26e55a54d7410baec02377ebb44e5f6ff2b5baf43b0bfa95e540e30d6",
+        "raw_audio": {
+          "base": "outputs/koan-rank32-2026-10-25/auditions-final/source-831001/base.wav",
+          "reference-r8": "outputs/koan-rank32-2026-10-25/auditions-final/source-831001/reference-r8.wav",
+          "ar32": "outputs/koan-rank32-2026-10-25/auditions-final/source-831001/ar32.wav",
+          "ar32-nar32": "outputs/koan-rank32-2026-10-25/auditions-final/source-831001/ar32-nar32.wav"
+        },
+        "semantic_changed_fraction_vs_base": {
+          "base": 0.0,
+          "reference-r8": 0.9937388193202147,
+          "ar32": 0.9946332737030411,
+          "ar32-nar32": 0.9946332737030411
+        },
+        "ratings": {
+          "style": null,
+          "content": null,
+          "fidelity": null
+        }
+      },
+      {
+        "case": "source-123",
+        "frames": 1118,
+        "seed": 123,
+        "prefix_sha256": "7dc1bea26e55a54d7410baec02377ebb44e5f6ff2b5baf43b0bfa95e540e30d6",
+        "raw_audio": {
+          "base": "outputs/koan-rank32-2026-10-25/auditions-final/source-123/base.wav",
+          "reference-r8": "outputs/koan-rank32-2026-10-25/auditions-final/source-123/reference-r8.wav",
+          "ar32": "outputs/koan-rank32-2026-10-25/auditions-final/source-123/ar32.wav",
+          "ar32-nar32": "outputs/koan-rank32-2026-10-25/auditions-final/source-123/ar32-nar32.wav"
+        },
+        "semantic_changed_fraction_vs_base": {
+          "base": 0.0,
+          "reference-r8": 1.0,
+          "ar32": 0.9991055456171736,
+          "ar32-nar32": 0.9991055456171736
+        },
+        "ratings": {
+          "style": null,
+          "content": null,
+          "fidelity": null
+        }
+      },
+      {
+        "case": "fresh-score",
+        "frames": 400,
+        "seed": 831001,
+        "prefix_sha256": "096f1a654cd60215f35779e557f43969eda3e10ed303c763895c03d4d96d754b",
+        "raw_audio": {
+          "base": "outputs/koan-rank32-2026-10-25/auditions-final/fresh-score/base.wav",
+          "reference-r8": "outputs/koan-rank32-2026-10-25/auditions-final/fresh-score/reference-r8.wav",
+          "ar32": "outputs/koan-rank32-2026-10-25/auditions-final/fresh-score/ar32.wav",
+          "ar32-nar32": "outputs/koan-rank32-2026-10-25/auditions-final/fresh-score/ar32-nar32.wav"
+        },
+        "semantic_changed_fraction_vs_base": {
+          "base": 0.0,
+          "reference-r8": 0.9925,
+          "ar32": 1.0,
+          "ar32-nar32": 1.0
+        },
+        "ratings": {
+          "style": null,
+          "content": null,
+          "fidelity": null
+        }
+      },
+      {
+        "case": "standard-generation",
+        "frames": 400,
+        "seed": 831001,
+        "prefix_sha256": "eb54ff72e8ebea14c8e2d6619bf8435999cf9cdc7276ae0928e78127de266029",
+        "raw_audio": {
+          "base": "outputs/koan-rank32-2026-10-25/auditions-final/standard-generation/base.wav",
+          "reference-r8": "outputs/koan-rank32-2026-10-25/auditions-final/standard-generation/reference-r8.wav",
+          "ar32": "outputs/koan-rank32-2026-10-25/auditions-final/standard-generation/ar32.wav",
+          "ar32-nar32": "outputs/koan-rank32-2026-10-25/auditions-final/standard-generation/ar32-nar32.wav"
+        },
+        "semantic_changed_fraction_vs_base": {
+          "base": 0.0,
+          "reference-r8": 0.9975,
+          "ar32": 1.0,
+          "ar32-nar32": 1.0
+        },
+        "ratings": {
+          "style": null,
+          "content": null,
+          "fidelity": null
+        }
+      }
+    ],
+    "ar_selection": {
+      "method": "Minimum saved heldout semantic CE, with KL/replay; subjective review pending",
+      "baseline": {
+        "step": 0,
+        "train_per_sample": [
+          5.9708848,
+          6.218889713,
+          5.3393116,
+          5.591946125,
+          7.115966797,
+          7.411997795,
+          6.457485199,
+          6.669461727,
+          5.6407094,
+          5.886722088,
+          5.604376316,
+          5.807333946,
+          5.710379124,
+          6.115376472,
+          6.537218094,
+          6.957700729,
+          6.619841576,
+          6.867246628,
+          5.785971642,
+          6.13546896,
+          5.655203819,
+          5.845603943,
+          4.560365677,
+          4.716787815,
+          6.437973022,
+          6.623096466,
+          6.146402359,
+          6.451068401,
+          6.300828934,
+          6.568897247,
+          6.483139992,
+          6.694549561,
+          6.196876526,
+          6.370245934,
+          5.91663456,
+          6.157467365,
+          3.499745846,
+          3.470137596
+        ],
+        "train_mean": 6.014192468,
+        "heldout_per_sample": [
+          7.55147028,
+          7.568599701,
+          5.778852463,
+          5.91253376,
+          5.930551052,
+          6.227895737,
+          6.505706787,
+          6.641845703,
+          6.546028614,
+          6.6739254,
+          5.425820827,
+          5.676005363
+        ],
+        "heldout_mean": 6.369936307,
+        "retention_per_sample": [
+          3.714231968
+        ],
+        "retention_mean": 3.714231968
+      },
+      "selected": {
+        "step": 150,
+        "train_per_sample": [
+          5.448543549,
+          5.658006668,
+          4.94248724,
+          5.162396431,
+          6.7041502,
+          6.97120285,
+          5.948169231,
+          6.110862732,
+          5.184672356,
+          5.28576231,
+          5.176033974,
+          5.340224266,
+          5.324268341,
+          5.684926033,
+          6.142820835,
+          6.522867203,
+          6.111737728,
+          6.339038849,
+          5.18708992,
+          5.593169689,
+          5.118924141,
+          5.325996876,
+          4.115221024,
+          4.235223293,
+          6.01388216,
+          6.177312374,
+          5.657982349,
+          5.829902172,
+          5.810821533,
+          6.072669029,
+          6.072994709,
+          6.22870636,
+          5.733941555,
+          5.848827362,
+          5.436227322,
+          5.566558838,
+          3.339942455,
+          3.293245316
+        ],
+        "train_mean": 5.545179191,
+        "heldout_per_sample": [
+          7.481662273,
+          7.477071762,
+          5.738050461,
+          5.870074749,
+          5.782214165,
+          6.084481716,
+          6.420269966,
+          6.567849159,
+          6.408368587,
+          6.522520542,
+          5.360836506,
+          5.602170467
+        ],
+        "heldout_mean": 6.27629753,
+        "retention_per_sample": [
+          3.74401927
+        ],
+        "retention_mean": 3.74401927
+      },
+      "final": {
+        "step": 400,
+        "train_per_sample": [
+          3.721434355,
+          3.780715227,
+          3.42936945,
+          3.641387939,
+          4.756111622,
+          4.948999882,
+          4.069629669,
+          4.131307125,
+          3.61563158,
+          3.670156479,
+          3.494825602,
+          3.6468153,
+          3.65337801,
+          3.805062294,
+          4.511270046,
+          4.710225105,
+          4.463035583,
+          4.607625961,
+          3.512097836,
+          3.79497385,
+          3.798936605,
+          4.058633804,
+          2.89406848,
+          2.944985628,
+          4.360860825,
+          4.386922359,
+          3.909284115,
+          3.973155975,
+          4.388989449,
+          4.592022896,
+          4.353470802,
+          4.454351902,
+          4.029278278,
+          4.106013298,
+          3.866502047,
+          3.931567669,
+          2.798718452,
+          2.537328005
+        ],
+        "train_mean": 3.930240619,
+        "heldout_per_sample": [
+          8.09838295,
+          8.180628777,
+          6.136463642,
+          6.381468773,
+          6.418535233,
+          6.736035347,
+          7.160397053,
+          7.304856777,
+          6.823286533,
+          6.964875698,
+          5.734150887,
+          5.97565937
+        ],
+        "heldout_mean": 6.82622842,
+        "retention_per_sample": [
+          3.853734016
+        ],
+        "retention_mean": 3.853734016
+      },
+      "adapter": "outputs/koan-rank32-2026-10-25/ar-run/step-150.gguf",
+      "adapter_sha256": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132"
+    },
+    "nar_selection": {
+      "method": "minimum heldout flow MSE; early stop after three non-improving evaluations at step >=300",
+      "initial": {
+        "step": 0,
+        "train_eval": 1.40991,
+        "heldout_eval": 1.36803,
+        "heldout_per_sample": [
+          1.35683,
+          1.15506,
+          1.48539,
+          1.53384,
+          1.45932,
+          1.21772
+        ]
+      },
+      "selected": {
+        "metrics": {
+          "step": 400,
+          "train_eval": 1.12479,
+          "heldout_eval": 1.07936,
+          "heldout_per_sample": [
+            1.12215,
+            0.970527,
+            1.06143,
+            1.1353,
+            1.09413,
+            1.09261
+          ]
+        },
+        "adapter": "outputs/koan-rank32-2026-10-25/nar-run-0300/step-400.gguf"
+      },
+      "final": {
+        "step": 700,
+        "train_eval": 1.08889,
+        "heldout_eval": 1.08554,
+        "heldout_per_sample": [
+          1.12547,
+          0.975888,
+          1.06543,
+          1.14364,
+          1.1007,
+          1.10213
+        ]
+      },
+      "adapter": "outputs/koan-rank32-2026-10-25/nar-run-0300/step-400.gguf",
+      "adapter_sha256": "18bb8dcccaeab97bf91d905e93a7bd10360c601c15b11ed61e00c14dc1230efb",
+      "evaluations": [
+        {
+          "step": 0,
+          "train_eval": 1.40991,
+          "heldout_eval": 1.36803,
+          "heldout_per_sample": [
+            1.35683,
+            1.15506,
+            1.48539,
+            1.53384,
+            1.45932,
+            1.21772
+          ]
+        },
+        {
+          "step": 100,
+          "train_eval": 1.17358,
+          "heldout_eval": 1.10094,
+          "heldout_per_sample": [
+            1.14025,
+            0.979218,
+            1.09328,
+            1.16713,
+            1.12256,
+            1.1032
+          ]
+        },
+        {
+          "step": 200,
+          "train_eval": 1.15091,
+          "heldout_eval": 1.08503,
+          "heldout_per_sample": [
+            1.12662,
+            0.971221,
+            1.06904,
+            1.144,
+            1.10401,
+            1.09531
+          ]
+        },
+        {
+          "step": 300,
+          "train_eval": 1.1375,
+          "heldout_eval": 1.08045,
+          "heldout_per_sample": [
+            1.12167,
+            0.968418,
+            1.06492,
+            1.13788,
+            1.09758,
+            1.09223
+          ]
+        },
+        {
+          "step": 400,
+          "train_eval": 1.12479,
+          "heldout_eval": 1.07936,
+          "heldout_per_sample": [
+            1.12215,
+            0.970527,
+            1.06143,
+            1.1353,
+            1.09413,
+            1.09261
+          ]
+        },
+        {
+          "step": 500,
+          "train_eval": 1.11479,
+          "heldout_eval": 1.08196,
+          "heldout_per_sample": [
+            1.12218,
+            0.969312,
+            1.06645,
+            1.14135,
+            1.09733,
+            1.09514
+          ]
+        },
+        {
+          "step": 600,
+          "train_eval": 1.10151,
+          "heldout_eval": 1.08215,
+          "heldout_per_sample": [
+            1.12183,
+            0.97182,
+            1.06579,
+            1.13804,
+            1.09943,
+            1.09601
+          ]
+        },
+        {
+          "step": 700,
+          "train_eval": 1.08889,
+          "heldout_eval": 1.08554,
+          "heldout_per_sample": [
+            1.12547,
+            0.975888,
+            1.06543,
+            1.14364,
+            1.1007,
+            1.10213
+          ]
+        }
+      ]
+    },
+    "subjective_review_pending": true,
+    "standard_generation_duration_note": {
+      "common_plan_bars": 8,
+      "common_plan_seconds_from_cli": 13.7143,
+      "fixed_render_seconds": 16,
+      "automatic_stopping_not_tested": true
+    },
+    "user_feedback": {
+      "ar": {
+        "date": "2026-10-25",
+        "case": "source-831001",
+        "comparison": "Previous rank-8 AR step 32 versus rank-32 AR step 150; same Koan prompt, native fixed NAR",
+        "user_rating": "Better balance of palette and melody",
+        "scope": "Preference for the presented full-source seed-831001 AR-only preview. Other seeds/modes and acoustic-calibration fidelity remain unrated.",
+        "selected_ar_step": 150,
+        "selected_ar_sha256": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132"
+      },
+      "nar": {
+        "date": "2026-10-25",
+        "case": "source-831001",
+        "comparison": "Rank-32 AR step 150 alone versus the same AR plus rank-32 NAR step 400; exact matched prefix, tokens, seed and 32-step renderer",
+        "user_rating": "About the same",
+        "scope": "No audible NAR advantage established for this full-source comparison. Additional seeds/modes and early-NAR/ODE/temperature diagnostics remain unrated.",
+        "ar_sha256": "b998d4c97db3a6b9d8f9786fb1dcd8ffa7b4dc286202a894a58f1c0970531132",
+        "nar_sha256": "18bb8dcccaeab97bf91d905e93a7bd10360c601c15b11ed61e00c14dc1230efb"
+      }
+    }
+  },
+  "rendering_controls": {
+    "combined_adapter_wav_bit_identical": true,
+    "ode_controls": [
+      {
+        "case": "source-831001",
+        "raw_32": "outputs/koan-rank32-2026-10-25/auditions-final/source-831001/ar32-nar32.wav",
+        "raw_100": "outputs/koan-rank32-2026-10-25/auditions-final/rendering-controls/source-831001-100-midpoint.wav",
+        "subjective_preference": null
+      },
+      {
+        "case": "fresh-score",
+        "raw_32": "outputs/koan-rank32-2026-10-25/auditions-final/fresh-score/ar32-nar32.wav",
+        "raw_100": "outputs/koan-rank32-2026-10-25/auditions-final/rendering-controls/fresh-score-100-midpoint.wav",
+        "subjective_preference": null
+      }
+    ],
+    "early_nar_controls": [
+      {
+        "case": "source-831001",
+        "raw_early": "outputs/koan-rank32-2026-10-25/auditions-final/rendering-controls/source-831001-early-nar100.wav",
+        "subjective_preference": null
+      },
+      {
+        "case": "fresh-score",
+        "raw_early": "outputs/koan-rank32-2026-10-25/auditions-final/rendering-controls/fresh-score-early-nar100.wav",
+        "subjective_preference": null
+      }
+    ],
+    "temperature_controls": [
+      {
+        "case": "source-831001",
+        "raw_temperature_09": "outputs/koan-rank32-2026-10-25/auditions-final/rendering-controls/source-831001-temperature-09.wav",
+        "semantic_changed_fraction": 1.0,
+        "subjective_preference": null
+      },
+      {
+        "case": "fresh-score",
+        "raw_temperature_09": "outputs/koan-rank32-2026-10-25/auditions-final/rendering-controls/fresh-score-temperature-09.wav",
+        "semantic_changed_fraction": 1.0,
+        "subjective_preference": null
+      }
+    ]
+  },
+  "preview_replay": {
+    "final_rebuild_preview_bit_identical": {
+      "base": {
+        "codes": true,
+        "raw_wav": true
+      },
+      "reference-r8": {
+        "codes": true,
+        "raw_wav": true
+      },
+      "ar32": {
+        "codes": true,
+        "raw_wav": true
+      }
+    },
+    "note": "Application tests relinked an unused yue2.dll; final auditions rebuilt under a single final runtime identity."
+  },
+  "validation": {
+    "application_ctests": 18,
+    "python_unittests": 23,
+    "new_sampler_test": true,
+    "full_ggml_suite_not_run": true
+  },
+  "ggml_revision": "b77ae790e628270af46a8af1eca38441c23f1252",
+  "new_ggml_changes": false,
+  "remaining": "User favors selected NAR on fresh score and requests web UI experiments before declaring success.",
+  "expanded_user_feedback": {
+    "date": "2026-10-25",
+    "user_observation": "It is definitely starting to sound more DnB. fresh-score-NAR-selected-listen.wav is the highest quality and has the most DnB-ishness. ar32-listen.wav outputs are essentially the same content as ar32-nar32, with NAR outputs sounding higher quality.",
+    "fresh_score_preference": "selected AR150 + NAR400",
+    "scope": "Broader qualitative feedback favors the combined adapter for quality and DnB palette, while preserving the earlier source-only tie as a historical observation. User explicitly wants interactive web UI experimentation before declaring success.",
+    "next_milestone": "Expose style adapter selection and strength in the local web UI, keeping learned style weights out of symbolic planning."
+  }
+}

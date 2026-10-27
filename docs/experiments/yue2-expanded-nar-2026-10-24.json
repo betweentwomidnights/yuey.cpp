@@ -1,0 +1,464 @@
+{
+  "date": "2026-10-24",
+  "status": "expanded pilot trained; seed-831001 fidelity feedback recorded; style-transfer objective remains unproven",
+  "ggml": "b77ae790e628270af46a8af1eca38441c23f1252",
+  "training": {
+    "training_tracks": 12,
+    "training_windows": 48,
+    "training_seconds": 491.52,
+    "validation_tracks": 6,
+    "validation_windows": 6,
+    "steps": 192,
+    "rank": 8,
+    "learning_rate": 5e-05,
+    "seed": 831001,
+    "sampled_windows": 46,
+    "window_update_counts": {
+      "0": 4,
+      "1": 5,
+      "2": 4,
+      "3": 2,
+      "4": 7,
+      "5": 3,
+      "6": 5,
+      "7": 4,
+      "8": 4,
+      "9": 2,
+      "10": 10,
+      "11": 2,
+      "12": 2,
+      "13": 3,
+      "14": 4,
+      "15": 4,
+      "16": 8,
+      "18": 3,
+      "19": 2,
+      "20": 2,
+      "21": 2,
+      "22": 6,
+      "23": 9,
+      "24": 7,
+      "25": 4,
+      "26": 6,
+      "27": 4,
+      "28": 3,
+      "29": 4,
+      "30": 3,
+      "31": 4,
+      "32": 1,
+      "33": 5,
+      "34": 7,
+      "35": 3,
+      "36": 2,
+      "37": 1,
+      "38": 6,
+      "39": 6,
+      "40": 5,
+      "41": 1,
+      "42": 6,
+      "44": 5,
+      "45": 4,
+      "46": 4,
+      "47": 4
+    },
+    "evaluated_tracks": [
+      "koan_sound_aeon_114bpm_46bars.wav",
+      "koan_sound_boundless_70bpm_46bars.wav",
+      "koan_sound_exigence_172bpm_80bars.wav",
+      "koan_sound_sentient_95bpm_66bars.wav",
+      "koan_sound_silkwave_88bpm_80bars.wav",
+      "koan_sound_tetsuos_redemption_140bpm_168bars.wav"
+    ],
+    "evaluations": [
+      {
+        "step": 0,
+        "train_eval": 1.17163,
+        "heldout_eval": 1.10917,
+        "heldout_per_sample": [
+          1.15431,
+          0.996893,
+          1.09864,
+          1.17002,
+          1.1346,
+          1.10058
+        ]
+      },
+      {
+        "step": 24,
+        "train_eval": 1.15484,
+        "heldout_eval": 1.09363,
+        "heldout_per_sample": [
+          1.13961,
+          0.982173,
+          1.0839,
+          1.15385,
+          1.11498,
+          1.0873
+        ]
+      },
+      {
+        "step": 48,
+        "train_eval": 1.13933,
+        "heldout_eval": 1.07796,
+        "heldout_per_sample": [
+          1.1247,
+          0.969967,
+          1.06568,
+          1.13804,
+          1.09843,
+          1.07096
+        ]
+      },
+      {
+        "step": 72,
+        "train_eval": 1.1314,
+        "heldout_eval": 1.07139,
+        "heldout_per_sample": [
+          1.11791,
+          0.966454,
+          1.056,
+          1.13173,
+          1.09482,
+          1.06144
+        ]
+      },
+      {
+        "step": 96,
+        "train_eval": 1.12754,
+        "heldout_eval": 1.06853,
+        "heldout_per_sample": [
+          1.11514,
+          0.965279,
+          1.05145,
+          1.12955,
+          1.09276,
+          1.05702
+        ]
+      },
+      {
+        "step": 120,
+        "train_eval": 1.12591,
+        "heldout_eval": 1.06729,
+        "heldout_per_sample": [
+          1.1139,
+          0.963571,
+          1.05084,
+          1.12942,
+          1.08986,
+          1.05617
+        ]
+      },
+      {
+        "step": 144,
+        "train_eval": 1.12457,
+        "heldout_eval": 1.06696,
+        "heldout_per_sample": [
+          1.11354,
+          0.962413,
+          1.05163,
+          1.12914,
+          1.09029,
+          1.05474
+        ]
+      },
+      {
+        "step": 168,
+        "train_eval": 1.12228,
+        "heldout_eval": 1.06552,
+        "heldout_per_sample": [
+          1.11269,
+          0.961787,
+          1.04949,
+          1.1267,
+          1.0884,
+          1.05404
+        ]
+      },
+      {
+        "step": 192,
+        "train_eval": 1.12037,
+        "heldout_eval": 1.06645,
+        "heldout_per_sample": [
+          1.11374,
+          0.961707,
+          1.04978,
+          1.12774,
+          1.09126,
+          1.0545
+        ]
+      }
+    ],
+    "oracle": {
+      "reference_loss": 1.2221381664276123,
+      "native_loss": 1.2223269939422607,
+      "velocity_relative_l2": 0.0030008048595221927,
+      "gradient_relative_l2": 0.006295780157728054,
+      "max_significant_gradient_relative_l2": 0.022224597256639604,
+      "passed": true
+    },
+    "original_step48_unchanged": true
+  },
+  "sampling": {
+    "available_windows": 48,
+    "sampled_windows": 46,
+    "sampled_tracks": 12,
+    "available_target_seconds": 491.52,
+    "sampled_unique_target_seconds": 471.04,
+    "unused_windows": [
+      {
+        "track": "koan_sound_hydroplane_172bpm_176bars.wav",
+        "offset": 82.96
+      },
+      {
+        "track": "koan_sound_veridiandream_140bpm_68bars.wav",
+        "offset": 88.96
+      }
+    ],
+    "track_update_counts": {
+      "koan_sound_altercast_130bpm_64bars.wav": 15,
+      "koan_sound_cobalt_92bpm_60bars.wav": 19,
+      "koan_sound_drift_86bpm_94bars.wav": 18,
+      "koan_sound_evocation_90bpm_40bars.wav": 13,
+      "koan_sound_hydroplane_172bpm_176bars.wav": 13,
+      "koan_sound_prism_pulse_101bpm_88bars.wav": 19,
+      "koan_sound_slyfox_101bpm_76bars.wav": 21,
+      "koan_sound_templeoffervor_123bpm_50bars.wav": 14,
+      "koan_sound_traverse2_86bpm_52bars.wav": 16,
+      "koan_sound_traverse_86bpm_54bars.wav": 15,
+      "koan_sound_veridiandream_140bpm_68bars.wav": 12,
+      "koan_sound_virtue_justokay_128bpm_84bars.wav": 17
+    }
+  },
+  "training_tracks": [
+    {
+      "track": "koan_sound_altercast_130bpm_64bars.wav",
+      "sha256": "b9cddc5fab207cd1cac57380dcb9cb408ca6609706191688a05f80c3d4b3d6a7",
+      "offsets": [
+        12.4,
+        38.36,
+        64.32,
+        90.28
+      ]
+    },
+    {
+      "track": "koan_sound_cobalt_92bpm_60bars.wav",
+      "sha256": "600d290c2cfc0800731ead40c4f52c3de96b70d8666aac38343089e0c781cac2",
+      "offsets": [
+        16.24,
+        51.8,
+        87.36,
+        122.92
+      ]
+    },
+    {
+      "track": "koan_sound_drift_86bpm_94bars.wav",
+      "sha256": "0d1e0786638b099d8a37482a4d0d1cff1085da6e064ca0908535f7a39dc9c1b0",
+      "offsets": [
+        26.8,
+        88.84,
+        150.84,
+        212.88
+      ]
+    },
+    {
+      "track": "koan_sound_evocation_90bpm_40bars.wav",
+      "sha256": "bb7d85916fcf5914d098ecc4d10d7446abed56b4dcebeb89528f358c54e0f54c",
+      "offsets": [
+        11.52,
+        35.28,
+        59.04,
+        82.8
+      ]
+    },
+    {
+      "track": "koan_sound_hydroplane_172bpm_176bars.wav",
+      "sha256": "8f21e275499b5429f1976a04bcfd292e47905dac43688715409a7d1308431d85",
+      "offsets": [
+        25.12,
+        82.96,
+        140.8,
+        198.64
+      ]
+    },
+    {
+      "track": "koan_sound_prism_pulse_101bpm_88bars.wav",
+      "sha256": "4dd40604023084377cd5376b24b7e0b9ce30c03b227931b0f46ac17c63406bb8",
+      "offsets": [
+        21.48,
+        70.2,
+        118.92,
+        167.6
+      ]
+    },
+    {
+      "track": "koan_sound_slyfox_101bpm_76bars.wav",
+      "sha256": "80407d6c2527bc4f2b38f3bb3aaadcfeb3677c5f08ceab95df855173f38d2184",
+      "offsets": [
+        18.64,
+        60.2,
+        101.8,
+        143.36
+      ]
+    },
+    {
+      "track": "koan_sound_templeoffervor_123bpm_50bars.wav",
+      "sha256": "874c84a4f51b570da74ee55635e2da28db7b709e83f6d3fc280abeb88d171e19",
+      "offsets": [
+        10.32,
+        31.16,
+        52.0,
+        72.84
+      ]
+    },
+    {
+      "track": "koan_sound_traverse2_86bpm_52bars.wav",
+      "sha256": "85c05e5e70f530011e3eabc3c7eaa64f988bcc8ccdb2e3b91870f74034afd267",
+      "offsets": [
+        7.84,
+        22.44,
+        37.0,
+        51.6
+      ]
+    },
+    {
+      "track": "koan_sound_traverse_86bpm_54bars.wav",
+      "sha256": "6c62aaf395f93fd94d57b6c2f6059c30986c57bf491b392b96c8df576925f2f8",
+      "offsets": [
+        8.12,
+        23.36,
+        38.64,
+        53.92
+      ]
+    },
+    {
+      "track": "koan_sound_veridiandream_140bpm_68bars.wav",
+      "sha256": "66e454e115c0ff8c0a8885243e3b8a88b2246f0e1c8a2096ddf0f446bf7828c3",
+      "offsets": [
+        12.24,
+        37.8,
+        63.4,
+        88.96
+      ]
+    },
+    {
+      "track": "koan_sound_virtue_justokay_128bpm_84bars.wav",
+      "sha256": "88bdcd138d6823093af4b355f2116ef7bc8b323f687c4d4544cb167ccd01001a",
+      "offsets": [
+        16.32,
+        52.12,
+        87.96,
+        123.76
+      ]
+    }
+  ],
+  "validation_tracks": [
+    "koan_sound_aeon_114bpm_46bars.wav",
+    "koan_sound_boundless_70bpm_46bars.wav",
+    "koan_sound_exigence_172bpm_80bars.wav",
+    "koan_sound_sentient_95bpm_66bars.wav",
+    "koan_sound_silkwave_88bpm_80bars.wav",
+    "koan_sound_tetsuos_redemption_140bpm_168bars.wav"
+  ],
+  "preprocessing": {
+    "frames": 256,
+    "vae_halo_frames": 50,
+    "training_window_fractions": [
+      0.1,
+      0.35,
+      0.6,
+      0.85
+    ],
+    "full_track_semantic_extraction": true,
+    "conditioning_device": "cpu",
+    "conditioning_threads": 4,
+    "target_cores_disjoint_within_tracks": true,
+    "cache_identity": "139a6777db2ffee809fa9379a5afe973f1e7e753d2a3591ebfb0968e90f480d7",
+    "base_model_sha256": "9e1e3bb89dce35703345cd39c57a43f996d62e5ca87afb6784ff5ecfcad27a55"
+  },
+  "feature_audit": {
+    "windows": 54,
+    "min_source_rms": 0.09447691525712427,
+    "max_source_rms": 0.44911970446235094,
+    "all_previous_listening_sources_excluded_from_training": true,
+    "prior_validation_features": [
+      {
+        "track": "koan_sound_aeon_114bpm_46bars.wav",
+        "codes_equal": true,
+        "means_equal": false,
+        "vae_means_relative_l2": 5.727663263368283e-07,
+        "source_samples_identical": true
+      },
+      {
+        "track": "koan_sound_silkwave_88bpm_80bars.wav",
+        "codes_equal": true,
+        "means_equal": false,
+        "vae_means_relative_l2": 4.6608835020092125e-07,
+        "source_samples_identical": true
+      }
+    ]
+  },
+  "selection": {
+    "step": 192,
+    "adapter_sha256": "4391b2e8b544b363eba255cb5807e5589f03066862935e075c8863f32d0be725",
+    "state_sha256": "4b577ee4f57b80ec4c9c147cba324da7830019d5362a06cca21aa093ca1fecca",
+    "criterion": "minimum mean fixed held-out flow loss among saved checkpoints; listening judgment pending",
+    "heldout_reduction_percent": 3.8515286205000216,
+    "all_six_validation_tracks_improved_from_initialization": true
+  },
+  "validations": {
+    "native_ctests_passed": 17,
+    "python_tests_passed": 23,
+    "oracle_passed": true
+  },
+  "auditions": {
+    "unique_new_renders": 19,
+    "blind_pairs": 13,
+    "checkpoint_ladder": [
+      48,
+      96,
+      144,
+      192
+    ],
+    "primary_reference": "preserved four-track step48",
+    "anchor": "fixed v9 without a learned delta",
+    "same_semantic_streams_as_preserved_references": true,
+    "all_reviews_pending": false,
+    "max_preview_peak": 0.9800000190734863,
+    "max_group_rms_difference_db": 9.10472266468787e-08,
+    "reviewed_pairs": 8,
+    "unreviewed_pairs": 5
+  },
+  "source_sha256": {
+    "tools\\prepare_nar_experiment.py": "91896bb4a4d2c85d62d68e450a6da03e1c34b88d216fffa4a59c66cf88f20cbf",
+    "tools\\audition_nar_experiment.py": "e51fe3e7eecb9c0a268e33c9d81ee6c19339cbaef3329e5da23e4f91c5f68487",
+    "tools\\yue2-train.cpp": "8bc214c969fff3fa703424f7343534b7f03faa81f4f46d7352a3059d16661046",
+    "src\\nar_training.cpp": "1b6af489278fd8de4e0a1acc788f351872ba15f2094cc8dfb0a635d58fce8e5a"
+  },
+  "limits": [
+    "Validation-loss improvement is relative to initialization on the expanded six-track validation set, not a direct comparison to the previous two-track mean.",
+    "Step 168 had the lowest observed validation mean but was not one of the predeclared saved checkpoints; step 192 is best among saved checkpoints.",
+    "Sampling with replacement left two prepared windows without optimizer updates; all twelve tracks received updates.",
+    "Training uses short windows, a fresh run, and four times as many updates as the original pilot.",
+    "Frozen-score resynthesis tests do not establish faithful source reconstruction or natural stopping.",
+    "No subjective preference is inferred from flow loss or signal checks."
+  ],
+  "reference_step48_sha256": "48ec6d227b8cd4915a908b42958e5918035a18bbb788636c242edee453ed5c24",
+  "subjective_feedback": {
+    "date": "2026-10-25",
+    "experiment": "Expanded 12-track step192 against original four-track step48, not against fixed v9.",
+    "counts": {
+      "expanded_preferences": 5,
+      "original_preferences": 1,
+      "ties": 2,
+      "ties_with_expanded_lean": 1
+    },
+    "interpretation": "Mostly modest fidelity/fullness differences, two clear expanded preferences, one original preference; dataset-specific style transfer is not established.",
+    "user_goal": "A reusable adapter that makes new scores, unrelated input audio, and standard generation sound like the training dataset without requiring dataset reference tracks at inference.",
+    "limits": [
+      "One reviewer and one seed of this expanded comparison.",
+      "The other four seed-123 pairs and the long-60 pair in this set remain unreviewed.",
+      "Quality/fullness preferences do not by themselves demonstrate transfer of dataset instrumentation, production or compositional character.",
+      "Existing comparison inputs are derived from held-out dataset tracks plus two keygen examples; this is not a fully reference-free generation evaluation."
+    ]
+  }
+}
