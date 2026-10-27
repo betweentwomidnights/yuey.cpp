@@ -17,7 +17,9 @@
 #include "server/policy.h"
 #include "server/prompts.h"
 #include "server/progress.h"
+#include "server/training.h"
 #include "yue2_ui_html.h"
+#include "yue2_train_html.h"
 
 #include <algorithm>
 #include <atomic>
@@ -119,6 +121,7 @@ std::string random_session_id() {
 // Configuration
 
 struct Configuration {
+    fs::path training_config;
     yue2::server::HttpServerOptions http;
     fs::path models_dir = "models";
     fs::path adapters_dir;
@@ -263,6 +266,7 @@ Configuration parse_configuration(int argc, char ** argv) {
         }
     }
     result.generation_model = option(argc, argv, "--model");
+    result.training_config = option(argc, argv, "--training-config");
     result.vae = option(argc, argv, "--vae");
     result.tokenizer = option(argc, argv, "--tokenizer");
     result.transcription_model = option(argc, argv, "--transcription-model");
@@ -760,7 +764,7 @@ void append_midi_json(std::string & body, const Job & job) {
 class ServerState {
 public:
     explicit ServerState(Configuration configuration)
-        : configuration_(std::move(configuration)), worker_([this]() { work(); }) {}
+        : configuration_(std::move(configuration)), training_(configuration_.training_config), worker_([this]() { work(); }) {}
 
     ~ServerState() {
         {
@@ -781,6 +785,22 @@ public:
             const bool get = request.method == "GET";
             const bool post = request.method == "POST";
             if (path == "/" || path == "/index.html") return get ? ui() : not_allowed();
+            if (path == "/training" || path == "/training/") {
+                if (!get) return not_allowed();
+                HttpResponse response; response.content_type = "text/html; charset=utf-8";
+                response.body.assign(reinterpret_cast<const char *>(yue2::ui::train_html), yue2::ui::train_html_size);
+                response.headers.emplace("Cache-Control", "no-cache"); return response;
+            }
+            if (starts_with(path, "/training/api")) {
+                std::lock_guard<std::mutex> admission(admission_mutex_);
+                return training_.handle(request, [this]() {
+                    std::lock_guard<std::mutex> jobs(jobs_mutex_);
+                    if (running_ || !queue_.empty()) return false;
+                    std::unique_lock<std::mutex> models(models_mutex_, std::try_to_lock);
+                    if (!models.owns_lock()) return false;
+                    release_models(); return true;
+                });
+            }
             if (path == "/health") return get ? health() : not_allowed();
             if (path == "/props") return get ? props() : not_allowed();
             if (path == "/loras") return get ? loras() : not_allowed();
@@ -862,6 +882,7 @@ private:
             queued = queue_.size();
         }
         const auto device = configuration_.device.empty() ? environment("YUE2_DEVICE") : configuration_.device;
+        busy = busy || training_.active();
         return yue2::server::json_response(
             "{\"status\":\"ok\",\"service\":\"yue2\",\"api_version\":1,\"version\":" + json::quote(yue2::version()) +
             ",\"device\":" + json::quote(device.empty() ? "auto" : device) +
@@ -967,13 +988,21 @@ private:
         for (const auto & [name, path] : list_adapters(configuration_.adapters_dir)) {
             if (index) body.push_back(',');
             body += "{\"index\":" + std::to_string(index++) + ",\"name\":" + json::quote(name) +
-                ",\"path\":" + json_path(path) + "}";
+                ",\"path\":" + json_path(path);
+            auto metadata = path; metadata.replace_extension(".training.json");
+            if (fs::exists(metadata)) {
+                try { body += ",\"training\":" + json::stringify(json::parse(yue2::server::training::read(metadata))); }
+                catch (const std::exception &) { /* An incomplete sidecar does not hide legacy adapters. */ }
+            }
+            body += "}";
         }
         body += "]}";
         return yue2::server::json_response(std::move(body));
     }
 
     HttpResponse submit(const HttpRequest & request, JobKind kind) {
+        std::lock_guard<std::mutex> admission(admission_mutex_);
+        if (training_.active()) return failure(409, "training owns the device; stop it or wait for completion");
         if (header(request, "content-type").rfind("application/json", 0) != 0) {
             return failure(415, "send application/json");
         }
@@ -1219,6 +1248,25 @@ private:
             : job.inbound_format.empty() ? "wav" : job.inbound_format;
         job.loras = parse_loras(root);
         job.render_loras = parse_loras(root, "render_loras");
+        // A registered style carries a required frozen companion. Resolve it
+        // from the catalog even when styles live in a separate adapter folder;
+        // it belongs before the style and also supplies common-only planning.
+        for (const auto &style : job.render_loras) {
+            fs::path sidecar(style.path); sidecar.replace_extension(".training.json");
+            if (!fs::exists(sidecar)) continue;
+            const auto metadata=json::parse(yue2::server::training::read(sidecar));
+            if (json::string(metadata,"format")!="yue2-trained-style-v1") continue;
+            if (!song.lyrics.empty()) throw std::invalid_argument("this trained style requires an instrumental request");
+            if (!json::boolean(root,"use_instrumental_adapter",true))
+                throw std::invalid_argument("this trained style requires its frozen instrumental companion");
+            const auto path=yue2::server::training::catalog_companion(metadata,configuration_.models_dir,configuration_.adapters_dir);
+            if (job.loras.empty()) job.loras.push_back({path.string(),1});
+            else if (!fs::equivalent(job.loras.front().path,path) || job.loras.front().strength!=1)
+                throw std::invalid_argument("trained style requires its companion as the first fixed adapter");
+            song.instrumental=true; song.symbolic_mode=yue2::SymbolicMode::full;
+            job.instrumental_adapter=true;
+            if (job.kind==JobKind::cover) job.transcription.melody_only=false;
+        }
         if (job.kind == JobKind::continue_audio && !job.render_loras.empty()) {
             throw std::invalid_argument("style render_loras require score continuation, not real-audio continuation");
         }
@@ -1257,8 +1305,10 @@ private:
                 const auto duplicate = std::find_if(
                     job.loras.begin(), job.loras.end(),
                     [&configured](const yue2::LoraAdapterSpec & existing) {
-                        return existing.path == configured.path;
+                        return fs::equivalent(existing.path, configured.path);
                     });
+                if (job.instrumental_adapter && duplicate != job.loras.end() && duplicate->strength != configured.strength)
+                    throw std::invalid_argument("configured instrumental strength differs from the trained style's required companion");
                 if (duplicate == job.loras.end()) job.loras.push_back(std::move(configured));
             }
             job.instrumental_adapter = true;
@@ -1868,6 +1918,8 @@ private:
     }
 
     Configuration configuration_;
+    yue2::server::training::Manager training_;
+    std::mutex admission_mutex_;
 
     std::mutex jobs_mutex_;
     std::condition_variable jobs_ready_;

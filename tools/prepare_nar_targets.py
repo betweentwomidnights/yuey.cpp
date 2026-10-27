@@ -40,6 +40,7 @@ def main():
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--threads',type=int,default=4)
     parser.add_argument('--halo-frames',type=int,default=50)
+    parser.add_argument('--stop-file',type=Path)
     parser.add_argument('--include-generated',action='store_true',
                         help='Also encode explicitly sourced generated replay/retention rows')
     args=parser.parse_args();data=json.loads(args.dataset.read_text());args.out.mkdir(parents=True,exist_ok=True)
@@ -54,6 +55,7 @@ def main():
     if args.include_generated:identity['target_source_policy']='Explicitly sourced real or generated waveform; posterior means, not original synthesis latents'
     checked={};prepared=[]
     for i,row in enumerate(rows):
+        if args.stop_file and args.stop_file.exists():return
         source=Path(row['source']);info=sf.info(source);stat=source.stat()
         if row['source_sha256'] not in checked:
             if digest(source)!=row['source_sha256']:raise ValueError('Source changed')

@@ -194,6 +194,7 @@ Things worth knowing on a Mac:
 - [DoRA UI presets and fixed-seed comparisons](docs/koan-ar-dora-webui-2026-10-26.md)
 - [Future generation and trainer control boundaries](docs/yue2-adapter-controls.md)
 - [Server and web API](docs/server.md)
+- [Local two-stage style trainer](docs/training.md)
 - [C/C++ embedding](docs/embedding.md)
 - [C ABI V1 contract](docs/C_ABI_V1.md)
 - [GGUF naming, conversion, and quantization](docs/distribution.md)

@@ -643,6 +643,12 @@ curl -s "localhost:8007/poll_status/$sid?consume=1" | jq -r .audio_data | base64
 
 ## Notes
 
+The embedded [style trainer](training.md) is at `/training`. Configure its optional
+preprocessing runtime with `--training-config FILE`. Training reserves this
+server's device, unloads resident inference models, and rejects new compute
+requests until its worker exits. A completed run can publish a paired style and
+caption pool into the existing `/loras` catalog.
+
 - The server binds `127.0.0.1` by default and warns when bound elsewhere:
   anyone who can reach the port can submit jobs.
 - One job runs at a time, as in the sibling services: a second concurrent

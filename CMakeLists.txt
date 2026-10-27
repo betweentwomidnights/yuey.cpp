@@ -173,7 +173,14 @@ if(YUE2_BUILD_TOOLS)
             ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_resource.cmake
         VERBATIM
     )
-    add_executable(yue2-server tools/yue2-server.cpp "${YUE2_UI_HEADER}")
+    set(YUE2_TRAIN_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/yue2_train_html.h")
+    add_custom_command(OUTPUT "${YUE2_TRAIN_HEADER}"
+        COMMAND "${CMAKE_COMMAND}"
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/tools/ui/train.html
+            -DOUTPUT=${YUE2_TRAIN_HEADER} -DSYMBOL=train_html
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_resource.cmake
+        DEPENDS tools/ui/train.html cmake/embed_resource.cmake VERBATIM)
+    add_executable(yue2-server tools/yue2-server.cpp "${YUE2_UI_HEADER}" "${YUE2_TRAIN_HEADER}")
     target_include_directories(yue2-server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
     target_link_libraries(yue2-server PRIVATE yue2 yue2-server-support)
 endif()
@@ -273,6 +280,14 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-server-support-test PRIVATE yue2-server-support)
     yue2_enable_test_assertions(yue2-server-support-test)
     add_test(NAME yue2-server-support-test COMMAND yue2-server-support-test)
+
+    if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(yue2-training-owner-test tests/training_owner_test.cpp)
+        target_include_directories(yue2-training-owner-test PRIVATE tools)
+        target_link_libraries(yue2-training-owner-test PRIVATE yue2-server-support)
+        yue2_enable_test_assertions(yue2-training-owner-test)
+        add_test(NAME yue2-training-owner-test COMMAND yue2-training-owner-test)
+    endif()
 
     add_executable(yue2-server-progress-test tests/server_progress_test.cpp)
     target_link_libraries(yue2-server-progress-test PRIVATE yue2 yue2-server-support)

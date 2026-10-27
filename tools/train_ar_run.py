@@ -27,11 +27,34 @@ def grouped_loss(values,rows):
     return sum(sum(items)/len(items) for items in sums.values())/len(sums) if sums else 0.
 
 
+def select_checkpoints(out,rows,config):
+    metrics=[]
+    validation=[r for r in rows if r['split']=='validation']
+    retention=[r for r in rows if r['split']=='retention']
+    for path in out.glob('native*/metrics.jsonl'):
+        for line in path.read_text().splitlines():
+            metric=json.loads(line)
+            metric['heldout_group_mean']=grouped_loss(metric['heldout_per_sample'],validation)
+            metric['retention_group_mean']=grouped_loss(metric['retention_per_sample'],retention)
+            metric['segment']=str(path.parent);metrics.append(metric)
+    by_step={m['step']:m for m in metrics};ordered=[by_step[s] for s in sorted(by_step)]
+    selected=min(ordered,key=lambda metric:metric['heldout_group_mean'])
+    folder=Path(selected['segment']);adapter=folder/f"step-{selected['step']}.gguf"
+    # The preflight probe supplies the explicit step-zero candidate.
+    if selected['step']==0:adapter=out/'probe/step-0.gguf'
+    state=folder/f"step-{selected['step']}.state.gguf" if selected['step'] else None
+    save(out/'selection.json',dict(method='Minimum recording-balanced heldout semantic CE including zero; retention separate; listening required',
+         initial=ordered[0],selected=selected,final=ordered[-1],adapter=str(adapter),adapter_sha256=digest(adapter),
+         state=str(state) if state else None,evaluations=ordered,subjective_verdict_pending=True))
+    captions=sorted({r['caption'] for r in rows if r['split']=='train' and r.get('kind','real')=='real'})
+    save(out/'prompts.json',dict(version=1,source=dict(name=config.get('name','Style'),unique_prompts=len(captions)),dice=dict(instrumental=captions)))
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',type=Path,required=True)
     parser.add_argument('--family',choices=['lora','dora'],required=True)
-    parser.add_argument('--phase',choices=['probe','fit','post-probe'],required=True)
+    parser.add_argument('--phase',choices=['probe','fit','post-probe','select'],required=True)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--segment',default='native')
     args=parser.parse_args();config=json.loads(args.config.read_text())
@@ -53,6 +76,9 @@ def main():
     if identity_path.exists():
         if json.loads(identity_path.read_text())!=identity:raise ValueError('Resolved run identity changed')
     else:save(identity_path,identity)
+    if args.phase=='select':
+        select_checkpoints(out,rows,config)
+        return
     run_hash=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     prefix_slots=max(len(Path(row['prefix']).read_bytes())//4 for row in rows)
     target_steps=math.ceil(training['token_budget']/data['frames'])
@@ -87,25 +113,27 @@ def main():
     print('START',args.family,args.phase,flush=True)
     with log.open('w') as stream:
         process=subprocess.Popen(cmd,cwd=root,stdout=stream,stderr=subprocess.STDOUT)
-        while process.poll() is None:
-            query=subprocess.run(['nvidia-smi','--query-gpu=memory.used','--format=csv,noheader,nounits'],capture_output=True,text=True)
-            if query.returncode==0:peak=max(peak,int(query.stdout.strip().splitlines()[0]))
-            history=native/'history.jsonl'
-            try:
-                if history.exists():
-                    lines=history.read_text().splitlines()
-                    if lines:
-                        try:latest=json.loads(lines[-1])
-                        except json.JSONDecodeError:latest=None  # Child may be appending this line.
-                        if latest is not None:
-                            step=latest.get('step',step)
-                            save(out/'progress.json',dict(stage=args.phase,status='running',family=args.family,step=step,target_steps=target_steps,
-                                 tokens_seen=step*data['frames'],elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak))
-            except OSError as error:
-                # Progress is advisory. A reader lock/disk error must not drop
-                # ownership of the still-running native process.
-                print('Progress update deferred:',error,flush=True)
-            time.sleep(1)
+        try:
+            while process.poll() is None:
+                query=subprocess.run(['nvidia-smi','--query-gpu=memory.used','--format=csv,noheader,nounits'],capture_output=True,text=True)
+                if query.returncode==0:peak=max(peak,int(query.stdout.strip().splitlines()[0]))
+                history=native/'history.jsonl'
+                try:
+                    if history.exists():
+                        lines=history.read_text().splitlines()
+                        if lines:
+                            try:latest=json.loads(lines[-1])
+                            except json.JSONDecodeError:latest=None  # Child may be appending this line.
+                            if latest is not None:
+                                step=latest.get('step',step)
+                                save(out/'progress.json',dict(stage=args.phase,status='running',family=args.family,step=step,target_steps=target_steps,
+                                     tokens_seen=step*data['frames'],elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak))
+                except OSError as error:
+                    # Progress is advisory. A reader lock/disk error must not drop
+                    # ownership of the still-running native process.
+                    print('Progress update deferred:',error,flush=True)
+                time.sleep(1)
+        finally:process.wait()
     command_record=dict(command=cmd,returncode=process.returncode,seconds=time.monotonic()-start,observed_gpu_peak_mib=peak)
     save(log.with_suffix('.command.json'),command_record)
     if process.returncode:
@@ -116,26 +144,7 @@ def main():
         for key in ['prefix','codes']:
             if digest(Path(row[key]))!=row[key+'_sha256']:raise RuntimeError('Example changed during the run')
     if args.phase=='fit':
-        metrics=[]
-        validation=[r for r in rows if r['split']=='validation']
-        retention=[r for r in rows if r['split']=='retention']
-        for path in out.glob('native*/metrics.jsonl'):
-            for line in path.read_text().splitlines():
-                metric=json.loads(line)
-                metric['heldout_group_mean']=grouped_loss(metric['heldout_per_sample'],validation)
-                metric['retention_group_mean']=grouped_loss(metric['retention_per_sample'],retention)
-                metric['segment']=str(path.parent);metrics.append(metric)
-        by_step={m['step']:m for m in metrics};ordered=[by_step[s] for s in sorted(by_step)]
-        selected=min(ordered,key=lambda metric:metric['heldout_group_mean'])
-        folder=Path(selected['segment']);adapter=folder/f"step-{selected['step']}.gguf"
-        # The preflight probe supplies the explicit step-zero candidate.
-        if selected['step']==0:adapter=out/'probe/step-0.gguf'
-        state=folder/f"step-{selected['step']}.state.gguf" if selected['step'] else None
-        save(out/'selection.json',dict(method='Minimum recording-balanced heldout semantic CE including zero; retention separate; listening required',
-             initial=ordered[0],selected=selected,final=ordered[-1],adapter=str(adapter),adapter_sha256=digest(adapter),
-             state=str(state) if state else None,evaluations=ordered,subjective_verdict_pending=True))
-        captions=sorted({r['caption'] for r in rows if r['split']=='train' and r.get('kind','real')=='real'})
-        save(out/'prompts.json',dict(version=1,source=dict(name=config.get('name','Style'),unique_prompts=len(captions)),dice=dict(instrumental=captions)))
+        select_checkpoints(out,rows,config)
     save(out/'run.json',dict(status='stopped' if (out/'stop.request').exists() else 'completed',stage=args.phase,family=args.family,
                              elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,identity_sha256=run_hash,output=str(native)))
     if args.phase=='fit':

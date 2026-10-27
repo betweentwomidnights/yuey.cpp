@@ -1,5 +1,13 @@
 # Yuey training workflow: alignment with SA3 Studio and gary4local
 
+The first implementation is now available in the draft
+[local training workflow](training.md), with measured
+[conditioning optimizations](training-optimization-2026-10-27.md). The original
+contract below records the research-stage boundaries. Its previously described
+companion/API, durable named runs, device ownership and paired publication now
+have an initial implementation; automatic neutral replay, broader musical
+validation and downstream Gary integration remain outside that implementation.
+
 The reference is the trainer in `C:/dev/sa3.cpp/web/train.html`, backed by
 `tools/sa3-train-web.cpp` and `src/train_web_run.h`, and the native job/catalog
 integration described in gary4local's `docs/sa3-cpp-migration.md`. This is local

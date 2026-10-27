@@ -8,10 +8,28 @@ from train_ar_run import grouped_loss
 from yue2_training_audit import digest,native_runtime_identity
 
 
+def select_checkpoints(out,rows,config):
+    validation=[r for r in rows if r['split']=='validation'];retention=[r for r in rows if r['split']=='retention'];metrics=[]
+    if not validation:raise ValueError('Heldout selection requires validation')
+    for path in out.glob('native*/history.jsonl'):
+        for line in path.read_text().splitlines():
+            metric=json.loads(line)
+            if 'heldout_eval' not in metric:continue
+            metric['heldout_group_mean']=grouped_loss(metric['heldout_per_sample'],validation)
+            metric['retention_group_mean']=grouped_loss(metric.get('retention_per_sample',[]),retention)
+            metric['segment']=str(path.parent);metrics.append(metric)
+    by_step={m['step']:m for m in metrics};ordered=[by_step[n] for n in sorted(by_step)]
+    selected=min(ordered,key=lambda m:m['heldout_group_mean']);folder=Path(selected['segment']);n=selected['step']
+    adapter=folder/f'step-{n}.gguf';state=folder/f'step-{n}.state.gguf' if n else None
+    save(out/'selection.json',dict(method='Minimum recording-balanced heldout flow MSE including zero; neutral retention and listening separate',
+        initial=ordered[0],selected=selected,final=ordered[-1],adapter=str(adapter),adapter_sha256=digest(adapter),
+        state=str(state) if state else None,evaluations=ordered,subjective_verdict_pending=True))
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',type=Path,required=True)
-    parser.add_argument('--phase',choices=['probe','fit','post-probe'],required=True)
+    parser.add_argument('--phase',choices=['probe','fit','post-probe','select'],required=True)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--segment',default='native')
     args=parser.parse_args();config=json.loads(args.config.read_text())
@@ -38,7 +56,11 @@ def main():
             raise ValueError('Frozen conditioning belongs to different '+key+' weights')
     identity_path=out/'identity.json'
     if identity_path.exists() and json.loads(identity_path.read_text())!=identity:raise ValueError('Resolved NAR identity changed')
-    save(identity_path,identity);run_hash=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
+    save(identity_path,identity)
+    if args.phase=='select':
+        select_checkpoints(out,rows,config)
+        return
+    run_hash=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     command=list(map(str,[binary,'--model',models['base'],'--conditioning-lora',models['companion'],
         '--conditioning-lora',models['ar'],'--dataset',manifest,'--stream-samples','--shuffle-samples','--group-samples',
         '--f32-projections','--noise-schedule',training.get('noise_schedule','uniform'),'--rank',training['rank'],
@@ -96,21 +118,7 @@ def main():
     for row in rows:
         if digest(cache_path(row))!=row['cache_sha256']:raise ValueError('NAR cache changed during fitting')
     if args.phase=='fit':
-        validation=[r for r in rows if r['split']=='validation'];retention=[r for r in rows if r['split']=='retention'];metrics=[]
-        if not validation:raise ValueError('Heldout selection requires validation')
-        for path in out.glob('native*/history.jsonl'):
-            for line in path.read_text().splitlines():
-                metric=json.loads(line)
-                if 'heldout_eval' not in metric:continue
-                metric['heldout_group_mean']=grouped_loss(metric['heldout_per_sample'],validation)
-                metric['retention_group_mean']=grouped_loss(metric.get('retention_per_sample',[]),retention)
-                metric['segment']=str(path.parent);metrics.append(metric)
-        by_step={m['step']:m for m in metrics};ordered=[by_step[n] for n in sorted(by_step)]
-        selected=min(ordered,key=lambda m:m['heldout_group_mean']);folder=Path(selected['segment']);n=selected['step']
-        adapter=folder/f'step-{n}.gguf';state=folder/f'step-{n}.state.gguf' if n else None
-        save(out/'selection.json',dict(method='Minimum recording-balanced heldout flow MSE including zero; neutral retention and listening separate',
-            initial=ordered[0],selected=selected,final=ordered[-1],adapter=str(adapter),adapter_sha256=digest(adapter),
-            state=str(state) if state else None,evaluations=ordered,subjective_verdict_pending=True))
+        select_checkpoints(out,rows,config)
         step=json.loads((native/'history.jsonl').read_text().splitlines()[-1])['step']
         save(out/'progress.json',dict(stage='fit',status='completed' if step>=target else 'stopped',step=step,target_steps=target,
             tokens_seen=step*data['frames'],observed_gpu_peak_mib=peak))

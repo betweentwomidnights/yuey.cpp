@@ -87,6 +87,7 @@ def prepare_scores(config,out):
         real_frames=min(source['frames'],math.floor(source['seconds']*25))
         for start in window_starts(real_frames,frames,metadata['bpm']):planned.append((source,metadata,start))
     for number,(source,metadata,start) in enumerate(planned):
+        if config.get('stop_file') and Path(config['stop_file']).exists():return
         path=Path(source['path'])
         if digest(path.with_suffix('.txt'))!=source['caption_sha256']:raise ValueError('Caption changed: '+path.name)
         folder=out/example_directory/(source['sha256'][:12]+f'-{start:07d}-{frames}')
@@ -178,6 +179,7 @@ def main():
             reusable[row['sha256']]=manifest_path.parent/row['sha256'][:12]/'full.i32'
     rows=[]
     for index,source in enumerate(config['sources']):
+        if config.get('stop_file') and Path(config['stop_file']).exists():return
         path=Path(source['path']);sha=digest(path)
         if sha!=source['sha256']:raise ValueError('Source changed: '+path.name)
         folder=out/'semantic'/sha;folder.mkdir(parents=True,exist_ok=True)

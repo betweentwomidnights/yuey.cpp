@@ -161,6 +161,7 @@
     <nav>
       <button class="nav active" data-view="create">create</button>
       <button class="nav" data-view="transform">remix</button>
+        <a href="/training" style="padding:10px 12px;color:var(--muted);text-decoration:none">train a style</a>
     </nav>
     <button class="nav settings-nav" data-view="models">models &amp; runtime</button>
     <div class="backend"><strong><i class="dot connecting"></i><span id="connection">connecting…</span></strong><span id="device-mini">local backend</span></div>
@@ -334,22 +335,26 @@
   }
   function syncStyle(fillEmpty = false) {
     const koan = $('style-lora').value.startsWith('koan-');
-    if (koan && fillEmpty) {
-      for (const id of ['prompt','remix-prompt','score-prompt']) if (!$(id).value.trim()) $(id).value = koanPrompt;
+    const trained = state.trainedStyles?.get($('style-lora').value);
+    if ((koan || trained?.instrumental) && fillEmpty) {
+      for (const id of ['prompt','remix-prompt','score-prompt']) if (!$(id).value.trim()) $(id).value = trained?.prompts?.[0] || koanPrompt;
       for (const id of ['instrumental','remix-instrumental','score-instrumental']) $(id).checked = true;
-      state.instrumentalAdapterEnabled = !!state.props?.capabilities?.instrumental_adapter;
+      state.instrumentalAdapterEnabled = !!trained?.instrumental || !!state.props?.capabilities?.instrumental_adapter;
       syncInstrumental(); syncRemixInstrumental(); syncScoreInstrumental();
     }
-    $('style-prompt').hidden = !koan;
+    $('style-prompt').hidden = !koan && !trained?.prompts?.length;
+    $('style-prompt').textContent = trained ? 'use a training caption' : 'use Koan prompt';
     $('style-strength').disabled = !$('style-lora').value;
     $('style-help').textContent = $('style-lora').value
       ? 'style applies to new audio in create, remix and score rendering. change the prompt or strength to experiment; use none for a base-model comparison.'
       : 'no style adapter selected. the instrumental planner setting still applies.';
     if (koan) $('style-help').textContent += ' include koan_palette in your description, or start with the Koan prompt.';
     if (koan && state.instrumentalAdapterEnabled === false) $('style-help').textContent += ' enable instrumental planner in models & runtime for the trained Koan setup.';
+    if (trained) $('style-help').textContent += ` trained trigger: ${trained.trigger}. uses the frozen instrumental companion before the paired style adapter.`;
     syncContinuationMethod();
   }
   function renderStyleOptions(loras) {
+    state.trainedStyles = new Map(loras.filter(x => x.training).map(x => [x.name, x.training]));
     const current = state.styleOptionsLoaded ? $('style-lora').value : stylePreference?.name;
     const styles = loras.filter(x => !/^yue2-(instrumental-cot|realaudio-nar)/.test(x.name));
     $('style-lora').replaceChildren(new Option('none · base model', ''));
@@ -362,7 +367,7 @@
         'koan-yue2-r32-ar-dora150': 'Koan · AR DoRA 150 + native NAR',
         'koan-yue2-r32-ar-dora150-nar400': 'Koan · AR DoRA 150 + NAR LoRA 400'
       };
-      const label = labels[item.name] || item.name;
+      const label = item.training?.name || labels[item.name] || item.name;
       $('style-lora').add(new Option(label, item.name));
     }
     const preferred = current ?? (styles.find(x => x.name === 'koan-yue2-r32-ar150-nar400')?.name || '');
@@ -373,7 +378,7 @@
   }
   $('style-lora').onchange = () => { syncStyle(true); rememberStyle(); if (state.props) renderProps(); };
   for (const id of ['style-strength','style-temperature','style-steps','style-ceiling']) $(id).onchange = rememberStyle;
-  $('style-prompt').onclick = () => { for (const id of ['prompt','remix-prompt','score-prompt']) $(id).value = koanPrompt; };
+  $('style-prompt').onclick = () => { const pool=state.trainedStyles?.get($('style-lora').value)?.prompts; const prompt=pool?.length ? pool[Math.floor(Math.random()*pool.length)] : koanPrompt; for (const id of ['prompt','remix-prompt','score-prompt']) $(id).value = prompt; };
   const chordRoots = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
   const chordQualities = [
     ['', 'major'], ['m', 'minor'], ['6', 'major 6'], ['m6', 'minor 6'], ['7', 'dominant 7'],
@@ -1014,14 +1019,16 @@
     state.deviceLabel = accelerator ? `${accelerator.description} · ${humanBytes(accelerator.memory_total_bytes)}` : 'cpu mode';
     $('model-folder').textContent = `model folder: ${p.models.directory}`;
     $('devices').innerHTML = p.devices.map(d => `<div class="device"><div><b>${escapeHtml(d.description)}</b><br><span>${escapeHtml(d.backend)} · ${escapeHtml(d.type.replaceAll('_', ' '))}</span></div><span>${humanBytes(d.memory_free_bytes)} free / ${humanBytes(d.memory_total_bytes)}</span></div>`).join('');
-    const instrumentalAvailable = !!p.capabilities.instrumental_adapter;
+    const trainedCompanion = !!state.trainedStyles?.get($('style-lora').value)?.instrumental;
+    const instrumentalAvailable = !!p.capabilities.instrumental_adapter || trainedCompanion;
     const continuationAvailable = !!p.capabilities.continuation_adapter;
     if (state.instrumentalAdapterEnabled == null) state.instrumentalAdapterEnabled = instrumentalAvailable;
     if (state.audioContinuationAdapterEnabled == null) state.audioContinuationAdapterEnabled = continuationAvailable;
     if (!instrumentalAvailable) state.instrumentalAdapterEnabled = false;
+    if (trainedCompanion) state.instrumentalAdapterEnabled = true;
     if (!continuationAvailable) state.audioContinuationAdapterEnabled = false;
     renderNaturalMax();
-    $('use-instrumental-adapter').disabled = !instrumentalAvailable;
+    $('use-instrumental-adapter').disabled = !instrumentalAvailable || trainedCompanion;
     $('use-instrumental-adapter').checked = state.instrumentalAdapterEnabled;
     $('instrumental-adapter-state').textContent = instrumentalAvailable ? (state.instrumentalAdapterEnabled ? 'enabled' : 'bypassed') : 'not installed';
     $('instrumental-adapter-state').className = `pill ${state.instrumentalAdapterEnabled ? 'good' : ''}`;
