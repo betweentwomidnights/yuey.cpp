@@ -89,7 +89,9 @@ Completed-fit selection can be recovered without adding updates.
 
 The server unloads its inference models before launching the worker and rejects
 new compute requests while the worker lives. PID plus creation identity prevents
-PID-reuse mistakes. A newly constructed server adopts an existing worker from the
+PID-reuse mistakes. The worker waits for committed ownership before touching
+the device, recognizing the Windows venv redirector as well as a direct Python
+process. A newly constructed server adopts an existing worker from the
 registry. On Windows, a worker-owned Job Object terminates descendants if the
 coordinator crashes. Normal monitoring errors still wait for the child. Worker
 status and checkpoints survive closing the browser; keep the local runtime and

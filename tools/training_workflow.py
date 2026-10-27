@@ -24,27 +24,40 @@ from yue2_training_audit import digest
 class Stopped(Exception): pass
 
 
-def process_identity():
+def process_identity(pid=None):
+    pid=os.getpid() if pid is None else pid
     if os.name=='nt':
         from ctypes.wintypes import FILETIME
         kernel=ctypes.WinDLL('kernel32',use_last_error=True)
         kernel.GetCurrentProcess.restype=ctypes.c_void_p
+        kernel.OpenProcess.argtypes=[ctypes.c_uint32,ctypes.c_int,ctypes.c_uint32]
+        kernel.OpenProcess.restype=ctypes.c_void_p
+        kernel.CloseHandle.argtypes=[ctypes.c_void_p]
         kernel.GetProcessTimes.argtypes=[ctypes.c_void_p,*([ctypes.POINTER(FILETIME)]*4)]
         times=[FILETIME() for _ in range(4)]
-        if not kernel.GetProcessTimes(kernel.GetCurrentProcess(),*[ctypes.byref(t) for t in times]):
-            raise RuntimeError('Cannot identify training worker creation time')
+        process=kernel.GetCurrentProcess() if pid==os.getpid() else kernel.OpenProcess(0x1000,False,pid)
+        try:
+            if not process or not kernel.GetProcessTimes(process,*[ctypes.byref(t) for t in times]):
+                raise RuntimeError('Cannot identify training worker creation time')
+        finally:
+            if process and pid!=os.getpid():kernel.CloseHandle(process)
         return str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime)
-    text=Path('/proc/self/stat').read_text()
+    text=Path(f'/proc/{pid}/stat').read_text()
     return text[text.rfind(')')+2:].split()[19]
 
 
 def wait_for_owner(run,timeout=5):
     """Never touch the device before the server commits its ownership record."""
-    identity=process_identity();deadline=time.monotonic()+timeout
+    owners={(os.getpid(),process_identity())}
+    if os.name=='nt':
+        # Windows venv python.exe is a redirector that stays alive while the
+        # real interpreter runs. The server owns that launcher's handle/PID.
+        parent=os.getppid();owners.add((parent,process_identity(parent)))
+    deadline=time.monotonic()+timeout
     while True:
         try:
             owner=json.loads((Path(run)/'owner.json').read_text())
-            if owner.get('pid')==os.getpid() and owner.get('identity')==identity:return
+            if (owner.get('pid'),owner.get('identity')) in owners:return
         except (OSError,json.JSONDecodeError):pass
         if time.monotonic()>=deadline:raise RuntimeError('Training worker ownership was not committed')
         time.sleep(.02)

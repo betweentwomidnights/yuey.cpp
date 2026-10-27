@@ -208,6 +208,27 @@
       "ar_step": 12,
       "nar_step": 12,
       "published_sha256": "0aeb9647927b331a17fff4576164be3da4a8066fe9cecf8453e0c2abb8797708"
+    },
+    "gated-smoke": {
+      "status": "published",
+      "settings": {
+        "window_seconds": 4,
+        "rank": 4,
+        "ar_steps": 4,
+        "nar_steps": 4,
+        "ar_lr": 2e-05,
+        "nar_lr": 3e-05,
+        "kl_weight": 0.2,
+        "seed": 831001,
+        "eval_every": 2,
+        "family": "lora",
+        "trigger": "gated_smoke"
+      },
+      "ar_step": 4,
+      "nar_step": 4,
+      "published_sha256": "793cb65f60f965add8ed61c87cd3e62c883a0f449265bd591693c734f34a50f2",
+      "committed_owner_handshake": true,
+      "caption_pool_and_display_name_verified_in_browser": true
     }
   },
   "inference": {
@@ -220,8 +241,15 @@
   "limitations": [
     "Benchmarks are individual worst-prefix windows, not a timed full-dataset retrain.",
     "CPU and CUDA conditioning differ by normal backend rounding; new cache identities are separate.",
-    "Actual server restart / second-server launch were blocked by automatic approval review; native fresh-manager/PID-reuse/stop-ownership tests passed.",
     "Initial UI recipe does not automatically generate the research run neutral replay/retention controls.",
-    "Synthetic two-recording fixtures exercise orchestration, not musical quality."
-  ]
+    "Synthetic two-recording fixtures exercise orchestration, not musical quality.",
+    "User manually restarted the HTTP server; durable history and automatic companion inference pass. Restart during a live GPU worker is covered by native owner-adoption tests, not an actual interrupted-server exercise."
+  ],
+  "restart_verification": {
+    "durable_runs_recovered": true,
+    "automatic_companion_inference": true,
+    "automatic_vs_explicit_companion_wav_byte_identical": true,
+    "wav_sha256": "2d4ff9a350e42118c5c0b188d070be2a0bf3db03e423d9ba665e5059efd86de1",
+    "active_worker_restart_tested": false
+  }
 }

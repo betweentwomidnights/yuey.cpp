@@ -96,9 +96,15 @@ the style folder differs from the installed model folder, and rejects an
 incompatible fixed prefix. Native tests cover companion relocation, fresh-owner
 adoption, PID creation identity, path guards and retaining ownership after stop.
 
-Automatic approval review blocked stopping/restarting the test HTTP server and
-launching a second instance. Consequently an actual server-restart smoke test
-was not completed at this point; fresh-manager adoption is covered natively.
+After automatic approval review blocked server process control, the user
+manually restarted the updated HTTP server. Durable run history was recovered;
+automatic versus explicit companion rendering produced byte-identical WAVs.
+A further full LoRA4/NAR4 workflow passed the committed-ownership handshake,
+current cache guards, browser publication, display name and caption-pool checks.
+This caught and fixed the Windows venv redirector/worker PID distinction before
+finalizing the draft. Restart during a live GPU worker remains covered by
+native fresh-manager adoption tests rather than an actual interrupted-server
+exercise.
 The small fixtures establish orchestration, not musical quality or rank-32/30s
 resource limits. Those limits come from the prior full training experiment.
 

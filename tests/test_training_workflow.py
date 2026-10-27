@@ -18,6 +18,10 @@ class WorkflowTest(unittest.TestCase):
             root=Path(directory);owner=root/'owner.json'
             owner.write_text(json.dumps(dict(pid=os.getpid(),identity=process_identity())))
             wait_for_owner(root,.01)
+            self.assertEqual(process_identity(),process_identity(os.getpid()))
+            if os.name=='nt':
+                owner.write_text(json.dumps(dict(pid=os.getppid(),identity=process_identity(os.getppid()))))
+                wait_for_owner(root,.01)
             owner.write_text(json.dumps(dict(pid=os.getpid(),identity='stale')))
             with self.assertRaisesRegex(RuntimeError,'not committed'):wait_for_owner(root,.01)
     def test_rejects_unsafe_budgets_and_nonfinite_hyperparameters(self):
