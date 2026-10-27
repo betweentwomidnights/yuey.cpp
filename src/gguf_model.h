@@ -246,6 +246,8 @@ public:
 private:
     friend GgufModel load_gguf_selected(const char *, const char *, int,
         const std::function<bool(const std::string &)> &);
+    friend GgufModel load_gguf_raw_selected(const char *, const char *, int,
+        const std::function<bool(const std::string &)> &);
     friend GgufModel load_gguf(const char *, const char *, int);
     friend GgufModel load_gguf_raw(const char *, const char *, int);
     friend GgufModel load_gguf_raw_impl(const char *, ggml_backend_t, bool);
@@ -330,6 +332,48 @@ inline GgufModel load_gguf_selected(const char * path, const char * device, int 
             ggml_fp32_to_fp16_row(floats.data(),halves.data(),count);
             ggml_backend_tensor_set(read.to,halves.data(),0,halves.size()*sizeof(halves[0]));
         } else ggml_backend_tensor_set(read.to,bytes.data(),0,size);
+    }
+    return model;
+}
+
+// Inference subset loader: retain the original tensor types, unlike the
+// frozen-training loader's BF16-to-F16 conversion. Conditioning must use the
+// same AR arithmetic as the full inference model.
+inline GgufModel load_gguf_raw_selected(const char *path, const char *device, int threads,
+    const std::function<bool(const std::string &)> &select) {
+    GgufModel model;
+    model.backend_=make_backend(device,threads);model.owns_backend_=true;
+    ggml_context *source=nullptr;
+    model.gguf_=gguf_init_from_file(path,{true,&source});
+    std::unique_ptr<ggml_context,decltype(&ggml_free)> metadata(source,ggml_free);
+    if(!model.gguf_||!source)throw gguf_error("cannot read selected inference model");
+    model.context_=ggml_init({ggml_get_mem_size(source),nullptr,true});
+    if(!model.context_)throw gguf_error("cannot create selected inference context");
+    std::unique_ptr<FILE,decltype(&std::fclose)> file(std::fopen(path,"rb"),std::fclose);
+    if(!file)throw gguf_error("cannot open selected inference weights");
+    struct Read {ggml_tensor *tensor;uint64_t offset;size_t bytes;};
+    std::vector<Read> reads;
+    const auto length=file_size(file.get());
+    for(auto *tensor=ggml_get_first_tensor(source);tensor;tensor=ggml_get_next_tensor(source,tensor)) {
+        const std::string name=ggml_get_name(tensor);
+        if(!select(name))continue;
+        const auto index=gguf_find_tensor(model.gguf_,name.c_str());
+        const auto offset=gguf_get_data_offset(model.gguf_)+gguf_get_tensor_offset(model.gguf_,index);
+        const auto bytes=ggml_nbytes(tensor);
+        if(offset>length||bytes>length-offset)throw gguf_error("truncated selected tensor: "+name);
+        auto *copy=ggml_new_tensor(model.context_,tensor->type,GGML_MAX_DIMS,tensor->ne);
+        ggml_set_name(copy,name.c_str());model.tensors_[name]=copy;reads.push_back({copy,offset,bytes});
+    }
+    model.buffer_=ggml_backend_alloc_ctx_tensors(model.context_,model.backend_);
+    if(!model.buffer_)throw gguf_error("cannot allocate selected inference weights");
+    std::fprintf(stderr, "[yue2] selected inference weights: %.2f MiB\n",
+                 ggml_backend_buffer_get_size(model.buffer_) / 1048576.0);
+    std::vector<uint8_t> bytes;
+    for(const auto &read:reads) {
+        bytes.resize(read.bytes);
+        if(!file_seek(file.get(),read.offset)||std::fread(bytes.data(),1,bytes.size(),file.get())!=bytes.size())
+            throw gguf_error("short selected inference tensor read");
+        ggml_backend_tensor_set(read.tensor,bytes.data(),0,bytes.size());
     }
     return model;
 }

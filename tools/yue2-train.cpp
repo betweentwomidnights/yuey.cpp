@@ -8,6 +8,8 @@
 #include <array>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -56,10 +58,13 @@ yue2::NarTrainingSample load(const std::string &path, const std::string &model,
     sample.conditioning.token_count = cache.u32("yue2.training.ar_tokens");
     auto values = [&](const char *name) {
         auto *t = cache.get(name);
-        if (t->type != GGML_TYPE_F32)
-            throw std::runtime_error("training cache must be F32");
         std::vector<float> v(ggml_nelements(t));
-        ggml_backend_tensor_get(t, v.data(), 0, v.size() * 4);
+        if(t->type==GGML_TYPE_F32)ggml_backend_tensor_get(t,v.data(),0,v.size()*4);
+        else if(t->type==GGML_TYPE_F16 && (std::string(name)=="keys"||std::string(name)=="values")) {
+            std::vector<ggml_fp16_t> half(v.size());
+            ggml_backend_tensor_get(t,half.data(),0,half.size()*sizeof(half[0]));
+            ggml_fp16_to_fp32_row(half.data(),v.data(),v.size());
+        } else throw std::runtime_error("clean targets must be F32; conditioning must be F32 or F16");
         return v;
     };
     sample.clean_latents = values("clean");
@@ -69,7 +74,8 @@ yue2::NarTrainingSample load(const std::string &path, const std::string &model,
 }
 void prepare(const std::map<std::string, std::string> &args,
              const std::vector<yue2::LoraAdapterSpec> &fixed,
-             const std::vector<yue2::LoraAdapterSpec> &conditioning_adapters) {
+             const std::vector<yue2::LoraAdapterSpec> &conditioning_adapters,
+             std::unique_ptr<yue2::AutoregressiveModel> &resident) {
     auto required = [&](const char *name) {
         auto it = args.find(name);
         if (it == args.end())
@@ -104,7 +110,17 @@ void prepare(const std::map<std::string, std::string> &args,
     yue2::AutoregressiveOptions runtime;
     runtime.device = args.count("--device") ? args.at("--device") : "cpu";
     runtime.threads = args.count("--threads") ? std::stoi(args.at("--threads")) : 4;
-    runtime.flash_attention = false;
+    runtime.flash_attention = args.count("--cache-flash-attn")!=0;
+    runtime.conditioning_only=args.count("--conditioning-only")!=0;
+    if(args.count("--conditioning-batch")) {
+        const auto batch=std::stoull(args.at("--conditioning-batch"));
+        if(batch>24576)throw std::runtime_error("conditioning-batch must be in [0,24576]");
+        runtime.conditioning_batch_tokens=static_cast<uint32_t>(batch);
+    }
+    if(runtime.conditioning_only && (args.count("--mint-frames")||args.count("--generate-latents")||args.count("--reference")))
+        throw std::runtime_error("conditioning-only preparation requires supplied tokens and latents");
+    const auto kv_type=args.count("--cache-kv-type")?args.at("--cache-kv-type"):"f32";
+    if(kv_type!="f32"&&kv_type!="f16")throw std::runtime_error("cache-kv-type must be f32 or f16");
     runtime.lora_adapters = fixed;
     runtime.lora_adapters.insert(runtime.lora_adapters.end(), conditioning_adapters.begin(),
                                  conditioning_adapters.end());
@@ -113,7 +129,8 @@ void prepare(const std::map<std::string, std::string> &args,
         runtime.device != "cuda")
         throw std::runtime_error("minting/flow diagnostics currently require --device cuda; CPU "
                                  "supports frozen conditioning caches from supplied latents");
-    yue2::AutoregressiveModel model(required("--model"), runtime);
+    if (!resident) resident = std::make_unique<yue2::AutoregressiveModel>(required("--model"), runtime);
+    auto &model = *resident;
     std::vector<int32_t> codes;
     std::vector<float> clean;
     if (args.count("--mint-frames")) {
@@ -151,6 +168,12 @@ void prepare(const std::map<std::string, std::string> &args,
     gguf_set_val_str(file, "yue2.training.conditioning_adapters",
                      fixed_identity(conditioning_adapters).c_str());
     gguf_set_val_str(file, "yue2.training.prompt", request.style.c_str());
+    gguf_set_val_str(file,"yue2.training.cache.kv_type",kv_type.c_str());
+    if (args.count("--cache-identity"))
+        gguf_set_val_str(file, "yue2.training.cache.identity", args.at("--cache-identity").c_str());
+    gguf_set_val_bool(file,"yue2.training.cache.conditioning_only",runtime.conditioning_only);
+    gguf_set_val_u32(file,"yue2.training.cache.prefill_batch",runtime.conditioning_batch_tokens);
+    gguf_set_val_bool(file,"yue2.training.cache.flash_attention",runtime.flash_attention);
     auto add = [&](const char *name, ggml_type type, const void *data, int64_t a, int64_t b = 1,
                    int64_t c = 1, int64_t d = 1) {
         auto *t = ggml_new_tensor_4d(ctx, type, a, b, c, d);
@@ -159,8 +182,25 @@ void prepare(const std::map<std::string, std::string> &args,
         gguf_add_tensor(file, t);
     };
     add("clean", GGML_TYPE_F32, clean.data(), 64, codes.size());
-    add("keys", GGML_TYPE_F32, conditioning.keys.data(), 128, conditioning.token_count, 8, 28);
-    add("values", GGML_TYPE_F32, conditioning.values.data(), 128, conditioning.token_count, 8, 28);
+    std::vector<ggml_fp16_t> half_keys,half_values;
+    if(kv_type=="f16") {
+        auto exact_half=[](const std::vector<float> &source) {
+            std::vector<ggml_fp16_t> half(source.size());
+            ggml_fp32_to_fp16_row(source.data(),half.data(),source.size());
+            for(size_t i=0;i<source.size();++i) {
+                const float roundtrip=ggml_fp16_to_fp32(half[i]);
+                if(!std::isfinite(source[i])||std::memcmp(&roundtrip,&source[i],sizeof(float)))
+                    throw std::runtime_error("conditioning cannot be represented losslessly in F16");
+            }
+            return half;
+        };
+        half_keys=exact_half(conditioning.keys);half_values=exact_half(conditioning.values);
+        add("keys",GGML_TYPE_F16,half_keys.data(),128,conditioning.token_count,8,28);
+        add("values",GGML_TYPE_F16,half_values.data(),128,conditioning.token_count,8,28);
+    } else {
+        add("keys", GGML_TYPE_F32, conditioning.keys.data(), 128, conditioning.token_count, 8, 28);
+        add("values", GGML_TYPE_F32, conditioning.values.data(), 128, conditioning.token_count, 8, 28);
+    }
     add("prefix", GGML_TYPE_I32, prefix.data(), prefix.size());
     add("codes", GGML_TYPE_I32, codes.data(), codes.size());
     std::vector<float> reference;
@@ -212,6 +252,11 @@ int main(int argc, char **argv) {
                              "tokenizer/prompt/ABC.\n"
                              "  --conditioning-lora AR.gguf (repeat) freezes AR adapters "
                              "into caches.\n"
+                             "  [--conditioning-only] omit unused NAR/head weights; supplied tokens/latents only.\n"
+                             "  [--cache-kv-type f32|f16] F16 preserves original cache values losslessly.\n"
+                             "  [--conditioning-batch N --cache-flash-attn] bounded causal prefill and fused GPU attention.\n"
+                             "  --prepare-batch PLAN.json reuses one AR-only model for an array of\n"
+                             "  {prefix,tokens,latents,cache-out,cache-identity}; --stop-file stops between items.\n"
                              "Train: --model BASE.gguf --sample sample.gguf (repeat) --out "
                              "DIR "
                              "--identity HASH\n"
@@ -243,7 +288,7 @@ int main(int argc, char **argv) {
             if (key == "--prepare" || key == "--reference" || key == "--probe-only" ||
                 key == "--fixed-noise" || key == "--generate-latents" ||
                 key == "--f32-projections" || key == "--shuffle-samples" || key == "--dora" ||
-                key == "--group-samples" || key == "--stream-samples") {
+                key == "--group-samples" || key == "--stream-samples" || key == "--conditioning-only" || key == "--cache-flash-attn") {
                 args[key] = "1";
                 continue;
             }
@@ -267,14 +312,45 @@ int main(int argc, char **argv) {
                      key == "--lr" || key == "--seed" || key == "--save-every" ||
                      key == "--eval-every" || key == "--resume" || key == "--diagnostics" ||
                      key == "--abc" || key == "--prefix" || key == "--noise-schedule" ||
-                     key == "--dataset" || key == "--stop-file") {
+                     key == "--dataset" || key == "--stop-file" || key == "--cache-kv-type" || key == "--conditioning-batch" ||
+                     key == "--prepare-batch" || key == "--cache-identity") {
                 if (!args.emplace(key, value).second)
                     throw std::runtime_error("duplicate argument " + key);
             } else
                 throw std::runtime_error("unknown option " + key);
         }
+        if (args.count("--prepare-batch")) {
+            namespace json = yue2::server::json;
+            if (!args.count("--conditioning-only"))
+                throw std::runtime_error("batch preparation requires conditioning-only mode");
+            for (auto key : {"--prefix", "--tokens", "--latents", "--cache-out", "--cache-identity",
+                             "--mint-frames", "--generate-latents", "--reference", "--abc", "--prompt"})
+                if (args.count(key)) throw std::runtime_error("batch inputs must be supplied in the plan");
+            const auto bytes = read<char>(args.at("--prepare-batch"));
+            const auto plan = json::parse(std::string(bytes.begin(), bytes.end()));
+            if (plan.type != json::Type::array || plan.array.empty())
+                throw std::runtime_error("batch plan must be a nonempty array");
+            std::unique_ptr<yue2::AutoregressiveModel> resident;
+            for (size_t i = 0; i < plan.array.size(); ++i) {
+                if (args.count("--stop-file") && std::filesystem::exists(args.at("--stop-file"))) break;
+                auto item_args = args;
+                for (auto key : {"prefix", "tokens", "latents", "cache-out", "cache-identity"}) {
+                    const auto value = json::string(plan.array[i], key);
+                    if (value.empty()) throw std::runtime_error("missing batch input: " + std::string(key));
+                    item_args["--" + std::string(key)] = value;
+                }
+                const auto started = std::chrono::steady_clock::now();
+                prepare(item_args, fixed, conditioning, resident);
+                std::cout << "CACHE_EVENT {\"index\":" << i << ",\"path\":"
+                          << json::quote(item_args.at("--cache-out")) << ",\"seconds\":"
+                          << std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count()
+                          << "}" << std::endl;
+            }
+            return 0;
+        }
         if (args.count("--prepare")) {
-            prepare(args, fixed, conditioning);
+            std::unique_ptr<yue2::AutoregressiveModel> resident;
+            prepare(args, fixed, conditioning, resident);
             return 0;
         }
         std::vector<size_t> groups;

@@ -24,6 +24,13 @@ struct AutoregressiveOptions {
     // Adapters are loaded once, remain unmerged, and compose additively in
     // this order. A zero strength is a validated no-op.
     std::vector<LoraAdapterSpec> lora_adapters;
+    // Cache preparation only: omit NAR and the unused vocabulary head. Keeps
+    // original AR weight types and produces the same frozen K/V. Generation
+    // and flow methods are unavailable; adapters must target resident AR.
+    bool conditioning_only = false;
+    // Bound cache-preparation activation memory. Zero preserves full prefill;
+    // positive values process causal token chunks while retaining exact positions.
+    std::uint32_t conditioning_batch_tokens = 0;
 };
 
 enum class AutoregressivePhase {

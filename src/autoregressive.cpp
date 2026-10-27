@@ -399,10 +399,18 @@ LogitSlice sampled_logits(AutoregressivePhase phase) {
 class AutoregressiveState {
 public:
     AutoregressiveState(const std::string & path, const AutoregressiveOptions & options)
-        : model(detail::load_gguf_raw(
+        : model(options.conditioning_only ? detail::load_gguf_raw_selected(
+              path.c_str(), options.device.empty()?nullptr:options.device.c_str(),options.threads,
+              [](const std::string &name) {
+                  return name=="model.embed_tokens.weight" || name=="model.norm.weight" ||
+                      (name.rfind("model.layers.",0)==0 && name.find(".nar_")==std::string::npos);
+              }) : detail::load_gguf_raw(
               path.c_str(), options.device.empty() ? nullptr : options.device.c_str(),
               options.threads)),
           loras(model, options.lora_adapters) {
+        conditioning_only=options.conditioning_only;
+        conditioning_batch_tokens=options.conditioning_batch_tokens;
+        if(conditioning_batch_tokens>24576)throw ar_error("conditioning batch exceeds context length");
         if (model.string("general.architecture") != "yue2" ||
             model.string("yue2.component") != "generation" ||
             model.u32("yue2.vocab_size") != kGenerationVocabSize ||
@@ -414,7 +422,7 @@ public:
             throw ar_error("unsupported YuE2 generation model");
         }
         require_shape(model, "model.embed_tokens.weight", kHidden, kGenerationVocabSize);
-        require_shape(model, "lm_head.weight", kHidden, kGenerationVocabSize);
+        if(!conditioning_only)require_shape(model, "lm_head.weight", kHidden, kGenerationVocabSize);
         for (int layer = 0; layer < kLayers; ++layer) {
             const auto prefix = "model.layers." + std::to_string(layer) + ".";
             require_shape(model, prefix + "input_layernorm.weight", kHidden);
@@ -428,6 +436,7 @@ public:
             require_shape(model, prefix + "mlp.gate_proj.weight", kHidden, kIntermediate);
             require_shape(model, prefix + "mlp.up_proj.weight", kHidden, kIntermediate);
             require_shape(model, prefix + "mlp.down_proj.weight", kIntermediate, kHidden);
+            if(!conditioning_only) {
             require_shape(model, prefix + "nar_input_layernorm.weight", kHidden);
             require_shape(model, prefix + "nar_pre_mlp_layernorm.weight", kHidden);
             require_shape(model, prefix + "nar_self_attn.q_proj.weight", kHidden, kHidden);
@@ -443,8 +452,10 @@ public:
             require_shape(model, prefix + "nar_mlp.gate_proj.weight", kHidden, kIntermediate);
             require_shape(model, prefix + "nar_mlp.up_proj.weight", kHidden, kIntermediate);
             require_shape(model, prefix + "nar_mlp.down_proj.weight", kIntermediate, kHidden);
+            }
         }
         require_shape(model, "model.norm.weight", kHidden);
+        if(!conditioning_only) {
         require_shape(model, "vae2llm.weight", 64, kHidden);
         require_shape(model, "vae2llm.bias", kHidden);
         require_shape(model, "time_embedder.mlp.0.weight", 256, kHidden);
@@ -454,6 +465,7 @@ public:
         require_shape(model, "latent_pos_embed.pe", kHidden, 24576);
         require_shape(model, "llm2vae.weight", kHidden, 64);
         require_shape(model, "llm2vae.bias", 64);
+        }
 
         ggml_backend_t backends[] = {model.backend(), nullptr};
         std::size_t backend_count = 1;
@@ -481,6 +493,7 @@ public:
     }
 
     std::vector<float> run(const std::vector<std::int32_t> & ids) {
+        if(conditioning_only)throw ar_error("conditioning-only model cannot produce logits");
         std::lock_guard<std::mutex> lock(mutex);
         if (ids.empty() || ids.size() > 24576) {
             throw std::invalid_argument("YuE2 AR token count must be in [1,24576]");
@@ -581,6 +594,7 @@ public:
         KvCache & cache,
         const std::vector<std::int32_t> & ids,
         LogitSlice slice = {}) {
+        if(conditioning_only)throw ar_error("conditioning-only model cannot generate");
         std::lock_guard<std::mutex> lock(mutex);
         return append_locked(cache, ids, slice);
     }
@@ -592,7 +606,7 @@ public:
     std::vector<float> append_locked(
         KvCache & cache,
         const std::vector<std::int32_t> & ids,
-        LogitSlice slice = {}) {
+        LogitSlice slice = {}, bool compute_logits = true) {
         if (ids.empty() || cache.position() + ids.size() > cache.capacity()) {
             throw std::invalid_argument("YuE2 AR append exceeds the KV-cache capacity");
         }
@@ -602,7 +616,7 @@ public:
             }
         }
 
-        if (slice.count == 0 || slice.first + slice.count > kGenerationVocabSize) {
+        if (compute_logits && (slice.count == 0 || slice.first + slice.count > kGenerationVocabSize)) {
             throw std::invalid_argument("YuE2 AR logit slice is out of range");
         }
         cache.reserve(cache.position() + ids.size());
@@ -648,12 +662,13 @@ public:
                 context.get(), hidden,
                 mlp(context.get(), model, loras, normalized, layer));
         }
+        ggml_tensor *output=nullptr;
+        if(compute_logits) {
         hidden = rms_norm(context.get(), hidden, model.get("model.norm.weight"));
         auto * last_hidden = ggml_view_1d(
             context.get(), hidden, kHidden,
             static_cast<std::size_t>(steps - 1) * hidden->nb[1]);
         auto * head = model.get("lm_head.weight");
-        ggml_tensor * output = nullptr;
         if (loras.adapts(head)) {
             output = ggml_view_1d(
                 context.get(), linear(context.get(), loras, last_hidden, head),
@@ -671,6 +686,7 @@ public:
         output = ggml_cont(context.get(), output);
         ggml_set_name(output, "yue2.ar.cached_logits");
         ggml_build_forward_expand(graph, output);
+        }
         static const bool report_nodes = std::getenv("YUE2_DEBUG_GRAPH_NODES") != nullptr;
         if (report_nodes) {
             static bool reported = false;
@@ -724,11 +740,15 @@ public:
             throw ar_error(std::string("cached forward graph failed: ") +
                 ggml_status_to_string(status));
         }
+        if (conditioning_only && std::getenv("YUE2_DEBUG_GRAPH_NODES"))
+            std::fprintf(stderr, "[yue2] conditioning scratch: %.2f MiB (%zu tokens)\n",
+                ggml_backend_sched_get_buffer_size(scheduler, model.backend()) / 1048576.0, ids.size());
+        cache.advance(ids.size());
+        if(!compute_logits)return {};
         std::vector<float> logits(
             kGenerationVocabSize, -std::numeric_limits<float>::infinity());
         ggml_backend_tensor_get(
             output, logits.data() + slice.first, 0, slice.count * sizeof(float));
-        cache.advance(ids.size());
         return logits;
     }
 
@@ -760,6 +780,8 @@ public:
     ggml_backend_t cpu_backend = nullptr;
     ggml_backend_sched_t scheduler = nullptr;
     bool flash = false;
+    bool conditioning_only = false;
+    std::uint32_t conditioning_batch_tokens = 0;
     // Attend over the whole KV cache, masking the rows past the position,
     // instead of a window that grows a row per token. The growing window
     // changes the graph every step, and the CUDA backend only replays a
@@ -1027,6 +1049,7 @@ std::vector<float> AutoregressiveState::solve_flow_chunk(
     std::uint32_t ode_steps,
     float start_noise_level,
     const AutoregressiveControl & control) {
+    if(conditioning_only)throw ar_error("conditioning-only model cannot synthesize audio");
     std::lock_guard<std::mutex> lock(mutex);
     if (ar_tokens.empty() || noise.empty() || noise.size() % 64 != 0 || ode_steps < 1) {
         throw std::invalid_argument("invalid YuE2 NAR chunk inputs");
@@ -1273,6 +1296,7 @@ std::vector<float> AutoregressiveModel::logits(
 
 std::unique_ptr<AutoregressiveSession> AutoregressiveModel::create_session(
     std::size_t capacity) {
+    if (state_->conditioning_only) throw ar_error("conditioning-only model cannot create generation sessions");
     if (capacity < 1 || capacity > 24576) {
         throw std::invalid_argument("YuE2 AR session capacity must be in [1,24576]");
     }
@@ -1405,7 +1429,11 @@ FrozenNarConditioning AutoregressiveModel::freeze_nar_conditioning(
     ids.push_back(kMusicEndToken);
     std::lock_guard<std::mutex> lock(state_->mutex);
     KvCache cache(state_->model.backend(), ids.size());
-    state_->append_locked(cache, ids, {0,1});
+    const size_t batch=state_->conditioning_batch_tokens?state_->conditioning_batch_tokens:ids.size();
+    for(size_t begin=0;begin<ids.size();begin+=batch) {
+        const auto end=std::min(ids.size(),begin+batch);
+        state_->append_locked(cache,std::vector<int32_t>(ids.begin()+begin,ids.begin()+end),{0,1},!state_->conditioning_only);
+    }
     FrozenNarConditioning result;
     result.token_count = static_cast<std::uint32_t>(ids.size());
     const auto per_layer = ids.size()*kKvHeads*kHeadDim;
@@ -1429,6 +1457,7 @@ std::vector<float> AutoregressiveModel::flow_velocity(
     const std::vector<std::int32_t> & prefix,
     const std::vector<std::int32_t> & codec,
     const std::vector<float> & values, float noise_fraction) {
+    if(state_->conditioning_only)throw ar_error("conditioning-only model cannot evaluate flow");
     if (prefix.empty() || codec.empty() || values.size()!=codec.size()*64 ||
         prefix.size()+codec.size()*2+3>24576 || !std::isfinite(noise_fraction) || noise_fraction<=0 || noise_fraction>=1)
         throw std::invalid_argument("invalid flow diagnostic request");
