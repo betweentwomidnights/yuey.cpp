@@ -166,6 +166,31 @@ button draws from that pool; old named choices/preferences are preserved.
 The API is local, like the inference server. Do not expose it to untrusted
 clients: dataset folder paths refer to the server's filesystem.
 
+## Disk use
+
+Most of a run's disk is two caches derived from the frozen AR expert, not the
+dataset. On the 166-window, 38-recording laptop corpus (30-second windows):
+
+| Item | Size | Lifetime |
+| --- | ---: | --- |
+| NAR conditioning (AR K/V, F16, 112 KiB per token) | 26.1 GiB | Until publish |
+| AR KL teachers (recipe 4, F32) | 12.6 GiB | Until AR selection |
+| Checkpoints, rank 32 (adapter plus AdamW state) | about 0.56 GB each | Step zero, heldout-best and latest kept |
+
+Fits keep only step zero, the heldout-best and the newest resumable checkpoint
+per expert. A checkpoint is removed only after its evaluation is recorded and a
+newer complete state exists, so selection and resume are unaffected. The AR
+teacher cache is released once AR selection completes, before NAR conditioning
+is written, so peak disk is the larger of the two caches rather than their sum.
+Dataset review reports `estimated_peak_disk_gib` and `free_disk_gib`; training
+refuses to start when the remaining caches and checkpoints would not fit.
+
+Publishing then releases the conditioning caches, optimizer states, other
+checkpoints, probe diagnostics and audio slices, keeping the selected adapters,
+manifests, metrics and logs. A released run cannot train again; start a new
+run. Set `"keep_caches": true` when creating a run to keep everything for later
+recalibration.
+
 ## HTTP surface
 
 - `GET /training`: embedded trainer.
@@ -174,7 +199,8 @@ clients: dataset folder paths refer to the server's filesystem.
 - `POST /training/api/runs/<id>/train`: train the matched AR/NAR pair.
 - `POST /training/api/runs/<id>/stop`: request cooperative checkpoint/stop.
 - `POST /training/api/runs/<id>/resume`: continue verified preparation or fitting.
-- `POST /training/api/runs/<id>/publish`: register the reviewed pair.
+- `POST /training/api/runs/<id>/publish`: register the reviewed pair, then
+  release training caches unless the run set `keep_caches`.
 
 See [conditioning benchmarks](training-history.md#conditioning-cache-optimization-2026-10-27) for measured
 speed/memory evidence and numerical limits. SA3 and gary4local remain unchanged;

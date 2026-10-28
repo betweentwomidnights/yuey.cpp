@@ -203,7 +203,7 @@ public:
             for(const auto &[key,value]:body.object)
                 if(key!="id" && key!="dataset" && key!="name" && key!="trigger" && key!="window_seconds" &&
                    key!="ar_steps" && key!="nar_steps" && key!="rank" && key!="family" && key!="ar_lr" &&
-                   key!="nar_lr" && key!="kl_weight" && key!="seed" && key!="eval_every" && key!="evaluation_scope") throw std::invalid_argument("Unknown training setting: "+key);
+                   key!="nar_lr" && key!="kl_weight" && key!="seed" && key!="eval_every" && key!="evaluation_scope" && key!="keep_caches") throw std::invalid_argument("Unknown training setting: "+key);
             if(active_locked() || !reserve()) return error_response(409,"The device is in use","training");
             p=root_/id; fs::create_directory(p);
             // Pin defaults for new jobs; existing immutable requests keep their

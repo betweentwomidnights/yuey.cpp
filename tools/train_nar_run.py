@@ -4,7 +4,7 @@ import argparse,hashlib,json,os,subprocess,time
 from pathlib import Path
 import gguf
 from prepare_ar_dataset import save,wait_for_inference
-from train_ar_run import grouped_loss,evaluation_history,native_metric_paths
+from train_ar_run import grouped_loss,evaluation_history,native_metric_paths,prune_checkpoints,state_step
 from training_provenance import digest,digests,native_runtime_identity
 
 
@@ -95,6 +95,7 @@ def main():
     parser.add_argument('--phase',choices=['probe','fit','post-probe','select'],required=True)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--segment',default='native')
+    parser.add_argument('--prune-checkpoints',action='store_true',help='Keep only step zero, heldout-best and latest checkpoints')
     args=parser.parse_args();config=json.loads(args.config.read_text())
     if config['format']!='yue2-nar-training-v1':raise ValueError('Unsupported NAR job')
     if Path(args.segment).name!=args.segment:raise ValueError('Segment must be a directory name')
@@ -144,7 +145,7 @@ def main():
     if args.phase=='fit':
         native=out/args.segment
         if args.resume:
-            reader=gguf.GGUFReader(str(args.resume));resumed=int(reader.get_field('yue2.training.step').contents())
+            resumed=state_step(args.resume)
             command+=['--resume',str(args.resume)]
         if resumed>=target:raise ValueError('Target budget already reached')
         command+=list(map(str,['--out',native,'--steps',target-resumed,'--save-every',training.get('checkpoint_every',100),
@@ -189,6 +190,7 @@ def main():
                                 else:activity='Training'
                                 native_progress.activity(activity);progress=native_progress.read()
                             progress.update(step=step,evaluation_history=evaluations)
+                            if args.phase=='fit' and args.prune_checkpoints:prune_checkpoints(out,rows,'nar')
                     save(out/'progress.json',dict(stage=args.phase,status='running',target_steps=target,
                          tokens_seen=progress['step']*data['frames'],elapsed_seconds=time.monotonic()-start,
                          observed_gpu_peak_mib=peak,**progress))
@@ -206,6 +208,7 @@ def main():
         if value!=row['cache_sha256']:raise ValueError('NAR cache changed during fitting')
     if args.phase=='fit':
         select_checkpoints(out,rows,config)
+        if args.prune_checkpoints:prune_checkpoints(out,rows,'nar')
         step=json.loads((native/'history.jsonl').read_text().splitlines()[-1])['step']
         save(out/'progress.json',dict(stage='fit',status='completed' if step>=target else 'stopped',step=step,target_steps=target,
             tokens_seen=step*data['frames'],observed_gpu_peak_mib=peak,evaluation_history=evaluation_history(out,rows,'nar')))

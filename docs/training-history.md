@@ -260,3 +260,23 @@ and after.
 - **Parity:** optimizer tensors, adapters, sampler state and losses are
   bit-identical to the in-memory path on CPU and CUDA.
 - **Compatibility:** recipes 1 to 3 keep the in-memory path.
+
+## Disk retention (2026-10-28)
+
+- **Problem:** a 38-recording run with 30 s windows peaked at about 50 GB of
+  disk. That was the NAR conditioning (26.1 GiB), the AR teachers (12.6 GiB)
+  and every checkpoint (about 9.5 GB), all kept until manually deleted.
+- **Change, with numerics unchanged:**
+  - fits keep only step zero, the heldout-best and the latest resumable
+    checkpoint;
+  - the teacher cache is released after AR selection, before NAR
+    conditioning;
+  - publishing releases caches, optimizer states, other checkpoints, probe
+    diagnostics and audio slices, unless `keep_caches` is set;
+  - training refuses to start when the estimated peak would not fit.
+- **Found during verification:** on Windows, a live `GGUFReader`
+  memory-maps its file and blocks deletion, so state files are now read
+  through a scoped helper.
+- **Not yet done** (these trade training time or VRAM for disk): an
+  on-the-fly teacher, a rolling conditioning cache with a disk budget, and
+  in-process conditioning on GPUs large enough to hold both experts.

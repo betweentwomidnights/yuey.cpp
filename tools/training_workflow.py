@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -90,6 +91,7 @@ def settings(request):
             raise ValueError(f'{key} must be between {minimum} and {maximum}')
         if integer and int(value)!=value:raise ValueError(key+' must be an integer')
         return int(value) if integer else value
+    if type(request.get('keep_caches',False))!=bool:raise ValueError('keep_caches must be true or false')
     family=request.get('family','dora')
     if family not in ['lora','dora']:raise ValueError('AR family must be lora or dora')
     trigger=request.get('trigger',request['id']+'_style')
@@ -98,7 +100,8 @@ def settings(request):
                 ar_steps=number('ar_steps',800,1,10000,True),nar_steps=number('nar_steps',400,1,10000,True),
                 ar_lr=number('ar_lr',2e-5,1e-7,.001),nar_lr=number('nar_lr',3e-5,1e-7,.001),
                 kl_weight=number('kl_weight',.2,0,5),seed=number('seed',831001,0,2**32-1,True),
-                eval_every=number('eval_every',100,1,1000,True),family=family,trigger=trigger)
+                eval_every=number('eval_every',100,1,1000,True),family=family,trigger=trigger,
+                keep_caches=request.get('keep_caches',False))
     version=request.get('recipe_version',1)
     if type(version)!=int or version not in [1,2,3,4]:raise ValueError('Unsupported training recipe version')
     if version>=2:
@@ -136,6 +139,38 @@ def ar_resource_estimate(eligible,options,device,model_bytes=0):
     return dict(estimated_ar_host_ram_gib=ram/2**30,estimated_teacher_disk_gib=disk/2**30)
 
 
+# Rank-32 adapters train all seven projections in 28 blocks: 34,865,152 F32
+# parameters per expert. A checkpoint is the adapter plus a state holding the
+# factors and both AdamW moments, 16 bytes per parameter. Pruned fits keep at
+# most step zero, heldout-best and latest, plus one being written. Probe
+# diagnostics are bounded by 1 GiB per expert. Derived, not measured.
+PARAMETERS_PER_RANK=34865152/32
+CHECKPOINTS_KEPT=4
+DIAGNOSTICS_GIB=1
+
+
+def checkpoint_allowance(options,experts=2):
+    per_expert=CHECKPOINTS_KEPT*16*PARAMETERS_PER_RANK*options['rank']+DIAGNOSTICS_GIB*2**30
+    return experts*per_expert
+
+
+def conditioning_bytes(eligible):
+    return sum((r['prefix_tokens']+r['frames']+1)*114688+r['frames']*256 for r in eligible)
+
+
+def folder_bytes(folder):
+    return sum(p.stat().st_size for p in Path(folder).rglob('*') if p.is_file()) if Path(folder).exists() else 0
+
+
+def release(paths):
+    """Delete files best-effort; return the bytes actually released."""
+    released=0
+    for path in paths:
+        try:size=path.stat().st_size;path.unlink();released+=size
+        except OSError:pass
+    return released
+
+
 def inventory(folder,seconds,seed):
     import soundfile as sf
     from ar_dataset import caption_metadata
@@ -161,11 +196,8 @@ def inventory(folder,seconds,seed):
 
 
 def latest_state(folder):
-    import gguf
-    candidates=[]
-    for path in Path(folder).glob('native*/step-*.state.gguf'):
-        reader=gguf.GGUFReader(str(path));step=int(reader.get_field('yue2.training.step').contents());del reader
-        candidates.append((step,path))
+    from train_ar_run import state_step
+    candidates=[(state_step(path),path) for path in Path(folder).glob('native*/step-*.state.gguf')]
     return max(candidates,key=lambda x:x[0]) if candidates else (0,None)
 
 
@@ -255,11 +287,14 @@ class Workflow:
                      'vae-targets-native',self.run/'vae-targets/progress.json')
         data=json.loads(Path(cfg['training_dataset']).read_text())
         eligible=[r for r in data['rows'] if r.get('eligible',True)]
+        estimate=ar_resource_estimate(eligible,o,runtime.get('device','cuda'),
+                                      sum(Path(models[k]).stat().st_size for k in ['base','companion']))
+        # The teacher cache is released before NAR conditioning is written.
+        peak=max(estimate['estimated_teacher_disk_gib']*2**30,conditioning_bytes(eligible))+checkpoint_allowance(o)
         self.update(status='ready',stage='dataset-review',examples=len(eligible),excluded=len(data['rows'])-len(eligible),
                     train_examples=sum(r['split']=='train' for r in eligible),validation_examples=sum(r['split']=='validation' for r in eligible),
-                    estimated_conditioning_gib=sum((r['prefix_tokens']+r['frames']+1)*114688+r['frames']*256 for r in eligible)/2**30,
-                    **ar_resource_estimate(eligible,o,runtime.get('device','cuda'),
-                                           sum(Path(models[k]).stat().st_size for k in ['base','companion'])))
+                    estimated_conditioning_gib=conditioning_bytes(eligible)/2**30,estimated_peak_disk_gib=peak/2**30,
+                    free_disk_gib=shutil.disk_usage(self.run).free/2**30,**estimate)
 
     def fit(self,expert,config,folder,budget):
         self.check_stop()
@@ -276,18 +311,40 @@ class Workflow:
             return
         number=1
         while (folder/f'native-{number}').exists():number+=1
-        args=['--config',config,*extra,'--phase','fit','--segment',f'native-{number}']
+        args=['--config',config,*extra,'--phase','fit','--segment',f'native-{number}','--prune-checkpoints']
         if resume:args+=['--resume',resume]
         self.command(script,args,expert+'-fit',folder/'progress.json')
 
+    def check_disk(self,ar_folder,nar_data):
+        """Refuse to start when the remaining caches and checkpoints cannot fit."""
+        data=json.loads(Path(self.config()['training_dataset']).read_text())
+        eligible=[r for r in data['rows'] if r.get('eligible',True)]
+        ar_done=(ar_folder/'selection.json').exists()
+        teacher=0 if ar_done else max(0,ar_resource_estimate(eligible,self.options,'cuda')['estimated_teacher_disk_gib']*2**30-folder_bytes(ar_folder/'teacher'))
+        complete=(nar_data/'dataset.json').exists() and json.loads((nar_data/'dataset.json').read_text()).get('completed')
+        conditioning=0 if complete else max(0,conditioning_bytes(eligible)-folder_bytes(nar_data))
+        needed=max(teacher,conditioning)+checkpoint_allowance(self.options,1 if ar_done else 2)
+        free=shutil.disk_usage(self.run).free
+        if free<needed:
+            raise ValueError(f'Training needs about {needed/2**30:.1f} GiB free on the run drive; {free/2**30:.1f} GiB is free')
+
     def train(self):
         if not (self.run/'vae-targets/index.json').exists():raise ValueError('Prepare and review the dataset first')
+        if self.state.get('caches_released'):raise ValueError('This run released its training caches after publishing; start a new run to train again')
         o=self.options;cfg=self.config();ar_folder=self.data/self.family
+        nar_data=self.run/'nar-conditioning'
+        self.check_disk(ar_folder,nar_data)
         self.fit('ar',self.run/'ar-job.json',ar_folder,o['ar_steps'])
         selection=json.loads((ar_folder/'selection.json').read_text());ar=Path(selection['adapter'])
         if not selection['selected']['step']:raise ValueError('Heldout selection chose the base AR; review the run before acoustic calibration')
         self.update(ar_selection=selection)
-        nar_data=self.run/'nar-conditioning';binary=Path(self.runtime['bin'])/('yue2-train.exe' if os.name=='nt' else 'yue2-train')
+        # NAR never reads the KL teachers, and a completed AR fit is detected
+        # from its retained latest state. Release them before conditioning.
+        teacher=ar_folder/'teacher'
+        if teacher.exists():
+            released=release(sorted(teacher.glob('teacher-*.gguf')))
+            if released:self.update(teacher_cache_released_gib=self.state.get('teacher_cache_released_gib',0)+released/2**30)
+        binary=Path(self.runtime['bin'])/('yue2-train.exe' if os.name=='nt' else 'yue2-train')
         if not (nar_data/'dataset.json').exists() or not json.loads((nar_data/'dataset.json').read_text()).get('completed'):
             self.command('prepare_nar_dataset.py',['--config',self.run/'ar-job.json','--targets',self.run/'vae-targets/index.json',
                 '--ar-adapter',ar,'--binary',binary,'--out',nar_data,'--conditioning-device',self.runtime.get('device','cuda'),
@@ -313,6 +370,18 @@ class Workflow:
         from publish_training_adapter import publish
         result=publish(self.run,self.runtime,self.request,self.state)
         self.update(status='published',stage='published',export=result)
+        if not self.options['keep_caches']:self.release_caches()
+
+    def release_caches(self):
+        """After publishing, keep the selected adapters, manifests, metrics and
+        logs. Conditioning, teachers, optimizer states, other checkpoints,
+        probe diagnostics and audio slices are only needed to keep training."""
+        keep={Path(self.state[k]['adapter']).resolve() for k in ['ar_selection','nar_selection']}
+        files=[*(self.run/'nar-conditioning').rglob('*.gguf'),*(self.data/'examples').glob('*/source.wav')]
+        for folder in [self.data/self.family,self.run/'nar-run']:
+            files+=[p for p in folder.rglob('*.gguf') if p.resolve() not in keep]
+        released=release(files)
+        self.update(caches_released=dict(gib=self.state.get('caches_released',{}).get('gib',0)+released/2**30,at=time.time()))
 
 
 def main():

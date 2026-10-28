@@ -187,6 +187,41 @@ def evaluation_history(out,rows,expert='ar'):
     return dict(evaluations=evaluations,best_so_far=min(evaluations,key=lambda m:m['heldout_group_mean']) if evaluations else None)
 
 
+CHECKPOINT=re.compile(r'step-(\d+)(\.state)?\.gguf')
+
+
+def state_step(path):
+    # GGUFReader memory-maps the file; a live reader blocks deletion on Windows.
+    reader=gguf.GGUFReader(str(path))
+    return int(reader.get_field('yue2.training.step').contents())
+
+
+def prune_checkpoints(out,rows,expert='ar'):
+    """Keep step zero, the heldout-best and the newest resumable checkpoint.
+
+    Selection needs only the minimum-heldout adapter (and its state for a
+    post-probe); resume needs the newest state. Native trainers write adapter,
+    then state, each via .partial -> rename, so a visible state is complete.
+    Only steps with a recorded evaluation are removed: their loss is known not
+    to be the minimum. Returns the bytes released."""
+    files={}
+    for path in Path(out).glob('native*/step-*.gguf'):
+        match=CHECKPOINT.fullmatch(path.name)
+        if match:files.setdefault(int(match[1]),[]).append(path)
+    states=[step for step,paths in files.items() if any(p.name.endswith('.state.gguf') for p in paths)]
+    history=evaluation_history(out,rows,expert)
+    if not states or not history['best_so_far']:return 0
+    latest=max(states);keep={0,latest,history['best_so_far']['step']}
+    evaluated={m['step'] for m in history['evaluations']};released=0
+    for step,paths in files.items():
+        if step in keep or step>latest or step not in evaluated:continue
+        # State first: an adapter is never removed while its state remains.
+        for path in sorted(paths,key=lambda p:not p.name.endswith('.state.gguf')):
+            try:size=path.stat().st_size;path.unlink();released+=size
+            except OSError:break  # A reader may hold it; the next pass retries.
+    return released
+
+
 def select_checkpoints(out,rows,config):
     metrics=[]
     validation=[r for r in rows if r['split']=='validation']
@@ -225,6 +260,7 @@ def main():
     parser.add_argument('--phase',choices=['probe','fit','post-probe','select'],required=True)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--segment',default='native')
+    parser.add_argument('--prune-checkpoints',action='store_true',help='Keep only step zero, heldout-best and latest checkpoints')
     args=parser.parse_args();config=json.loads(args.config.read_text())
     if config['format']!='yue2-ar-training-v1':raise ValueError('Unsupported training job')
     if Path(args.segment).name!=args.segment:raise ValueError('Segment must be a directory name')
@@ -269,7 +305,7 @@ def main():
         native=out/args.segment;cmd+=['--out',str(native),'--save-every',str(training.get('checkpoint_every',100)),
                                     '--eval-every',str(training.get('eval_every',100)),'--stop-file',str(out/'stop.request')]
         if args.resume:
-            state=gguf.GGUFReader(str(args.resume));resumed_step=int(state.get_field('yue2.training.step').contents())
+            resumed_step=state_step(args.resume)
             cmd+=['--resume',str(args.resume)]
         if resumed_step>=target_steps:raise ValueError('Target budget already reached')
         cmd+=['--steps',str(target_steps-resumed_step)]
@@ -317,6 +353,7 @@ def main():
                 try:
                     progress=native_progress.read()
                     if args.phase=='fit':progress['evaluation_history']=evaluation_history(out,rows)
+                    if args.phase=='fit' and args.prune_checkpoints:prune_checkpoints(out,rows)
                     if history.exists():
                         lines=history.read_text().splitlines()
                         if lines:
@@ -344,6 +381,7 @@ def main():
     if teacher:verify_teacher_cache(teacher,teacher_sha,train_rows)
     if args.phase=='fit':
         select_checkpoints(out,rows,config)
+        if args.prune_checkpoints:prune_checkpoints(out,rows)
     save(out/'run.json',dict(status='stopped' if (out/'stop.request').exists() else 'completed',stage=args.phase,family=args.family,
                              elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,identity_sha256=run_hash,output=str(native)))
     if args.phase=='fit':
