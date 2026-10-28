@@ -2,7 +2,7 @@
 
 The first implementation is now available in the draft
 [local training workflow](training.md), with measured
-[conditioning optimizations](training-optimization-2026-10-27.md). The original
+[conditioning optimizations](training-history.md#conditioning-cache-optimization-2026-10-27). The original
 contract below records the research-stage boundaries. Its previously described
 companion/API, durable named runs, device ownership and paired publication now
 have an initial implementation; automatic neutral replay, broader musical

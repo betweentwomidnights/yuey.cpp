@@ -1,6 +1,6 @@
 # Experimental semantic AR LoRA and DoRA training
 
-The [full-corpus Koan experiment](koan-full-training-2026-10-26.md) completed
+The [full-corpus Koan experiment](training-history.md#full-corpus-koan-training-2026-10-26-to-27) completed
 matched rank-32 LoRA/DoRA on 30-second scored windows. It documents
 42-recording preparation, real TXT captions, score conversion checks, measured
 30/60-second resource behavior and reusable manifest/grouped-sampling support.
@@ -8,7 +8,7 @@ The listener prefers full-data DoRA500 with its matched NAR LoRA400 calibration.
 
 This is a native, batch-one trainer for YuE2's semantic AR stage, with fixed
 target-frame counts and masked variable-length prefixes.
-It follows the [failed NAR-only style gate](nar-style-gate-2026-10-25.md).
+It follows the [failed NAR-only style gate](training-history.md#nar-only-style-gate-failed-2026-10-25).
 Its generated-label controls test whether the training path works and can
 change fresh semantic generations. **They are not Koan-trained adapters.**
 The real-audio supervision audit remains a separate listening gate.
@@ -51,8 +51,8 @@ load that companion before the learned DoRA at the same strength used for
 training. The fingerprint is a compatibility check, not a cryptographic model
 identity; experiment manifests also record SHA-256 hashes. Inference strength
 blends the whole normalized delta. See the
-[matched AR comparison](koan-ar-dora-2026-10-26.md) and the separate
-[NAR comparison](koan-nar-dora-2026-10-26.md).
+[matched AR comparison](training-history.md#dora-comparisons-2026-10-26) and the separate
+[NAR comparison](training-history.md#dora-comparisons-2026-10-26).
 
 Per-block recomputation saves 29 hidden boundaries and shares graph workspaces
 between layers of the same shape. Manual causal attention keeps the backward
@@ -82,8 +82,7 @@ relative logit error, 0.00285% aggregate gradient error, 0.0104% maximum
 significant-factor gradient error, and a 7.45e-9 maximum AdamW factor difference.
 The experiment also checks gradients with both factors nonzero after fitting,
 CPU/CUDA EOS behavior, exact two-step resume, and a zero-adapter inference
-control. The [portable evidence](experiments/yue2-ar-semantic-probe-2026-10-25.json)
-contains the final results rather than treating a low training loss as proof
+control. The experiment record keeps the final results rather than treating a low training loss as proof
 of correctness or perceptual style.
 
 The final F32-compute run passes after fitting too: aggregate gradient error
@@ -124,7 +123,7 @@ sound palette is useful, whether the score survives, or whether it matches the
 dataset. The user subsequently confirmed that the sound palette changed in the
 presented unseen-score pair. That confirms an audible change on a new score;
 direction toward the teacher palette, score adherence, fidelity and Koan resemblance were not assigned by
-that feedback. See the [recorded feedback](experiments/yue2-ar-palette-feedback-2026-10-25.json).
+that feedback.
 
 Judge audible change, sound-palette movement, score adherence and artifacts
 separately. Predicting a stored motif, token differences or a lower loss does
@@ -150,13 +149,12 @@ NAR and v9. It recovers 11% of the original token IDs. Non-unique codes and the
 decoder mapping limit what that statistic means: it is not a perceptual style
 score or proof that labels are unusable. It does show the head is not an exact
 token-sequence inverse on this example. Good VAE-only reconstruction does not
-settle semantic-label quality. The [portable target audit](experiments/yue2-ar-target-audit-2026-10-25.json)
-records numerical controls separately. The user reports that these
+settle semantic-label quality. The target audit recorded numerical controls
+separately. The user reports that these
 reconstructions retain rhythmic quality but raise degradation concerns, and
 explicitly chose to try a small pilot anyway. This authorizes an exploratory
 noisy-label test; it is not a target-quality pass. See the
-[target decision](experiments/yue2-ar-target-feedback-2026-10-25.json) and
-[two-track Koan pilot](koan-ar-pilot-2026-10-25.md).
+[two-track Koan pilot](training-history.md#first-koan-ar-pilot-and-score-audit-2026-10-25).
 
 ## Reproduction
 
@@ -225,7 +223,7 @@ on resume. `--teacher-cache DIR` instead streams one
 missing files atomically and exits. Each file records the coordinator teacher
 identity, base/companion SHA-256s, device, frames, AR slots and the window's
 exact prefix/codes (plus manifest SHA-256s). Mismatches are rejected. See
-[the teacher cache measurements](ar-teacher-cache-2026-10-28.md). Validation/retention
+[the teacher cache measurements](training-history.md#recipe-4-streamed-ar-teacher-cache-2026-10-28). Validation/retention
 losses remain plain semantic cross-entropy; retention inputs remain evaluation
 only. Replay supplies ordinary training examples explicitly, with their own
 prefixes and token labels. The independent oracle also recomputes the teacher

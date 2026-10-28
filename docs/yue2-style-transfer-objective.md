@@ -13,8 +13,7 @@ diagnosis, not a production acceptance requirement. Compare the same style
 prompt with and without the adapter to isolate its contribution. The requirement
 to work without dataset reference recordings at inference remains. A proposed
 new trigger must be taught; the existing checkpoints do not establish an
-association with a newly invented alias. See the
-[policy record](experiments/yue2-prompted-style-policy-2026-10-25.json).
+association with a newly invented alias.
 
 The current target is the Koan Sound training subset's sound palette,
 instrumentation, sound-design textures and production character. Cleaner
@@ -28,7 +27,7 @@ with some degradation. Step 128 loses substantial melody. This advances the
 reference-free style objective in that example; it does not establish full
 melody preservation or success across all inference modes. Keep step 32 as the
 working comparison reference and step 128 as a failure control. The
-[expanded score-supervision audit](ar-score-supervision-2026-10-25.md) identifies
+[expanded score-supervision audit](training-history.md#first-koan-ar-pilot-and-score-audit-2026-10-25) identifies
 candidate data for broader, melody-informed training rather than extending
 the two-excerpt run.
 
@@ -44,7 +43,7 @@ was explicitly corrected to B, which is original step48.
 The NAR-only adapters **failed the October 25 neutral-caption capability gate**.
 The user reports that A, B and C sound essentially identical across the tests
 and none match the Koan style. Earlier reductions in degradation remain
-fidelity evidence only. The [diagnosis](nar-style-diagnosis-2026-10-25.md)
+fidelity evidence only. The [diagnosis](training-history.md#nar-only-style-gate-failed-2026-10-25)
 records conditioning mismatches and the proposed semantic-training milestone.
 That result does not rule out prompted use under the user's subsequently
 clarified goal, and it is separate from the later positive AR-pilot feedback.
@@ -91,7 +90,7 @@ not a demonstrated route to the user's goal. No promise is made that the
 current adapter can deliver the full requested style transfer.
 
 After the user authorized the next milestone and supplied a piano/orchestral
-recording, the [style-capability gate](nar-style-gate-2026-10-25.md) was executed
+recording, the [style-capability gate](training-history.md#nar-only-style-gate-failed-2026-10-25) was executed
 without further training. It includes the full source, fresh authored scores,
 standard generation, strength probes and native-decoder controls. Its audio is
 reviewed for style: it failed. There is no demonstrated learned Koan-style
@@ -112,14 +111,14 @@ The user then confirmed an audible palette change in the presented synthetic
 unseen-score comparison, without assigning target resemblance or content/fidelity
 ratings. The real-audio reconstructions were judged rhythmically useful but
 degraded; the user explicitly authorized a small pilot despite those concerns.
-The [two-track Koan AR pilot](koan-ar-pilot-2026-10-25.md) proceeds on that basis,
+The [two-track Koan AR pilot](training-history.md#first-koan-ar-pilot-and-score-audit-2026-10-25) proceeds on that basis,
 without converting authorization into a target-quality pass. Its early
 checkpoint and overfit diagnostic have now received partial review: Koan palette
 and chords are retained, some degradation remains, and the late checkpoint
 loses melody. Unreported cases and dimensions remain unassigned.
 
 The user accepts descriptive Koan prompts and learned trigger words. The
-[rank-32 follow-up](koan-rank32-2026-10-25.md) teaches `koan_palette` with broader
+[rank-32 follow-up](training-history.md#prompted-rank-32-koan-arnar-2026-10-25) teaches `koan_palette` with broader
 track coverage, KL/replay retention and matched NAR calibration. On its initial
 full-source seed-831001 AR-only preview, the user prefers rank-32 step 150's
 balance of palette and melody over the previous rank-8 step 32 under identical

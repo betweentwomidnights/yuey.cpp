@@ -30,7 +30,7 @@ separately, along with neutral retention and actual generation/remix auditions.
 A lower semantic CE or flow loss is not automatically a better remix. The first
 DoRA trial fixes AR150 and the original data so the acoustic adapter family is
 the principal changed variable. The separate
-[AR DoRA experiment](koan-ar-dora-2026-10-26.md) tests semantic/style adaptation
+[AR DoRA experiment](training-history.md#dora-comparisons-2026-10-26) tests semantic/style adaptation
 with native NAR fixed. Its best validation loss is effectively tied with LoRA;
 the user prefers AR DoRA in the matched listening comparison. AR DoRA must normalize around the frozen
 instrumental companion and require its exact adapter prefix/strength at load.

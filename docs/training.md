@@ -34,7 +34,7 @@ VAE encoding follows `device` by default. Optional `vae_device`, `vae_binary`
 and `vae_core_frames` settings select an independent installed backend/tool and
 tile profile. CUDA and Vulkan encoding have been checked on the laptop; Metal
 uses the same GGML graph but awaits testing on Apple hardware. See the
-[native encoder validation](native-vae-encoder-2026-10-27.md).
+[native encoder validation](training-history.md#native-vae-encoder-2026-10-27).
 
 The tested machine has an RTX 5070 Laptop GPU with 8 GB VRAM and **64 GB host
 RAM**. Recipes 1–3 hold every AR teacher distribution in host RAM (about
@@ -53,7 +53,7 @@ after the other model unloads. In the local 30-second LoRA test, updates took
 about 86 seconds with 170 MiB reported as shared GPU memory; a fresh trainer
 after unloading the competing model used the normal 74 MiB shared allocation
 and returned to 3.6-second updates. Use **Stop**, wait for its checkpoint, then
-**Resume** after freeing GPU memory. See the [recovery measurements](ar-training-recovery-2026-10-27.md).
+**Resume** after freeing GPU memory. See the [recovery measurements](training-history.md#windows-gpu-residency-slowdown-2026-10-27).
 AR progress distinguishes teacher preparation, initial/checkpoint evaluation
 and updates, and reports the most recent update duration. Startup and full
 evaluation time are additional to that update duration.
@@ -78,7 +78,7 @@ writes one F32 GGUF per training window (`.partial`, then renamed), and the
 coordinator records each file's SHA-256 in `teacher/index.json`. The fitter checks
 every header and exact prefix/codes at startup, decodes one window per update,
 and never recomputes teachers on resume. The coordinator re-hashes the cache
-before and after every fit. See [the teacher cache measurements](ar-teacher-cache-2026-10-28.md).
+before and after every fit. See [the teacher cache measurements](training-history.md#recipe-4-streamed-ar-teacher-cache-2026-10-28).
 Recipe 3 retains recipe 2's heldout
 validation and maximum-context NAR preflight. Preflight verifies cache
 checksums and inspects all headers, then tests one training sample padded to the
@@ -88,8 +88,8 @@ validates and fingerprints the complete dataset before its first update. Recipe
 retaining all coordinator SHA-256 checks and native provenance/shape checks.
 Recipes 1 and 2 retain their original policies and frozen executables. Fingerprint
 versions are bound to checkpoints; switching versions requires a new run.
-See [handoff measurements and parity checks](training-handoff-performance-2026-10-27.md).
-The [final optimization measurements](training-final-optimization-2026-10-27.md)
+See [handoff measurements and parity checks](training-history.md#recipes-2-and-3-preflight-and-fingerprints-2026-10-27).
+The [final optimization measurements](training-history.md#recipes-2-and-3-preflight-and-fingerprints-2026-10-27)
 cover the byte audit and real-window CUDA parity.
 
 ## Dataset and recipe
@@ -176,6 +176,6 @@ clients: dataset folder paths refer to the server's filesystem.
 - `POST /training/api/runs/<id>/resume`: continue verified preparation or fitting.
 - `POST /training/api/runs/<id>/publish`: register the reviewed pair.
 
-See [conditioning benchmarks](training-optimization-2026-10-27.md) for measured
+See [conditioning benchmarks](training-history.md#conditioning-cache-optimization-2026-10-27) for measured
 speed/memory evidence and numerical limits. SA3 and gary4local remain unchanged;
 the named-run/prompt-pool contract is intended to support their later integration.

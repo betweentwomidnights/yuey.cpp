@@ -115,7 +115,7 @@ def settings(request):
 # One frozen KL teacher row per target frame: MUSIC_END + 32768 codec classes, F32.
 TEACHER_ROW_BYTES=(32768+1)*4
 # Measured CUDA AR fitter host working set on the Koan corpus, rank 32
-# (docs/ar-teacher-cache-2026-10-28.md): a 3.1 GiB transient while loading
+# (docs/training-history.md, recipe 4): a 3.1 GiB transient while loading
 # weights, then 1.13 GiB steady including two 30-second windows (the decoded
 # teacher and the trainer's dense one-hot target). CPU fitting also holds the
 # weights themselves; that addition is derived, not measured.

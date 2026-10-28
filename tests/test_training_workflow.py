@@ -28,7 +28,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_teacher_estimates_match_measured_koan_corpus(self):
         # 157 training and 38 validation 30-second windows, measured in
-        # docs/ar-teacher-cache-2026-10-28.md: 15.53 GiB versus 3.09 GiB peak.
+        # docs/training-history.md, recipe 4: 15.53 GiB versus 3.09 GiB peak.
         rows=[dict(split='train',frames=750,prefix_tokens=1000)]*157+[dict(split='validation',frames=750,prefix_tokens=1000)]*38
         old=ar_resource_estimate(rows,settings(dict(id='v3',recipe_version=3)),'cuda')
         new=ar_resource_estimate(rows,settings(dict(id='v4',recipe_version=4)),'cuda')

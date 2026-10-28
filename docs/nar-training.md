@@ -1,17 +1,17 @@
 # Experimental native NAR LoRA training
 
 The first native trainer and a bounded Koan Sound pilot are implemented. This
-follows the [feasibility investigation](lora-training-feasibility.md). It is a
+follows the [feasibility investigation](training-history.md#feasibility-investigation-2026-10-22). It is a
 CLI and C++ API for experiments, with actual GGML backward execution; PyTorch is
 used only for preprocessing and an independent numerical oracle.
 
 The current GGML 0.27 pin has separate
-[training migration validation](ggml-027-training-validation.md). The local
+[training migration validation](training-history.md#ggml-027-migration-2026-10-24). The local
 validated binaries are in `build-ggml027-cuda/bin/Release`; the original
 `build-cuda` binaries are retained for comparison. The pilot measurements and
 commands below describe the October 22 run.
 
-The [expanded October 24 pilot](nar-expanded-pilot-2026-10-24.md) subsequently
+The [expanded October 24 pilot](training-history.md#expanded-nar-pilot-2026-10-24) subsequently
 prepared 48 windows across 12 training tracks and completed 192 updates, with
 all six listening-test tracks kept out of training. Its candidate and blind
 comparisons against the original step-48 reference are documented separately.
@@ -19,7 +19,7 @@ comparisons against the original step-48 reference are documented separately.
 The user's [clarified style-transfer objective](yue2-style-transfer-objective.md)
 is the next evaluation gate. The fidelity gains reported so far do not establish
 that unseen-input remixes or standard generations acquire the dataset's style.
-The [October 25 style-capability gate](nar-style-gate-2026-10-25.md) now provides
+The [October 25 style-capability gate](training-history.md#nar-only-style-gate-failed-2026-10-25) now provides
 fresh-score, user-audio and standard-generation comparisons with neutral
 captions, plus a native-NAR control without v9.
 
@@ -43,7 +43,7 @@ CPU and CUDA conditioning remain distinct cache identities.
 `--stop-file PATH` saves after the current update before exiting. A run owner
 must retain device/process ownership through exit and must explicitly decide
 whether to resume; a successful stop does not imply the training budget is done.
-The [full-corpus experiment](koan-full-training-2026-10-26.md) documents the
+The [full-corpus experiment](training-history.md#full-corpus-koan-training-2026-10-26-to-27) documents the
 resource evidence and tests. The listener selected full-data AR DoRA500 and
 prefers its expanded NAR LoRA400 calibration. All 197 CPU conditioning caches,
 resource/gradient checks, the 400-update fit and fixed-token auditions completed.
@@ -131,7 +131,7 @@ candidate `c7491b1c223799e6026ec7a1963925c97d414fb2`. The shared GGML 0.27 refre
 includes that correction and its independent 36-case CPU/CUDA regression.
 The local submodule now selects `b77ae790e628270af46a8af1eca38441c23f1252`, the
 same pin proposed by [Yuey PR #34](https://github.com/betweentwomidnights/yuey.cpp/pull/34).
-See [the migration validation](ggml-027-training-validation.md) for the separate
+See [the migration validation](training-history.md#ggml-027-migration-2026-10-24) for the separate
 training and checkpoint checks at that revision. The measurements above remain
 the original pilot results; they are not measurements of the refreshed backend.
 
@@ -209,8 +209,6 @@ baseline, checkpoint, equal-RMS and actual-remix comparisons. Original float
 WAVs are retained for measurement. Listening copies use a common peak-prevention
 gain per comparison group; the optional equal-RMS pair is labeled separately.
 
-Portable numeric evidence is in
-[the experiment JSON](experiments/yue2-nar-training-2026-10-22.json).
 Local checkpoints, raw diagnostics, source hashes, prepared caches, history and
 audio remain under `outputs/nar-training/`. The pilot checkpoint is
 `outputs/nar-training/koan-run/step-48.gguf`; its SHA-256 is
@@ -277,7 +275,7 @@ cross-backend or cross-toolchain bit identity is not claimed.
 
 Training has used only short windows. The subsequent October 24 auditions
 include 30/60/120-second renders and
-[a user listening review](nar-listening-review-2026-10-24.md): six clear short-clip
+[a user listening review](training-history.md#nar-pilot-listening-review-2026-10-24): six clear short-clip
 preferences favor the learned step-48 adapter, with two near ties leaning the
 same way. A four-clip seed-123 spot-check adds three preferences for step 48
 and one shared-artifact case without a preference. The 60/120-second comparisons
@@ -313,7 +311,7 @@ is fixed at .5. Evaluation still uses fixed noise at .2/.5/.8 and additionally
 reports `heldout_per_sigma` in that order. Keep the schedule in the external run
 identity as well as the checkpoint's RNG marker.
 
-The [toolkit follow-up](koan-toolkit-followup-2026-10-25.md) compares both schedules
+The [toolkit follow-up](training-history.md#toolkit-follow-up-and-ar200-2026-10-25) compares both schedules
 for 100 matched updates and records the listener's preference for uniform.
 
 `--retention sample.gguf` (repeatable) adds evaluation-only neutral controls.
@@ -329,13 +327,13 @@ and actual-remix sets. The present results show a working native update path and
 small held-out gains; they do not show that the v9 semantic bottleneck has been
 removed.
 
-The subsequent [October 25 style-capability gate](nar-style-gate-2026-10-25.md)
+The subsequent [October 25 style-capability gate](training-history.md#nar-only-style-gate-failed-2026-10-25)
 failed: the user hears essentially identical primary outputs and no Koan-style
-match. Pause scaling this recipe. The [diagnosis](nar-style-diagnosis-2026-10-25.md)
+match. Pause scaling this recipe. The [diagnosis](training-history.md#nar-only-style-gate-failed-2026-10-25)
 separates proven native-training correctness and fidelity changes from the
 unmet style objective, and specifies the next feasibility gates.
 
-The later [AR200 matched calibration](koan-ar200-nar-calibration-2026-10-26.md)
+The later [AR200 matched calibration](training-history.md#ar200-nar-calibration-2026-10-26)
 uses a different semantic adapter and broader scored training coverage. The user
 endorses its triplet phrasing and prefers its matched NAR400 acoustic output.
 Both the combined AR200/NAR400 and AR200-only exports are now discoverable in
