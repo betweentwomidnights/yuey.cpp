@@ -3,10 +3,12 @@
 #include "gguf_model.h"
 #include "lora.h"
 #include "dora.h"
+#include "training_parallel.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <future>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -40,8 +42,38 @@ void set(ggml_tensor *t, const std::vector<float> &values) {
 }
 std::vector<float> get(ggml_tensor *t) {
     std::vector<float> values(ggml_nelements(t));
+    if (t->type == GGML_TYPE_F16) {
+        std::vector<ggml_fp16_t> half(values.size());
+        ggml_backend_tensor_get(t, half.data(), 0, half.size() * sizeof(half[0]));
+        ggml_fp16_to_fp32_row(half.data(), values.data(), values.size());
+        return values;
+    }
     ggml_backend_tensor_get(t, values.data(), 0, values.size() * sizeof(float));
     return values;
+}
+// Download into existing host storage, avoiding a fresh allocation per step.
+void download(ggml_tensor *t, std::vector<float> &values) {
+    if (ggml_nelements(t) != static_cast<int64_t>(values.size()) || t->type != GGML_TYPE_F32)
+        throw std::runtime_error("training tensor download shape mismatch");
+    ggml_backend_tensor_get(t, values.data(), 0, values.size() * sizeof(float));
+}
+// Finite checks over both conditioning streams in parallel. Keys are
+// reported before values, as by the former serial checks.
+template <class T, class Check>
+void finite_pair(const std::vector<T> &keys, const std::vector<T> &values, int threads,
+                 Check check) {
+    constexpr size_t chunk = size_t(1) << 20;
+    const size_t per = (keys.size() + chunk - 1) / chunk;
+    std::vector<char> ok(2 * per, 1);
+    detail::parallel_tasks(ok.size(), threads, [&](size_t task) {
+        const auto &data = task < per ? keys : values;
+        const size_t begin = (task % per) * chunk;
+        ok[task] = check(data.data(), begin, std::min(data.size(), begin + chunk));
+    });
+    if (std::find(ok.begin(), ok.begin() + per, 0) != ok.begin() + per)
+        throw std::runtime_error("nonfinite AR keys");
+    if (std::find(ok.begin() + per, ok.end(), 0) != ok.end())
+        throw std::runtime_error("nonfinite AR values");
 }
 ggml_tensor *f32(ggml_context *ctx, ggml_tensor *t) {
     return t->type == GGML_TYPE_F32 ? t : ggml_cast(ctx, t, GGML_TYPE_F32);
@@ -177,8 +209,9 @@ class NarTrainer::Impl {
                         parameters.push_back(std::move(p));
                     }
                 }
-                keys.push_back(tensor(D, ar, K));
-                values.push_back(tensor(D, ar, K));
+                const auto kv = options.f16_conditioning ? GGML_TYPE_F16 : GGML_TYPE_F32;
+                keys.push_back(tensor(D, ar, K, kv));
+                values.push_back(tensor(D, ar, K, kv));
             }
             for (int layer = 0; layer <= L; ++layer) {
                 auto *boundary = tensor(H, n);
@@ -197,6 +230,10 @@ class NarTrainer::Impl {
             buffer = ggml_backend_alloc_ctx_tensors(persistent.get(), model.backend());
             if (!buffer)
                 throw std::runtime_error("cannot allocate training state");
+            // Unused AR slots must read as zero; uploads then only rewrite
+            // slots a previous, longer sample left behind.
+            ggml_backend_buffer_clear(buffer, 0);
+            spans = detail::tensor_spans(parameters, size_t(1) << 16);
             for (auto &p : parameters)
                 set(p.tensor, p.values);
             for (const auto &entry : base_norms)
@@ -266,8 +303,8 @@ class NarTrainer::Impl {
         if (buffer)
             ggml_backend_buffer_free(buffer);
     }
-    ggml_tensor *tensor(int64_t a, int64_t b, int64_t c = 1) {
-        auto *t = ggml_new_tensor_3d(persistent.get(), GGML_TYPE_F32, a, b, c);
+    ggml_tensor *tensor(int64_t a, int64_t b, int64_t c = 1, ggml_type type = GGML_TYPE_F32) {
+        auto *t = ggml_new_tensor_3d(persistent.get(), type, a, b, c);
         ggml_set_input(t);
         return t;
     }
@@ -332,8 +369,10 @@ class NarTrainer::Impl {
         k = ggml_rope_ext(ctx, k, positions, nullptr, D, GGML_ROPE_TYPE_NEOX, 0, 1e6F, 1, 0, 1, 0,
                           0);
         q = ggml_permute(ctx, q, 0, 2, 1, 3);
-        k = ggml_concat(ctx, keys[layer], ggml_cont(ctx, ggml_permute(ctx, k, 0, 2, 1, 3)), 1);
-        v = ggml_concat(ctx, values[layer], ggml_cont(ctx, ggml_permute(ctx, v, 0, 2, 1, 3)), 1);
+        // F16 conditioning widens exactly to the former F32 input values.
+        k = ggml_concat(ctx, f32(ctx, keys[layer]), ggml_cont(ctx, ggml_permute(ctx, k, 0, 2, 1, 3)), 1);
+        v = ggml_concat(ctx, f32(ctx, values[layer]), ggml_cont(ctx, ggml_permute(ctx, v, 0, 2, 1, 3)),
+                        1);
         auto *scores =
             ggml_soft_max_ext(ctx, ggml_mul_mat(ctx, k, q), mask, 1 / std::sqrt(float(D)), 0);
         auto *attended = ggml_mul_mat(ctx, ggml_cont(ctx, ggml_transpose(ctx, v)), scores);
@@ -420,37 +459,78 @@ class NarTrainer::Impl {
         if (ggml_backend_graph_compute(model.backend(), graph) != GGML_STATUS_SUCCESS)
             throw std::runtime_error("training compute failed");
     }
-    void inputs(const NarTrainingSample &sample, const std::vector<float> &noise, float sigma) {
+    // Frozen AR K/V, positions and mask. These depend only on the sample, so
+    // several noise levels of one window share a single upload.
+    void conditioning(const NarTrainingSample &sample) {
         const auto count = sample.conditioning.token_count;
+        const bool half = !sample.half_keys.empty() || !sample.half_values.empty();
+        const auto expected = L * K * D * static_cast<size_t>(count);
+        if (count < 1 || count > ar ||
+            (half ? sample.half_keys.size() != expected || sample.half_values.size() != expected ||
+                        !sample.conditioning.keys.empty() || !sample.conditioning.values.empty()
+                  : sample.conditioning.keys.size() != expected ||
+                        sample.conditioning.values.size() != expected))
+            throw std::invalid_argument("invalid NAR training sample");
+        if (options.f16_conditioning && !half)
+            throw std::invalid_argument("F16 conditioning trainer requires exact F16 samples");
+        if (half)
+            finite_pair(sample.half_keys, sample.half_values, options.threads,
+                        detail::all_finite_half);
+        else
+            finite_pair(sample.conditioning.keys, sample.conditioning.values, options.threads,
+                        detail::all_finite);
+        // Cache layout is [layer][head][count][D]; each head is copied to its
+        // own [ar][D] slot range. Slots in [count,ar) stay zero.
+        const size_t row = size_t(count) * D;
+        std::vector<float> widened(half && !options.f16_conditioning ? row : 0);
+        for (int layer = 0; layer < L; ++layer)
+            for (int which = 0; which < 2; ++which) {
+                auto *t = which ? values[layer] : keys[layer];
+                for (int head = 0; head < K; ++head) {
+                    const size_t source = (size_t(layer) * K + head) * row;
+                    const size_t target = size_t(head) * ar * D;
+                    if (half) {
+                        const auto *data = (which ? sample.half_values : sample.half_keys).data() + source;
+                        if (options.f16_conditioning) {
+                            ggml_backend_tensor_set(t, data, target * sizeof(ggml_fp16_t),
+                                                    row * sizeof(ggml_fp16_t));
+                            continue;
+                        }
+                        ggml_fp16_to_fp32_row(reinterpret_cast<const ggml_fp16_t *>(data),
+                                              widened.data(), row);
+                        ggml_backend_tensor_set(t, widened.data(), target * sizeof(float),
+                                                row * sizeof(float));
+                    } else {
+                        const auto *data = (which ? sample.conditioning.values : sample.conditioning.keys).data() + source;
+                        ggml_backend_tensor_set(t, data, target * sizeof(float), row * sizeof(float));
+                    }
+                }
+                if (count < kv_extent)
+                    for (int head = 0; head < K; ++head)
+                        ggml_backend_tensor_memset(t, 0, (size_t(head) * ar + count) * D * ggml_type_size(t->type),
+                                                   size_t(kv_extent - count) * D * ggml_type_size(t->type));
+            }
+        kv_extent = count;
+        if (count != mask_count) {
+            std::vector<int32_t> pos(n);
+            for (uint32_t i = 0; i < n; ++i)
+                pos[i] = count + i;
+            ggml_backend_tensor_set(positions, pos.data(), 0, pos.size() * sizeof(pos[0]));
+            std::vector<float> attention_mask((ar + n) * n, 0);
+            for (uint32_t i = 0; i < n; ++i)
+                for (uint32_t j = count; j < ar; ++j)
+                    attention_mask[i * (ar + n) + j] = -std::numeric_limits<float>::infinity();
+            set(mask, attention_mask);
+            mask_count = count;
+        }
+        last_count = count;
+    }
+    void noisy(const NarTrainingSample &sample, const std::vector<float> &noise, float sigma) {
         if (sample.clean_latents.size() != frames * 64ULL || noise.size() != frames * 64ULL ||
-            count < 1 || count > ar ||
-            sample.conditioning.keys.size() != L * K * D * static_cast<size_t>(count) ||
-            sample.conditioning.values.size() != sample.conditioning.keys.size() ||
             !std::isfinite(sigma) || sigma <= 0 || sigma >= 1)
             throw std::invalid_argument("invalid NAR training sample");
         finite(sample.clean_latents, "clean latents");
         finite(noise, "noise");
-        finite(sample.conditioning.keys, "AR keys");
-        finite(sample.conditioning.values, "AR values");
-        for (int layer = 0; layer < L; ++layer) {
-            std::vector<float> pad(ar * K * D, 0);
-            for (int which = 0; which < 2; ++which) {
-                const auto &data = which ? sample.conditioning.values : sample.conditioning.keys;
-                for (int head = 0; head < K; ++head)
-                    std::copy_n(data.data() + (layer * K + head) * count * D, count * D,
-                                pad.data() + head * ar * D);
-                set(which ? values[layer] : keys[layer], pad);
-            }
-        }
-        std::vector<int32_t> pos(n);
-        for (uint32_t i = 0; i < n; ++i)
-            pos[i] = count + i;
-        ggml_backend_tensor_set(positions, pos.data(), 0, pos.size() * sizeof(pos[0]));
-        std::vector<float> attention_mask((ar + n) * n, 0);
-        for (uint32_t i = 0; i < n; ++i)
-            for (uint32_t j = count; j < ar; ++j)
-                attention_mask[i * (ar + n) + j] = -std::numeric_limits<float>::infinity();
-        set(mask, attention_mask);
         std::vector<float> x(n * 64, 0), v(frames * 64), t(256);
         for (size_t i = 0; i < v.size(); ++i) {
             x[i + 64] = (1 - sigma) * sample.clean_latents[i] + sigma * noise[i];
@@ -465,7 +545,10 @@ class NarTrainer::Impl {
         set(target, v);
         set(features, t);
         last_sigma = sigma;
-        last_count = count;
+    }
+    void inputs(const NarTrainingSample &sample, const std::vector<float> &noise, float sigma) {
+        conditioning(sample);
+        noisy(sample, noise, sigma);
     }
     float forward() {
         compute(front.forward);
@@ -485,20 +568,34 @@ class NarTrainer::Impl {
         const float loss = forward();
         double optimizer_seconds = 0;
         double squared = 0;
+        std::future<void> scan;
         for (int layer = L - 1; layer >= 0; --layer) {
             auto &graph = blocks[layer];
             compute(graph.backward, true);
             const auto download_start = Clock::now();
-            for (int i = layer * parameters_per_layer(); i < (layer + 1) * parameters_per_layer(); ++i) {
-                auto &p = parameters[i];
-                p.gradient = get(ggml_graph_get_grad(graph.backward, p.tensor));
-                finite(p.gradient, "adapter gradient");
-                for (auto value : p.gradient)
-                    squared += double(value) * value;
-            }
+            const int first = layer * parameters_per_layer(), last = first + parameters_per_layer();
+            for (int i = first; i < last; ++i)
+                download(ggml_graph_get_grad(graph.backward, parameters[i].tensor), parameters[i].gradient);
+            // Finite checks and the norm reduction overlap the next layer's
+            // backward pass. Each scan waits for the previous one, so the
+            // global sum keeps exactly the former serial order.
+            scan = std::async(std::launch::async,
+                              [this, first, last, &squared, previous = std::move(scan)]() mutable {
+                                  if (previous.valid())
+                                      previous.get();
+                                  for (int i = first; i < last; ++i) {
+                                      const auto &gradient = parameters[i].gradient;
+                                      finite(gradient, "adapter gradient");
+                                      for (auto value : gradient)
+                                          squared += double(value) * value;
+                                  }
+                              });
             optimizer_seconds += since(download_start);
             ggml_backend_tensor_copy(outgoing, incoming);
         }
+        const auto scan_start = Clock::now();
+        scan.get();
+        optimizer_seconds += since(scan_start);
         const auto gradient_norm = std::sqrt(squared);
         if (!std::isfinite(gradient_norm))
             throw std::runtime_error("nonfinite global gradient norm");
@@ -510,19 +607,20 @@ class NarTrainer::Impl {
                                      : 1;
             const double correction1 = 1 - std::pow(0.9, double(optimizer_step));
             const double correction2 = 1 - std::pow(0.999, double(optimizer_step));
-            for (auto &p : parameters) {
-                for (size_t i = 0; i < p.values.size(); ++i) {
-                    const float g = static_cast<float>(p.gradient[i] * scale);
-                    p.m[i] = 0.9F * p.m[i] + 0.1F * g;
-                    p.v[i] = 0.999F * p.v[i] + 0.001F * g * g;
-                    p.values[i] -= options.learning_rate *
-                                   static_cast<float>((p.m[i] / correction1) /
-                                                          (std::sqrt(p.v[i] / correction2) + 1e-8) +
-                                                      options.weight_decay * p.values[i]);
-                }
-                finite(p.values, "updated adapter");
+            // Elementwise, so each span is independent of thread scheduling.
+            std::vector<char> ok(spans.size(), 1);
+            detail::parallel_tasks(spans.size(), options.threads, [&](size_t task) {
+                const auto &span = spans[task];
+                auto &p = parameters[span.tensor];
+                ok[task] = detail::adamw_span(p.values.data(), p.gradient.data(), p.m.data(),
+                                              p.v.data(), span.begin, span.end, scale, correction1,
+                                              correction2, options.learning_rate,
+                                              options.weight_decay);
+            });
+            if (std::find(ok.begin(), ok.end(), 0) != ok.end())
+                throw std::runtime_error("nonfinite updated adapter");
+            for (auto &p : parameters)
                 set(p.tensor, p.values);
-            }
             optimizer_seconds += since(update_start);
         }
         return {loss, gradient_norm, optimizer_step, inputs_seconds, optimizer_seconds};
@@ -700,6 +798,9 @@ class NarTrainer::Impl {
     }
     NarTrainingOptions options;
     uint32_t frames, n, ar, last_count = 0;
+    // AR slots [kv_extent,ar) are zero in every head; mask matches mask_count.
+    uint32_t kv_extent = 0, mask_count = 0;
+    std::vector<detail::TensorSpan> spans;
     float last_sigma = 0;
     detail::GgufModel model;
     detail::LoraStack fixed;
@@ -732,6 +833,16 @@ float NarTrainer::evaluate(const NarTrainingSample &s, const std::vector<float> 
                            float sigma) {
     impl_->inputs(s, noise, sigma);
     return impl_->forward();
+}
+std::vector<float> NarTrainer::evaluate(const NarTrainingSample &s, const std::vector<float> &noise,
+                                        const std::vector<float> &sigmas) {
+    impl_->conditioning(s);
+    std::vector<float> losses;
+    for (auto sigma : sigmas) {
+        impl_->noisy(s, noise, sigma);
+        losses.push_back(impl_->forward());
+    }
+    return losses;
 }
 std::vector<float> NarTrainer::velocity() const { return get(impl_->prediction); }
 void NarTrainer::save_adapter(const std::string &path) const { impl_->write(path, false); }

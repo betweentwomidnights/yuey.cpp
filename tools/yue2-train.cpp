@@ -61,6 +61,14 @@ yue2::NarTrainingSample load(const std::string &path, const std::string &model,
             "sample was prepared with different base weights or fixed adapters");
     yue2::NarTrainingSample sample;
     sample.conditioning.token_count = cache.u32("yue2.training.ar_tokens");
+    auto *keys = cache.get("keys"), *values_tensor = cache.get("values");
+    if (keys->type == GGML_TYPE_F16 && values_tensor->type == GGML_TYPE_F16) {
+        // Compact caches stay F16 in host memory; the trainer widens exactly.
+        for (auto [t, out] : {std::pair{keys, &sample.half_keys}, std::pair{values_tensor, &sample.half_values}}) {
+            out->resize(ggml_nelements(t));
+            ggml_backend_tensor_get(t, out->data(), 0, out->size() * sizeof(ggml_fp16_t));
+        }
+    }
     auto values = [&](const char *name) {
         auto *t = cache.get(name);
         std::vector<float> v(ggml_nelements(t));
@@ -73,8 +81,10 @@ yue2::NarTrainingSample load(const std::string &path, const std::string &model,
         return v;
     };
     sample.clean_latents = values("clean");
-    sample.conditioning.keys = values("keys");
-    sample.conditioning.values = values("values");
+    if (sample.half_keys.empty()) {
+        sample.conditioning.keys = values("keys");
+        sample.conditioning.values = values("values");
+    }
     return sample;
 }
 void prepare(const std::map<std::string, std::string> &args,
@@ -443,19 +453,39 @@ int main(int argc, char **argv) {
                 content_hash *= 1099511628211ULL;
             }
         };
+        bool all_half = true;
+        auto mix_floats = [&](const float *data, size_t count) {
+            for (size_t i = 0; i < count; ++i) {
+                uint32_t bits; std::memcpy(&bits, data + i, sizeof(bits)); mix(bits);
+            }
+        };
         auto inspect = [&](const yue2::NarTrainingSample &s) {
+            const bool half = !s.half_keys.empty();
+            const auto keys = half ? s.half_keys.size() : s.conditioning.keys.size();
+            const auto values = half ? s.half_values.size() : s.conditioning.values.size();
             if (!frames) frames = s.clean_latents.size() / 64;
             if (!frames || s.clean_latents.size() != frames * 64 || !s.conditioning.token_count ||
-                s.conditioning.keys.size() != size_t(s.conditioning.token_count) * 128 * 8 * 28 ||
-                s.conditioning.values.size() != s.conditioning.keys.size())
+                keys != size_t(s.conditioning.token_count) * 128 * 8 * 28 || values != keys)
                 throw std::runtime_error("invalid or differently shaped training cache");
             ar = std::max(ar, s.conditioning.token_count);
+            all_half = all_half && half;
             if (args.count("--dataset")) {
                 mix(s.conditioning.token_count);
-                for (const auto *v : {&s.clean_latents, &s.conditioning.keys, &s.conditioning.values}) {
+                mix(s.clean_latents.size());
+                mix_floats(s.clean_latents.data(), s.clean_latents.size());
+                if (!half) {
+                    for (const auto *v : {&s.conditioning.keys, &s.conditioning.values}) {
+                        mix(v->size()); mix_floats(v->data(), v->size());
+                    }
+                    return;
+                }
+                std::vector<float> widened(4096);
+                for (const auto *v : {&s.half_keys, &s.half_values}) {
                     mix(v->size());
-                    for (float value : *v) {
-                        uint32_t bits; std::memcpy(&bits, &value, sizeof(bits)); mix(bits);
+                    for (size_t at = 0; at < v->size(); at += widened.size()) {
+                        const auto count = std::min(widened.size(), v->size() - at);
+                        ggml_fp16_to_fp32_row(v->data() + at, widened.data(), count);
+                        mix_floats(widened.data(), count);
                     }
                 }
             }
@@ -467,17 +497,30 @@ int main(int argc, char **argv) {
         size_t validated = 0;
         const auto cache_count = samples.size() + validations.size() + retentions.size();
         training_event("cache-validation", 0, cache_count);
-        auto validation_progress = [&](size_t, size_t) {
+        Store::Progress validation_progress = [&](size_t, size_t) {
             training_event("cache-validation", ++validated, cache_count);
         };
         Store::PathInspector inspect_path;
+        std::map<std::string, yue2::detail::TrainingFileFingerprint> encoded;
+        if (fingerprint=="bytes-v2") {
+            std::vector<std::string> paths(samples);
+            paths.insert(paths.end(), validations.begin(), validations.end());
+            paths.insert(paths.end(), retentions.begin(), retentions.end());
+            const auto hashes=yue2::detail::training_file_fingerprints(paths, std::max(1, options.threads), validation_progress);
+            for (size_t i=0;i<paths.size();++i) encoded.emplace(paths[i], hashes[i]);
+            validation_progress = {};
+        }
         if (fingerprint=="bytes-v2") inspect_path=[&](const std::string &path) {
             const auto header=yue2::detail::inspect_nar_cache_header(path,args.at("--model"),
                 fixed_identity(fixed),fixed_identity(conditioning));
             if (!frames) frames=header.frames;
             if (frames!=header.frames) throw std::runtime_error("differently shaped training caches");
             ar=std::max(ar,header.tokens);
-            mix(header.bytes);mix(yue2::detail::training_file_fingerprint(path));
+            all_half=all_half && header.half_conditioning;
+            const auto &file=encoded.at(path);
+            if (!file.unchanged(path) || file.size!=header.bytes)
+                throw std::runtime_error("training sample changed after fingerprinting: " + path);
+            mix(header.bytes);mix(file.hash);
         };
         mix(samples.size()); Store train(samples, streaming, loader, inspect, validation_progress, inspect_path);
         mix(validations.size()); Store validation(validations, streaming, loader, inspect, validation_progress, inspect_path);
@@ -501,6 +544,8 @@ int main(int argc, char **argv) {
                       << ",\"identity\":" << yue2::server::json::quote(options.run_identity) << "}" << std::endl;
             return 0;
         }
+        // Numerically identical either way; F16 halves K/V host memory and uploads.
+        options.f16_conditioning = all_half;
         const auto directory = std::filesystem::path(args.at("--out"));
         if (std::filesystem::exists(directory) && !args.count("--resume"))
             throw std::runtime_error(
@@ -542,25 +587,34 @@ int main(int argc, char **argv) {
         auto evaluate = [&](const yue2::NarTrainingSample &s) {
             std::mt19937 heldout(42);
             const auto e = noise(heldout, frames * 64);
-            return std::array<float, 3>{trainer.evaluate(s, e, .2F),
-                                        trainer.evaluate(s, e, .5F),
-                                        trainer.evaluate(s, e, .8F)};
+            const auto losses = trainer.evaluate(s, e, {.2F, .5F, .8F});
+            return std::array<float, 3>{losses[0], losses[1], losses[2]};
         };
         std::ofstream history(directory / "history.jsonl", std::ios::app);
         auto evaluate_all = [&](uint64_t step) {
             size_t completed = 0;
             const auto total = (eval_scope == "full" ? train.size() : 0) + validation.size() + retention.size();
+            std::vector<std::pair<Store *, size_t>> order;
+            for (size_t i = 0; eval_scope == "full" && i < train.size(); ++i) order.emplace_back(&train, i);
+            for (size_t i = 0; i < validation.size(); ++i) order.emplace_back(&validation, i);
+            for (size_t i = 0; i < retention.size(); ++i) order.emplace_back(&retention, i);
+            size_t cursor = 0;
+            auto next = [&]() -> const yue2::NarTrainingSample & {
+                const auto &sample = order[cursor].first->get(order[cursor].second);
+                if (++cursor < order.size()) order[cursor].first->prefetch(order[cursor].second);
+                return sample;
+            };
             training_event("evaluation", 0, total, step);
             double training = 0, heldout = 0;
             std::array<double, 3> heldout_by_sigma{};
             std::vector<float> heldout_values;
             for (size_t i = 0; eval_scope == "full" && i < train.size(); ++i) {
-                const auto values = evaluate(train.get(i));
+                const auto values = evaluate(next());
                 training += (values[0] + values[1] + values[2]) / 3;
                 training_event("evaluation", ++completed, total, step);
             }
             for (size_t i = 0; i < validation.size(); ++i) {
-                const auto values = evaluate(validation.get(i));
+                const auto values = evaluate(next());
                 const auto value = (values[0] + values[1] + values[2]) / 3;
                 for (size_t i = 0; i < 3; ++i) heldout_by_sigma[i] += values[i];
                 heldout += value;
@@ -591,7 +645,7 @@ int main(int argc, char **argv) {
                 std::array<double, 3> by_sigma{};
                 std::vector<float> per_sample;
                 for (size_t i = 0; i < retention.size(); ++i) {
-                    const auto values = evaluate(retention.get(i));
+                    const auto values = evaluate(next());
                     const float mean = (values[0] + values[1] + values[2]) / 3;
                     total += mean;
                     per_sample.push_back(mean);
@@ -646,6 +700,14 @@ int main(int argc, char **argv) {
             const auto load_start=std::chrono::steady_clock::now();
             const auto &sample=train.get(at);
             const auto load_done=std::chrono::steady_clock::now();
+            // Load the next window during this update. Peek with copies so the
+            // sampler and RNG states (and so checkpoints) are unchanged.
+            if (streaming && i + 1 < steps && !args.count("--fixed-noise")) {
+                auto peek_sampler = sampler;
+                auto peek_rng = rng;
+                train.prefetch(shuffle ? peek_sampler.next()
+                                       : std::uniform_int_distribution<size_t>(0, train.size() - 1)(peek_rng));
+            }
             auto result = trainer.step(sample, e, sigma);
             const auto update_done=std::chrono::steady_clock::now();
             std::ostringstream line;

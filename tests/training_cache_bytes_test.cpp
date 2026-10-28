@@ -31,6 +31,29 @@ int main() {
     auto inspect=[&]() {return yue2::detail::inspect_nar_cache_header(cache.string(),model.string(),"","");};
     write();const auto header=inspect();
     assert(header.frames==2 && header.tokens==3 && header.bytes==fs::file_size(cache));
+    assert(header.half_conditioning);
+    {
+        // Concurrent fingerprints equal the serial ones, returned in path order.
+        const auto other=root/"other.gguf";fs::copy_file(cache,other);
+        std::ofstream(other,std::ios::app)<<"tail";
+        const std::vector<std::string> paths{cache.string(),other.string(),cache.string()};
+        size_t reported=0;
+        const auto files=yue2::detail::training_file_fingerprints(paths,3,[&](size_t done,size_t total) {
+            assert(total==paths.size() && done==++reported);
+        });
+        assert(reported==paths.size() && files.size()==paths.size());
+        for (size_t i=0;i<paths.size();++i) {
+            assert(files[i].hash==yue2::detail::training_file_fingerprint(paths[i]));
+            assert(files[i].size==fs::file_size(paths[i]) && files[i].unchanged(paths[i]));
+        }
+        assert(files[0].hash==files[2].hash && files[0].hash!=files[1].hash);
+        const auto stamp=fs::last_write_time(other);
+        std::ofstream(other,std::ios::app)<<"x";
+        assert(!files[1].unchanged(other.string()));
+        fs::last_write_time(other,stamp);
+        assert(!files[1].unchanged(other.string())); // size still differs
+        fs::remove(other);
+    }
     const auto before=yue2::detail::training_file_fingerprint(cache.string());
     const auto stamp=fs::last_write_time(cache);
     auto *metadata=gguf_init_from_file(cache.string().c_str(),{true,nullptr});assert(metadata);

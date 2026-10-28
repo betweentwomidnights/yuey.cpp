@@ -28,6 +28,18 @@ class AuditTest(unittest.TestCase):
         sf.write(path, np.column_stack([envelope*np.sin(2*np.pi*440*t),
                                        envelope*np.sin(2*np.pi*660*t)]), 24000, subtype="FLOAT")
 
+    def test_parallel_digests_match_serial_and_keep_order(self):
+        paths = []
+        for i, size in enumerate([0, 1, 3 * 1024 * 1024 + 5, 17]):
+            path = self.root / f"blob-{i}.bin"
+            path.write_bytes(bytes((i * 7 + j) % 251 for j in range(size)))
+            paths.append(path)
+        paths.append(paths[2])
+        expected = [audit.digest(path) for path in paths]
+        self.assertEqual(audit.digests(paths, workers=4), expected)
+        self.assertEqual(audit.digests(iter(paths)), expected)
+        self.assertEqual(audit.digests([]), [])
+
     def test_identical_and_wrong_tone_controls(self):
         a = self.root/"a.wav"; self.audio(a)
         same = audit.compare(a, a)

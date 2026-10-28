@@ -5,7 +5,7 @@ from pathlib import Path
 import gguf
 from prepare_ar_dataset import save,wait_for_inference
 from train_ar_run import grouped_loss,evaluation_history,native_metric_paths
-from yue2_training_audit import digest,native_runtime_identity
+from yue2_training_audit import digest,digests,native_runtime_identity
 
 
 class NativeNarProgress:
@@ -105,13 +105,14 @@ def main():
     rows=[r for r in data['rows'] if r.get('eligible',True)]
     def cache_path(row):
         path=Path(row['cache']);return path if path.is_absolute() else manifest.parent/path
-    for row in rows:
-        if digest(cache_path(row))!=row['cache_sha256']:raise ValueError('NAR cache bytes changed')
+    for row,value in zip(rows,digests(cache_path(r) for r in rows)):
+        if value!=row['cache_sha256']:raise ValueError('NAR cache bytes changed')
     models=config['models'];training=config['training'];binary=Path(config['training_binary'])
     if training.get('weight_decay',.01)!=.01 or training.get('clip',1)!=1:
         raise ValueError('This native CLI pins NAR weight decay .01 and clipping 1')
     identity=dict(format='yue2-nar-run-v1',training=training,dataset_sha256=digest(manifest),
-        models={key:digest(Path(models[key])) for key in ['base','companion','ar']},runtime=native_runtime_identity(binary),
+        models=dict(zip(['base','companion','ar'],digests(Path(models[key]) for key in ['base','companion','ar']))),
+        runtime=native_runtime_identity(binary),
         device=config.get('device','cuda'),threads=config.get('threads',6))
     cache_identity=data.get('identity',{})
     for key,field in [('base','base_sha256'),('companion','companion_sha256'),('ar','ar_adapter_sha256')]:
@@ -201,8 +202,8 @@ def main():
     if process.returncode:
         save(out/'run.json',dict(status='failed',stage=args.phase,command=record));raise RuntimeError(log.read_text()[-5000:])
     if digest(manifest)!=identity['dataset_sha256']:raise ValueError('NAR manifest changed during fitting')
-    for row in rows:
-        if digest(cache_path(row))!=row['cache_sha256']:raise ValueError('NAR cache changed during fitting')
+    for row,value in zip(rows,digests(cache_path(r) for r in rows)):
+        if value!=row['cache_sha256']:raise ValueError('NAR cache changed during fitting')
     if args.phase=='fit':
         select_checkpoints(out,rows,config)
         step=json.loads((native/'history.jsonl').read_text().splitlines()[-1])['step']
