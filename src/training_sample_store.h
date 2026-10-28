@@ -18,17 +18,25 @@ template <class Sample> class TrainingSampleStore {
     using Loader = std::function<Sample(const std::string &)>;
     using Inspector = std::function<void(const Sample &)>;
     using Progress = std::function<void(size_t, size_t)>;
+    using PathInspector = std::function<void(const std::string &)>;
     TrainingSampleStore(const std::vector<std::string> &paths, bool streaming,
-                        Loader loader, Inspector inspect, Progress progress = {})
+                        Loader loader, Inspector inspect, Progress progress = {}, PathInspector inspect_path = {})
         : paths_(paths), streaming_(streaming), loader_(std::move(loader)) {
         size_t completed = 0;
         for (const auto &path : paths_) {
             stamps_.push_back(stamp(path));
-            auto sample = loader_(path);
-            inspect(sample);
+            if (inspect_path) {
+                // An equivalent header/content validator can avoid decoding a
+                // streaming sample before it is actually consumed.
+                inspect_path(path);
+                if (!streaming_) samples_.push_back(loader_(path));
+            } else {
+                auto sample = loader_(path);
+                inspect(sample);
+                if (!streaming_) samples_.push_back(std::move(sample));
+            }
             if (stamp(path) != stamps_.back())
                 throw std::runtime_error("training sample changed while loading: " + path);
-            if (!streaming_) samples_.push_back(std::move(sample));
             if (progress) progress(++completed, paths_.size());
         }
     }

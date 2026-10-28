@@ -48,6 +48,15 @@ int main() {
     }
     inspected = 0; std::ofstream(paths[1]) << 1;
     {
+        // Header/content validation does not decode streaming samples eagerly.
+        const auto calls=allocated.size();size_t headers=0;
+        yue2::detail::TrainingSampleStore<Sample> store(paths,true,loader,
+            [&](const Sample &) { assert(false && "Path inspector replaces eager decoding"); },{},
+            [&](const std::string &path) { assert(fs::file_size(path)==1);++headers; });
+        assert(headers==2 && allocated.size()==calls);
+        assert(*store.get(1)==1 && allocated.size()==calls+1);
+    }
+    {
         yue2::detail::TrainingSampleStore<Sample> store(paths, false, loader, inspect);
         const auto calls = allocated.size();
         assert(*store.get(0) == 0 && *store.get(1) == 1);
@@ -60,6 +69,14 @@ int main() {
             [&](const Sample &) { std::ofstream(paths[0]) << "changed"; },
             [&](size_t, size_t) { assert(false && "Changed input must not report completed validation"); });
     } catch (const std::runtime_error &) { rejected = true; }
+    assert(rejected);
+    std::ofstream(paths[0]) << 0;
+    rejected=false;
+    try {
+        yue2::detail::TrainingSampleStore<Sample> store(paths,true,loader,inspect,
+            [&](size_t,size_t) { assert(false && "Changed header-validated input must not report success"); },
+            [&](const std::string &) { std::ofstream(paths[0]) << "changed again"; });
+    } catch (const std::runtime_error &) { rejected=true; }
     assert(rejected);
     for (const auto &path : paths) fs::remove(path);
     fs::remove(root);

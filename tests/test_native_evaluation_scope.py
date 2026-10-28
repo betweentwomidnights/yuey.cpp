@@ -13,6 +13,7 @@ import numpy as np
 
 BINARY=os.environ.get('YUE2_SCOPE_TEST_BINARY')
 MODEL=os.environ.get('YUE2_SCOPE_TEST_MODEL')
+DEVICE=os.environ.get('YUE2_SCOPE_TEST_DEVICE','cpu')
 
 
 @unittest.skipUnless(BINARY and MODEL,'Set YUE2_SCOPE_TEST_BINARY/MODEL for native CPU parity')
@@ -40,7 +41,7 @@ class EvaluationScopeTest(unittest.TestCase):
     def run_native(self,name,extra,fast=False):
         output=self.root/name
         inputs=['--sample',self.rows[0]['cache'],'--probe-ar-slots','8'] if fast else ['--dataset',str(self.manifest),'--group-samples']
-        cmd=[BINARY,'--model',MODEL,*inputs,'--stream-samples','--shuffle-samples','--device','cpu','--threads','6',
+        cmd=[BINARY,'--model',MODEL,*inputs,'--stream-samples','--shuffle-samples','--device',DEVICE,'--threads','6',
              '--identity','scope-parity','--rank','1','--f32-projections','--seed','123','--out',str(output),*extra]
         start=time.monotonic();result=subprocess.run(cmd,capture_output=True,text=True,timeout=240)
         self.timings[name]=time.monotonic()-start
@@ -80,6 +81,19 @@ class EvaluationScopeTest(unittest.TestCase):
         for name in ['probe-full','probe-fast']:
             self.assertIn('8 AR slots',(self.root/(name+'.log')).read_text())
         self.assertEqual(self.tensor_hashes(full/'probe.gguf'),self.tensor_hashes(fast/'probe.gguf'))
+
+    def test_encoded_fingerprint_preserves_training_and_resume(self):
+        common=['--steps','3','--eval-every','2','--save-every','2','--eval-scope','heldout']
+        legacy=self.run_native('fingerprint-legacy',common)
+        encoded=self.run_native('fingerprint-bytes',common+['--cache-fingerprint','bytes-v2'])
+        for step in [2,3]:
+            a,b=legacy/f'step-{step}.state.gguf',encoded/f'step-{step}.state.gguf'
+            self.assertEqual(self.tensor_hashes(a),self.tensor_hashes(b))
+            self.assertEqual(gguf.GGUFReader(str(a)).get_field('yue2.training.rng').contents(),
+                             gguf.GGUFReader(str(b)).get_field('yue2.training.rng').contents())
+        resumed=self.run_native('fingerprint-resumed',['--steps','1','--resume',str(encoded/'step-2.state.gguf'),
+                                                      '--eval-scope','heldout','--cache-fingerprint','bytes-v2'])
+        self.assertEqual(self.tensor_hashes(encoded/'step-3.state.gguf'),self.tensor_hashes(resumed/'step-3.state.gguf'))
 
 
 if __name__=='__main__':unittest.main()

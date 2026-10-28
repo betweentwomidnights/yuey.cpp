@@ -208,7 +208,7 @@ public:
             p=root_/id; fs::create_directory(p);
             // Pin defaults for new jobs; existing immutable requests keep their
             // original full-evaluation recipe and native runtime identities.
-            body.object["recipe_version"]=json::parse("2");
+            body.object["recipe_version"]=json::parse("3");
             write(p/"request.json",json::stringify(body)); write(p/"runtime.json",json::stringify(config())); action="prepare";
         } else {
             if(request.path.rfind(prefix+"/",0)!=0) return error_response(404,"Unknown training route","training");

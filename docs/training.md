@@ -69,12 +69,18 @@ initial evaluation run again when the first fit starts after preflight. A NAR
 resume revalidates the caches and restores optimizer state, but skips the initial
 baseline evaluation. Existing runs retain their frozen native executable; older
 executables expose activity/elapsed time, while new runs provide exact counters.
-New requests are pinned to recipe version 2. Its NAR preflight verifies cache
+New requests are pinned to recipe version 3, retaining recipe 2's heldout
+validation and maximum-context NAR preflight. Preflight verifies cache
 checksums and inspects all headers, then tests one training sample padded to the
 maximum context across training, holdout and retention caches. The fitter still
-validates and fingerprints the complete dataset before its first update. Legacy
-requests retain full-corpus preflight/evaluation and their frozen executables.
+validates and fingerprints the complete dataset before its first update. Recipe
+3 fingerprints encoded files without expanding every cache to F32 first, while
+retaining all coordinator SHA-256 checks and native provenance/shape checks.
+Recipes 1 and 2 retain their original policies and frozen executables. Fingerprint
+versions are bound to checkpoints; switching versions requires a new run.
 See [handoff measurements and parity checks](training-handoff-performance-2026-10-27.md).
+The [final optimization measurements](training-final-optimization-2026-10-27.md)
+cover the byte audit and real-window CUDA parity.
 
 ## Dataset and recipe
 

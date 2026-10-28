@@ -54,8 +54,8 @@
     "Cache audit timings exclude coordinator SHA-256 passes and model/gradient work."
   ],
   "remaining_work": [
-    "Versioned native byte hashing to avoid decoded-float fingerprint pass",
     "Persisted AR teacher distributions for resume",
     "Measure and overlap cache reads with update compute"
-  ]
+  ],
+  "completed_followup": "yue2-training-final-2026-10-27.json"
 }

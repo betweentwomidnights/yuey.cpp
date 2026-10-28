@@ -100,11 +100,12 @@ def settings(request):
                 kl_weight=number('kl_weight',.2,0,5),seed=number('seed',831001,0,2**32-1,True),
                 eval_every=number('eval_every',100,1,1000,True),family=family,trigger=trigger)
     version=request.get('recipe_version',1)
-    if type(version)!=int or version not in [1,2]:raise ValueError('Unsupported training recipe version')
-    if version==2:
+    if type(version)!=int or version not in [1,2,3]:raise ValueError('Unsupported training recipe version')
+    if version>=2:
         scope=request.get('evaluation_scope','heldout')
         if scope not in ['heldout','full']:raise ValueError('Evaluation scope must be heldout or full')
         options['evaluation_scope']=scope
+    if version>=3:options['cache_fingerprint']='bytes-v2'
     return options
 
 
@@ -269,6 +270,7 @@ class Workflow:
                           steps=o['nar_steps'],checkpoint_every=o['eval_every'],eval_every=o['eval_every']))
         if 'evaluation_scope' in o:
             nar_cfg['training'].update(evaluation_scope=o['evaluation_scope'],probe_scope='first-at-maximum-context')
+        if 'cache_fingerprint' in o:nar_cfg['training']['cache_fingerprint']=o['cache_fingerprint']
         nar_path=self.run/'nar-job.json'
         if nar_path.exists() and json.loads(nar_path.read_text())!=nar_cfg:raise ValueError('Frozen AR/NAR run changed')
         save(nar_path,nar_cfg)

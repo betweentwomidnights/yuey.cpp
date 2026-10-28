@@ -57,15 +57,14 @@ throughput benchmarks. The NAR fixture took 23.657 s with full evaluation and
 15.750 s with heldout evaluation, including loading and three updates.
 
 Header tests include a holdout longer than every training example and reject
-incompatible frame counts. New server-created requests are pinned to recipe
-version 2; both training configs record their evaluation scope, and NAR records
+incompatible frame counts. Recipe 2 pins both training configs' evaluation scope, and NAR records
 its preflight policy. Missing version means the legacy recipe, preserving
 existing request/config identities and executable pinning. Native research CLIs
 still default to full evaluation unless `--eval-scope heldout` is supplied.
 
 Raw local artifacts are in `outputs/training-handoff-2026-10-27`. Portable timings
 and assertions are in the accompanying experiment JSON. No GGML source change
-is needed. Remaining candidates are a versioned native byte-hash path to avoid
-decoded-float fingerprinting, persisted AR teacher distributions on resume, and
-overlapping cache reads with training. They require separate integrity/resource
-measurements; this change does not enable them.
+is needed. The subsequent [recipe 3 optimization](training-final-optimization-2026-10-27.md)
+implements encoded-file fingerprints and real-window GPU parity, retaining the
+recipe 2 policies above. Teacher persistence and asynchronous prefetch remain
+separate follow-ups.

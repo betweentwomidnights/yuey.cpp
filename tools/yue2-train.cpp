@@ -2,6 +2,7 @@
 #include "training_sampler.h"
 #include "training_noise.h"
 #include "training_sample_store.h"
+#include "training_cache_bytes.h"
 #include "server/json.h"
 #include "yue2/nar_training.h"
 #include "yue2/tokenizer.h"
@@ -274,6 +275,7 @@ int main(int argc, char **argv) {
                              "  [--save-every 10] [--eval-every 10] [--resume state.gguf] "
                              "[--eval-scope full|heldout] [--probe-ar-slots N (probe only)] "
                              "[--validate-only (cache audit, no model load)] "
+                             "[--cache-fingerprint decoded-v1|bytes-v2] "
                              "[--fixed-noise]\n"
                              "  [--f32-projections] [--conditioning-lora AR.gguf (repeat)]\n"
                              "  [--dora] full-gradient row DoRA; requires F32 projections "
@@ -320,7 +322,7 @@ int main(int argc, char **argv) {
                      key == "--abc" || key == "--prefix" || key == "--noise-schedule" ||
                      key == "--dataset" || key == "--stop-file" || key == "--cache-kv-type" || key == "--conditioning-batch" ||
                      key == "--prepare-batch" || key == "--cache-identity" ||
-                     key == "--eval-scope" || key == "--probe-ar-slots") {
+                     key == "--eval-scope" || key == "--probe-ar-slots" || key == "--cache-fingerprint") {
                 if (!args.emplace(key, value).second)
                     throw std::runtime_error("duplicate argument " + key);
             } else
@@ -427,6 +429,11 @@ int main(int argc, char **argv) {
             throw std::runtime_error("heldout evaluation requires validation samples");
         if (args.count("--probe-ar-slots") && !args.count("--probe-only"))
             throw std::runtime_error("--probe-ar-slots is only valid for a preflight probe");
+        const auto fingerprint = args.count("--cache-fingerprint") ? args.at("--cache-fingerprint") : "decoded-v1";
+        if (fingerprint!="decoded-v1" && fingerprint!="bytes-v2")
+            throw std::runtime_error("unsupported cache fingerprint policy");
+        if (fingerprint=="bytes-v2" && !args.count("--dataset"))
+            throw std::runtime_error("byte cache fingerprints require an explicit dataset");
         uint32_t ar = 0;
         size_t frames = 0;
         uint64_t content_hash = 14695981039346656037ULL;
@@ -463,9 +470,18 @@ int main(int argc, char **argv) {
         auto validation_progress = [&](size_t, size_t) {
             training_event("cache-validation", ++validated, cache_count);
         };
-        mix(samples.size()); Store train(samples, streaming, loader, inspect, validation_progress);
-        mix(validations.size()); Store validation(validations, streaming, loader, inspect, validation_progress);
-        mix(retentions.size()); Store retention(retentions, streaming, loader, inspect, validation_progress);
+        Store::PathInspector inspect_path;
+        if (fingerprint=="bytes-v2") inspect_path=[&](const std::string &path) {
+            const auto header=yue2::detail::inspect_nar_cache_header(path,args.at("--model"),
+                fixed_identity(fixed),fixed_identity(conditioning));
+            if (!frames) frames=header.frames;
+            if (frames!=header.frames) throw std::runtime_error("differently shaped training caches");
+            ar=std::max(ar,header.tokens);
+            mix(header.bytes);mix(yue2::detail::training_file_fingerprint(path));
+        };
+        mix(samples.size()); Store train(samples, streaming, loader, inspect, validation_progress, inspect_path);
+        mix(validations.size()); Store validation(validations, streaming, loader, inspect, validation_progress, inspect_path);
+        mix(retentions.size()); Store retention(retentions, streaming, loader, inspect, validation_progress, inspect_path);
         if (args.count("--probe-ar-slots")) {
             const auto capacity = std::stoul(args.at("--probe-ar-slots"));
             if (capacity < ar || capacity > 24576)
@@ -475,10 +491,11 @@ int main(int argc, char **argv) {
         if (args.count("--dataset")) {
             mix(groups.size()); for (auto group : groups) mix(group);
             std::ostringstream signature; signature << std::hex << content_hash;
-            options.run_identity += ":nar-cache-fnv1a64-v1:" + signature.str();
+            options.run_identity += (fingerprint=="bytes-v2" ? ":nar-cache-bytes-fnv1a64-v2:" : ":nar-cache-fnv1a64-v1:") + signature.str();
         }
         if (args.count("--validate-only")) {
             std::cout << "CACHE_AUDIT {\"files\":" << cache_count << ",\"frames\":" << frames
+                      << ",\"fingerprint\":" << yue2::server::json::quote(fingerprint)
                       << ",\"ar_slots\":" << ar << ",\"seconds\":"
                       << std::chrono::duration<double>(std::chrono::steady_clock::now()-validation_start).count()
                       << ",\"identity\":" << yue2::server::json::quote(options.run_identity) << "}" << std::endl;
@@ -626,11 +643,18 @@ int main(int argc, char **argv) {
                 e = noise(rng, frames * 64);
                 sigma = yue2::detail::training_noise_time(schedule, rng, time_rng);
             }
-            auto result = trainer.step(train.get(at), e, sigma);
+            const auto load_start=std::chrono::steady_clock::now();
+            const auto &sample=train.get(at);
+            const auto load_done=std::chrono::steady_clock::now();
+            auto result = trainer.step(sample, e, sigma);
+            const auto update_done=std::chrono::steady_clock::now();
             std::ostringstream line;
             line << "{\"step\":" << result.optimizer_step << ",\"loss\":" << result.loss
                  << ",\"grad_norm\":" << result.gradient_norm << ",\"sample_index\":" << at
-                 << ",\"sigma\":" << sigma;
+                 << ",\"sigma\":" << sigma
+                 << ",\"cache_load_seconds\":" << std::chrono::duration<double>(load_done-load_start).count()
+                 << ",\"update_seconds\":" << std::chrono::duration<double>(update_done-load_done).count()
+                 << ",\"seconds\":" << std::chrono::duration<double>(update_done-load_start).count();
             if (!groups.empty()) line << ",\"sample_group\":" << groups[at];
             line << "}";
             history << line.str() << '\n';

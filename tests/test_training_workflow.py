@@ -19,7 +19,9 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual(settings(dict(id='new-run',recipe_version=2,evaluation_scope='full'))['evaluation_scope'],'full')
         with self.assertRaisesRegex(ValueError,'Evaluation scope'):
             settings(dict(id='new-run',recipe_version=2,evaluation_scope='none'))
-        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=3))
+        self.assertNotIn('cache_fingerprint',settings(dict(id='version-two',recipe_version=2)))
+        self.assertEqual(settings(dict(id='version-three',recipe_version=3))['cache_fingerprint'],'bytes-v2')
+        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=4))
 
     def test_resume_does_not_display_previous_terminal_progress(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -29,10 +29,12 @@ class NarProgressTest(unittest.TestCase):
             self.assertEqual(result['phase_current'],61)
             self.assertEqual(result['phase_unit'],'windows')
             self.assertEqual(result['step'],0)
-            with path.open('a') as stream:stream.write('{"step":1,"loss":0.8}\n')
+            with path.open('a') as stream:stream.write('{"step":1,"loss":0.8,"seconds":2.5,"cache_load_seconds":0.4}\n')
             result=progress.read()
             self.assertEqual(result['step'],1)
             self.assertEqual(result['activity'],'Training')
+            self.assertEqual(result['last_update_seconds'],2.5)
+            self.assertEqual(result['last_cache_load_seconds'],.4)
             self.assertNotIn('phase_current',result)
 
     def test_split_event_resume_and_final_evaluation(self):

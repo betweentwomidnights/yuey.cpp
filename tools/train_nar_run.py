@@ -47,6 +47,8 @@ class NativeNarProgress:
                 except json.JSONDecodeError:continue
                 if 'loss' in record and 'step' in record:
                     self.values['step']=record['step'];self.activity('Training')
+                    if 'seconds' in record:self.values['last_update_seconds']=record['seconds']
+                    if 'cache_load_seconds' in record:self.values['last_cache_load_seconds']=record['cache_load_seconds']
         return dict(self.values,activity_elapsed_seconds=time.monotonic()-self.since)
 
 
@@ -134,6 +136,8 @@ def main():
         command+=['--sample',str(first),'--probe-ar-slots',str(capacity)]
     if args.phase=='fit' and 'evaluation_scope' in training:
         command+=['--eval-scope',training['evaluation_scope']]
+    if args.phase in ['fit','post-probe'] and 'cache_fingerprint' in training:
+        command+=['--cache-fingerprint',training['cache_fingerprint']]
     target=training['steps']
     resumed=0
     if args.phase=='fit':
