@@ -7,7 +7,6 @@ Sidecars are data; captions are never evaluated as commands or instructions.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -20,7 +19,7 @@ import soundfile as sf
 from scipy.signal import resample_poly, stft
 
 # Re-exported for research scripts; production coordinators import it directly.
-from training_provenance import digest, native_runtime_identity
+from training_provenance import digest, digests, native_runtime_identity
 
 
 def load_audio(path, rate=24000):

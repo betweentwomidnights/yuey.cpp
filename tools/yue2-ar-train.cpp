@@ -470,7 +470,9 @@ int main(int argc, char **argv) {
                 << ",\"gradient_norm\":" << result.gradient_norm
                 << ",\"sample_index\":" << sample_index
                 << ",\"cross_entropy\":" << result.cross_entropy
-                << ",\"teacher_kl\":" << result.teacher_kl << ",\"seconds\":" << seconds;
+                << ",\"teacher_kl\":" << result.teacher_kl << ",\"seconds\":" << seconds
+                << ",\"inputs_seconds\":" << result.inputs_seconds
+                << ",\"optimizer_seconds\":" << result.optimizer_seconds;
             if(!groups.empty())log<<",\"sample_group\":"<<groups[sample_index]<<",\"target_tokens\":"<<samples[sample_index].codes.size();
             log<<"}\n";
             log.flush();

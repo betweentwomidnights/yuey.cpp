@@ -3,9 +3,12 @@
 #include "gguf_model.h"
 #include "lora.h"
 #include "dora.h"
+#include "training_parallel.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <future>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -16,6 +19,10 @@ namespace {
 constexpr int H = 2048, D = 128, Q = 16, K = 8, L = 28, FF = 6144;
 constexpr size_t C = 4096;
 using Context = std::unique_ptr<ggml_context, decltype(&ggml_free)>;
+using Clock = std::chrono::steady_clock;
+double since(Clock::time_point start) {
+    return std::chrono::duration<double>(Clock::now() - start).count();
+}
 Context context(bool gradients = false) {
     auto bytes = C * ggml_tensor_overhead() + 2 * ggml_graph_overhead_custom(C, gradients);
     Context result(ggml_init({bytes, nullptr, true}), ggml_free);
@@ -37,6 +44,12 @@ std::vector<float> get(ggml_tensor *t) {
     std::vector<float> values(ggml_nelements(t));
     ggml_backend_tensor_get(t, values.data(), 0, values.size() * sizeof(float));
     return values;
+}
+// Download into existing host storage, avoiding a fresh allocation per step.
+void download(ggml_tensor *t, std::vector<float> &values) {
+    if (ggml_nelements(t) != static_cast<int64_t>(values.size()) || t->type != GGML_TYPE_F32)
+        throw std::runtime_error("training tensor download shape mismatch");
+    ggml_backend_tensor_get(t, values.data(), 0, values.size() * sizeof(float));
 }
 ggml_tensor *f32(ggml_context *ctx, ggml_tensor *t) {
     return t->type == GGML_TYPE_F32 ? t : ggml_cast(ctx, t, GGML_TYPE_F32);
@@ -190,6 +203,7 @@ class ArTrainer::Impl {
             buffer = ggml_backend_alloc_ctx_tensors(persistent.get(), model.backend());
             if (!buffer)
                 throw std::runtime_error("cannot allocate training state");
+            spans = detail::tensor_spans(parameters, size_t(1) << 16);
             for (auto &p : parameters)
                 set(p.tensor, p.values);
             for(const auto &entry:base_norms)set(entry.second,base_norm_values.at(entry.first));
@@ -438,19 +452,9 @@ class ArTrainer::Impl {
                 if (sample.teacher_probabilities.size() != labels.size() ||
                     !std::isfinite(sample.teacher_entropy))
                     throw std::runtime_error("missing/invalid frozen teacher distribution");
-                finite(sample.teacher_probabilities, "teacher probabilities");
-                for (uint32_t row = 0; row < targets; ++row) {
-                    double sum = 0;
-                    for (int col = 0; col <= kCodecSize; ++col) {
-                        const auto p =
-                            sample.teacher_probabilities[size_t(row) * (kCodecSize + 1) + col];
-                        if (p < 0)
-                            throw std::runtime_error("negative teacher probability");
-                        sum += p;
-                    }
-                    if (std::abs(sum - 1) > 1e-4)
-                        throw std::runtime_error("unnormalized teacher row");
-                }
+                // Prepared distributions were checked completely once.
+                if (!sample.teacher_validated)
+                    check_teacher(sample);
                 set(teacher, sample.teacher_probabilities);
                 set(teacher_entropy, {sample.teacher_entropy});
             } else {
@@ -459,6 +463,43 @@ class ArTrainer::Impl {
             }
             set(kl_scale, {last_kl_scale});
         }
+    }
+    void check_teacher(const ArTrainingSample &sample) const {
+        if (sample.teacher_probabilities.size() != size_t(kCodecSize + 1) * targets ||
+            !std::isfinite(sample.teacher_entropy))
+            throw std::runtime_error("missing/invalid frozen teacher distribution");
+        const auto &probabilities = sample.teacher_probabilities;
+        // Rows are independent; each row is summed serially as before. The
+        // first failing check in the former serial order is reported.
+        std::vector<char> status(targets, 0);
+        detail::parallel_tasks(targets, options.threads, [&](size_t row) {
+            const auto *data = probabilities.data() + row * (kCodecSize + 1);
+            if (!detail::all_finite(data, 0, kCodecSize + 1)) {
+                status[row] = 1;
+                return;
+            }
+            double sum = 0;
+            for (int col = 0; col <= kCodecSize; ++col) {
+                if (data[col] < 0) {
+                    status[row] = 2;
+                    return;
+                }
+                sum += data[col];
+            }
+            if (std::abs(sum - 1) > 1e-4)
+                status[row] = 3;
+        });
+        if (std::find(status.begin(), status.end(), 1) != status.end())
+            throw std::runtime_error("nonfinite teacher probabilities");
+        const auto failed = std::find_if(status.begin(), status.end(), [](char s) { return s != 0; });
+        if (failed != status.end())
+            throw std::runtime_error(*failed == 2 ? "negative teacher probability"
+                                                  : "unnormalized teacher row");
+    }
+    void validate_teacher(ArTrainingSample &sample) const {
+        sample.teacher_validated = false;
+        check_teacher(sample);
+        sample.teacher_validated = true;
     }
     float forward(bool common_teacher=false) {
         compute(front.forward);
@@ -471,48 +512,71 @@ class ArTrainer::Impl {
         return loss;
     }
     ArTrainingResult step(const ArTrainingSample &sample, bool update) {
+        const auto inputs_start = Clock::now();
         inputs(sample, true);
+        const double inputs_seconds = since(inputs_start);
         const float loss = forward();
+        double optimizer_seconds = 0;
         const float cross_entropy = get(tail.task_loss)[0];
         const float teacher_kl = tail.kl_loss ? get(tail.kl_loss)[0] : 0;
         double squared = 0;
+        std::future<void> scan;
         for (int layer = L - 1; layer >= 0; --layer) {
             auto &graph = blocks[layer];
             compute(graph.backward, true);
-            for (int i = layer * parameters_per_layer(); i < (layer + 1) * parameters_per_layer(); ++i) {
-                auto &p = parameters[i];
-                p.gradient = get(ggml_graph_get_grad(graph.backward, p.tensor));
-                finite(p.gradient, "adapter gradient");
-                for (auto value : p.gradient)
-                    squared += double(value) * value;
-            }
+            const auto download_start = Clock::now();
+            const int first = layer * parameters_per_layer(), last = first + parameters_per_layer();
+            for (int i = first; i < last; ++i)
+                download(ggml_graph_get_grad(graph.backward, parameters[i].tensor), parameters[i].gradient);
+            // Finite checks and the norm reduction overlap the next layer's
+            // backward pass. Each scan waits for the previous one, so the
+            // global sum keeps exactly the former serial order.
+            scan = std::async(std::launch::async,
+                              [this, first, last, &squared, previous = std::move(scan)]() mutable {
+                                  if (previous.valid())
+                                      previous.get();
+                                  for (int i = first; i < last; ++i) {
+                                      const auto &gradient = parameters[i].gradient;
+                                      finite(gradient, "adapter gradient");
+                                      for (auto value : gradient)
+                                          squared += double(value) * value;
+                                  }
+                              });
+            optimizer_seconds += since(download_start);
             ggml_backend_tensor_copy(outgoing, incoming);
         }
+        const auto scan_start = Clock::now();
+        scan.get();
+        optimizer_seconds += since(scan_start);
         const auto gradient_norm = std::sqrt(squared);
         if (!std::isfinite(gradient_norm))
             throw std::runtime_error("nonfinite global gradient norm");
         if (update) {
+            const auto update_start = Clock::now();
             ++optimizer_step;
             const double scale = options.gradient_clip > 0 && gradient_norm > options.gradient_clip
                                      ? options.gradient_clip / gradient_norm
                                      : 1;
             const double correction1 = 1 - std::pow(0.9, double(optimizer_step));
             const double correction2 = 1 - std::pow(0.999, double(optimizer_step));
-            for (auto &p : parameters) {
-                for (size_t i = 0; i < p.values.size(); ++i) {
-                    const float g = static_cast<float>(p.gradient[i] * scale);
-                    p.m[i] = 0.9F * p.m[i] + 0.1F * g;
-                    p.v[i] = 0.999F * p.v[i] + 0.001F * g * g;
-                    p.values[i] -= options.learning_rate *
-                                   static_cast<float>((p.m[i] / correction1) /
-                                                          (std::sqrt(p.v[i] / correction2) + 1e-8) +
-                                                      options.weight_decay * p.values[i]);
-                }
-                finite(p.values, "updated adapter");
+            // Elementwise, so each span is independent of thread scheduling.
+            std::vector<char> ok(spans.size(), 1);
+            detail::parallel_tasks(spans.size(), options.threads, [&](size_t task) {
+                const auto &span = spans[task];
+                auto &p = parameters[span.tensor];
+                ok[task] = detail::adamw_span(p.values.data(), p.gradient.data(), p.m.data(),
+                                              p.v.data(), span.begin, span.end, scale, correction1,
+                                              correction2, options.learning_rate,
+                                              options.weight_decay);
+            });
+            if (std::find(ok.begin(), ok.end(), 0) != ok.end())
+                throw std::runtime_error("nonfinite updated adapter");
+            for (auto &p : parameters)
                 set(p.tensor, p.values);
-            }
+            optimizer_seconds += since(update_start);
         }
-        return {loss, gradient_norm, optimizer_step, cross_entropy, teacher_kl};
+        return {loss, gradient_norm, optimizer_step, cross_entropy, teacher_kl, inputs_seconds,
+                optimizer_seconds};
     }
     void prepare_teacher(ArTrainingSample &sample) {
         if (optimizer_step != 0)
@@ -541,6 +605,7 @@ class ArTrainer::Impl {
         }
         sample.teacher_probabilities = std::move(probabilities);
         sample.teacher_entropy = static_cast<float>(entropy / targets);
+        validate_teacher(sample);
     }
     void metadata(gguf_context *file, bool state = false) const {
         gguf_set_val_str(file, "general.architecture", state ? "yue2_ar_training" : "yue2_lora");
@@ -723,6 +788,7 @@ class ArTrainer::Impl {
     std::vector<ggml_gallocr_t> workspaces;
     std::map<ggml_cgraph *, ggml_gallocr_t> graph_allocators;
     std::vector<Parameter> parameters;
+    std::vector<detail::TensorSpan> spans;
     std::map<std::string, size_t> parameter_index;
     std::map<std::string,ggml_tensor *> base_norms;
     std::map<std::string,std::vector<float>> base_norm_values;
@@ -749,6 +815,7 @@ float ArTrainer::evaluate(const ArTrainingSample &s) {
     return impl_->forward();
 }
 void ArTrainer::prepare_teacher(ArTrainingSample &s) { impl_->prepare_teacher(s); }
+void ArTrainer::validate_teacher(ArTrainingSample &s) { impl_->validate_teacher(s); }
 void ArTrainer::save_adapter(const std::string &path) const { impl_->write(path, false); }
 void ArTrainer::save_state(const std::string &path, const std::string &rng) const {
     impl_->write(path, true, rng);

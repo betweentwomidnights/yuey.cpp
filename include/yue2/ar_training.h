@@ -24,6 +24,10 @@ struct ArTrainingSample {
     std::vector<std::int32_t> codes;          // Raw codec IDs [0,32767].
     std::vector<float> teacher_probabilities; // Optional frozen common-model distribution.
     float teacher_entropy = 0;
+    // Set by ArTrainer::prepare_teacher/validate_teacher once the complete
+    // distribution has passed its finite/nonnegative/normalized checks.
+    // Clear it if teacher_probabilities change; unset rows are checked per use.
+    bool teacher_validated = false;
 };
 struct ArTrainingResult {
     float loss = 0;
@@ -31,6 +35,9 @@ struct ArTrainingResult {
     std::uint64_t optimizer_step = 0;
     float cross_entropy = 0;
     float teacher_kl = 0;
+    // Host wall time, as for NarTrainingResult.
+    double inputs_seconds = 0;
+    double optimizer_seconds = 0;
 };
 
 // Experimental fixed-frame semantic teacher forcing with a maximum prefix
@@ -49,6 +56,8 @@ class ArTrainer {
     float evaluate(const ArTrainingSample &);
     // Call before any update/resume, while learned B factors are zero.
     void prepare_teacher(ArTrainingSample &);
+    // Check a supplied frozen distribution once, then mark it validated.
+    void validate_teacher(ArTrainingSample &);
     void save_adapter(const std::string &path) const;
     void save_state(const std::string &path, const std::string &rng_state) const;
     std::string load_state(const std::string &path);

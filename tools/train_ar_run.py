@@ -16,7 +16,7 @@ from pathlib import Path
 
 import gguf
 from prepare_ar_dataset import save,wait_for_inference
-from training_provenance import digest,native_runtime_identity
+from training_provenance import digest,digests,native_runtime_identity
 
 
 class NativeProgress:
@@ -233,13 +233,14 @@ def main():
     dataset=Path(config['training_dataset']);data=json.loads(dataset.read_text())
     if not data['completed']:raise ValueError('Dataset is not ready')
     rows=[r for r in data['rows'] if r.get('eligible',True)]
-    for row in rows:
-        for key in ['prefix','codes']:
-            if digest(Path(row[key]))!=row[key+'_sha256']:raise ValueError('Example content changed')
+    examples=[(row,key) for row in rows for key in ['prefix','codes']]
+    for (row,key),value in zip(examples,digests(Path(row[key]) for row,key in examples)):
+        if value!=row[key+'_sha256']:raise ValueError('Example content changed')
     training=config['training'];binary=Path(config['training_binary'])
     model=Path(config['models']['base']);companion=Path(config['models']['companion'])
-    identity=dict(format='yue2-ar-run-v1',family=args.family,training=training,dataset_sha256=digest(dataset),
-                  base_sha256=digest(model),companion_sha256=digest(companion),runtime=native_runtime_identity(binary))
+    dataset_sha256,base_sha256,companion_sha256=digests([dataset,model,companion])
+    identity=dict(format='yue2-ar-run-v1',family=args.family,training=training,dataset_sha256=dataset_sha256,
+                  base_sha256=base_sha256,companion_sha256=companion_sha256,runtime=native_runtime_identity(binary))
     identity_path=out/'identity.json'
     if identity_path.exists():
         if json.loads(identity_path.read_text())!=identity:raise ValueError('Resolved run identity changed')
@@ -338,9 +339,8 @@ def main():
         save(out/'run.json',dict(status='failed',stage=args.phase,family=args.family,command=command_record))
         raise RuntimeError(log.read_text()[-5000:])
     if digest(dataset)!=identity['dataset_sha256']:raise RuntimeError('Dataset manifest changed during the run')
-    for row in rows:
-        for key in ['prefix','codes']:
-            if digest(Path(row[key]))!=row[key+'_sha256']:raise RuntimeError('Example changed during the run')
+    for (row,key),value in zip(examples,digests(Path(row[key]) for row,key in examples)):
+        if value!=row[key+'_sha256']:raise RuntimeError('Example changed during the run')
     if teacher:verify_teacher_cache(teacher,teacher_sha,train_rows)
     if args.phase=='fit':
         select_checkpoints(out,rows,config)

@@ -20,17 +20,27 @@ struct NarTrainingOptions {
     // Experimental output-row DoRA, full norm gradients. Requires F32
     // projections and an unquantized base, with no fixed NAR adapters.
     bool dora = false;
+    // Persistent AR K/V inputs are F16 and widened to F32 inside the graph,
+    // which is exact. Every sample must then carry half_keys/half_values.
+    bool f16_conditioning = false;
     // Caller hashes dataset, preprocessing and model/adapter content identities.
     std::string run_identity;
 };
 struct NarTrainingSample {
     FrozenNarConditioning conditioning;
     std::vector<float> clean_latents; // [frames,64], posterior means
+    // Exact F16 K/V from a compact cache, same layout as conditioning.keys/
+    // values. When present, conditioning.keys/values are empty.
+    std::vector<std::uint16_t> half_keys, half_values;
 };
 struct NarTrainingResult {
     float loss = 0;
     double gradient_norm = 0;
     std::uint64_t optimizer_step = 0;
+    // Host wall time: input validation/upload, and gradient download, scans,
+    // AdamW and parameter upload. Diagnostics only; never part of numerics.
+    double inputs_seconds = 0;
+    double optimizer_seconds = 0;
 };
 
 // Experimental batch-one acoustic training. All seven NAR projections in all
@@ -46,6 +56,9 @@ class NarTrainer {
     NarTrainingResult step(const NarTrainingSample &, const std::vector<float> &noise, float sigma,
                            bool update = true);
     float evaluate(const NarTrainingSample &, const std::vector<float> &noise, float sigma);
+    // One loss per noise level; the sample's conditioning is uploaded once.
+    std::vector<float> evaluate(const NarTrainingSample &, const std::vector<float> &noise,
+                                const std::vector<float> &sigmas);
     std::vector<float> velocity() const;
     void save_adapter(const std::string &path) const;
     void save_state(const std::string &path, const std::string &rng_state) const;

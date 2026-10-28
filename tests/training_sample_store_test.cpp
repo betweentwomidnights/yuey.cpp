@@ -3,6 +3,7 @@
 #include <chrono>
 #include <fstream>
 #include <memory>
+#include <thread>
 
 int main() {
     namespace fs = std::filesystem;
@@ -47,6 +48,36 @@ int main() {
         assert(rejected);
     }
     inspected = 0; std::ofstream(paths[1]) << 1;
+    {
+        // A prefetched sample is consumed once, without a second load.
+        yue2::detail::TrainingSampleStore<Sample> store(paths, true, loader, inspect);
+        assert(*store.get(0) == 0);
+        const auto calls = allocated.size();
+        store.prefetch(1);
+        store.prefetch(1);
+        assert(*store.get(1) == 1 && allocated.size() == calls + 1);
+        store.prefetch(1); // Already current: no load.
+        assert(allocated.size() == calls + 1);
+        // A pending prefetch survives get() of the current sample.
+        store.prefetch(0);
+        assert(*store.get(1) == 1);
+        assert(*store.get(0) == 0 && allocated.size() == calls + 2);
+        // A file changed after its prefetch completed is rejected when consumed.
+        store.prefetch(1);
+        const auto original_time = fs::last_write_time(paths[1]);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::ofstream(paths[1]) << 8;
+        fs::last_write_time(paths[1], original_time + std::chrono::seconds(2));
+        bool rejected = false;
+        try { store.get(1); } catch (const std::runtime_error &) { rejected = true; }
+        assert(rejected);
+        std::ofstream(paths[1]) << 1;
+        fs::last_write_time(paths[1], original_time);
+        // Restoring the validated bytes and stamp makes the file acceptable again.
+        store.prefetch(1);
+        assert(*store.get(1) == 1);
+    }
+    inspected = 0;
     {
         // Header/content validation does not decode streaming samples eagerly.
         const auto calls=allocated.size();size_t headers=0;

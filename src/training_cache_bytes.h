@@ -1,10 +1,13 @@
 #pragma once
 #include "ggml.h"
 #include "gguf.h"
+#include "training_parallel.h"
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -30,10 +33,39 @@ inline uint64_t training_file_fingerprint(const std::string &path) {
     return hash;
 }
 
+// Per-file fingerprints computed concurrently. Size and modification time are
+// recorded before reading and must be unchanged afterwards; callers compare
+// them again before trusting the hash. Callers mix results in path order.
+struct TrainingFileFingerprint {
+    std::uintmax_t size=0;
+    std::filesystem::file_time_type time{};
+    uint64_t hash=0;
+    bool unchanged(const std::string &path) const {
+        return std::filesystem::file_size(path)==size && std::filesystem::last_write_time(path)==time;
+    }
+};
+inline std::vector<TrainingFileFingerprint> training_file_fingerprints(
+    const std::vector<std::string> &paths,int threads,
+    const std::function<void(size_t,size_t)> &progress={}) {
+    std::vector<TrainingFileFingerprint> result(paths.size());
+    std::mutex lock;size_t completed=0;
+    parallel_tasks(paths.size(),threads,[&](size_t i) {
+        auto &file=result[i];
+        file.size=std::filesystem::file_size(paths[i]);
+        file.time=std::filesystem::last_write_time(paths[i]);
+        file.hash=training_file_fingerprint(paths[i]);
+        if (!file.unchanged(paths[i]))
+            throw std::runtime_error("training sample changed while fingerprinting: "+paths[i]);
+        if (progress) {std::lock_guard<std::mutex> guard(lock);progress(++completed,paths.size());}
+    });
+    return result;
+}
+
 struct NarCacheHeader {
     uint32_t tokens=0;
     size_t frames=0;
     uint64_t bytes=0;
+    bool half_conditioning=false; // keys and values are both F16
 };
 
 inline NarCacheHeader inspect_nar_cache_header(const std::string &path,
@@ -86,6 +118,7 @@ inline NarCacheHeader inspect_nar_cache_header(const std::string &path,
             throw std::runtime_error("invalid NAR cache conditioning shape/precision");
     }
     result.frames=static_cast<size_t>(count/64);
+    result.half_conditioning=keys->type==GGML_TYPE_F16 && values->type==GGML_TYPE_F16;
     return result;
 }
 } // namespace yue2::detail
