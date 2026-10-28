@@ -654,6 +654,8 @@ int main(int argc, char **argv) {
                  << ",\"sigma\":" << sigma
                  << ",\"cache_load_seconds\":" << std::chrono::duration<double>(load_done-load_start).count()
                  << ",\"update_seconds\":" << std::chrono::duration<double>(update_done-load_done).count()
+                 << ",\"inputs_seconds\":" << result.inputs_seconds
+                 << ",\"optimizer_seconds\":" << result.optimizer_seconds
                  << ",\"seconds\":" << std::chrono::duration<double>(update_done-load_start).count();
             if (!groups.empty()) line << ",\"sample_group\":" << groups[at];
             line << "}";

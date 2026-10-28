@@ -31,6 +31,9 @@ struct ArTrainingResult {
     std::uint64_t optimizer_step = 0;
     float cross_entropy = 0;
     float teacher_kl = 0;
+    // Host wall time, as for NarTrainingResult.
+    double inputs_seconds = 0;
+    double optimizer_seconds = 0;
 };
 
 // Experimental fixed-frame semantic teacher forcing with a maximum prefix

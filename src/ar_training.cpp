@@ -4,6 +4,7 @@
 #include "lora.h"
 #include "dora.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <limits>
@@ -16,6 +17,10 @@ namespace {
 constexpr int H = 2048, D = 128, Q = 16, K = 8, L = 28, FF = 6144;
 constexpr size_t C = 4096;
 using Context = std::unique_ptr<ggml_context, decltype(&ggml_free)>;
+using Clock = std::chrono::steady_clock;
+double since(Clock::time_point start) {
+    return std::chrono::duration<double>(Clock::now() - start).count();
+}
 Context context(bool gradients = false) {
     auto bytes = C * ggml_tensor_overhead() + 2 * ggml_graph_overhead_custom(C, gradients);
     Context result(ggml_init({bytes, nullptr, true}), ggml_free);
@@ -471,14 +476,18 @@ class ArTrainer::Impl {
         return loss;
     }
     ArTrainingResult step(const ArTrainingSample &sample, bool update) {
+        const auto inputs_start = Clock::now();
         inputs(sample, true);
+        const double inputs_seconds = since(inputs_start);
         const float loss = forward();
+        double optimizer_seconds = 0;
         const float cross_entropy = get(tail.task_loss)[0];
         const float teacher_kl = tail.kl_loss ? get(tail.kl_loss)[0] : 0;
         double squared = 0;
         for (int layer = L - 1; layer >= 0; --layer) {
             auto &graph = blocks[layer];
             compute(graph.backward, true);
+            const auto download_start = Clock::now();
             for (int i = layer * parameters_per_layer(); i < (layer + 1) * parameters_per_layer(); ++i) {
                 auto &p = parameters[i];
                 p.gradient = get(ggml_graph_get_grad(graph.backward, p.tensor));
@@ -486,12 +495,14 @@ class ArTrainer::Impl {
                 for (auto value : p.gradient)
                     squared += double(value) * value;
             }
+            optimizer_seconds += since(download_start);
             ggml_backend_tensor_copy(outgoing, incoming);
         }
         const auto gradient_norm = std::sqrt(squared);
         if (!std::isfinite(gradient_norm))
             throw std::runtime_error("nonfinite global gradient norm");
         if (update) {
+            const auto update_start = Clock::now();
             ++optimizer_step;
             const double scale = options.gradient_clip > 0 && gradient_norm > options.gradient_clip
                                      ? options.gradient_clip / gradient_norm
@@ -511,8 +522,10 @@ class ArTrainer::Impl {
                 finite(p.values, "updated adapter");
                 set(p.tensor, p.values);
             }
+            optimizer_seconds += since(update_start);
         }
-        return {loss, gradient_norm, optimizer_step, cross_entropy, teacher_kl};
+        return {loss, gradient_norm, optimizer_step, cross_entropy, teacher_kl, inputs_seconds,
+                optimizer_seconds};
     }
     void prepare_teacher(ArTrainingSample &sample) {
         if (optimizer_step != 0)

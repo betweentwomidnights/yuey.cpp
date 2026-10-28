@@ -31,6 +31,10 @@ struct NarTrainingResult {
     float loss = 0;
     double gradient_norm = 0;
     std::uint64_t optimizer_step = 0;
+    // Host wall time: input validation/upload, and gradient download, scans,
+    // AdamW and parameter upload. Diagnostics only; never part of numerics.
+    double inputs_seconds = 0;
+    double optimizer_seconds = 0;
 };
 
 // Experimental batch-one acoustic training. All seven NAR projections in all
