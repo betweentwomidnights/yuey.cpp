@@ -272,6 +272,8 @@ int main(int argc, char **argv) {
                              "[--seed "
                              "831001]\n"
                              "  [--save-every 10] [--eval-every 10] [--resume state.gguf] "
+                             "[--eval-scope full|heldout] [--probe-ar-slots N (probe only)] "
+                             "[--validate-only (cache audit, no model load)] "
                              "[--fixed-noise]\n"
                              "  [--f32-projections] [--conditioning-lora AR.gguf (repeat)]\n"
                              "  [--dora] full-gradient row DoRA; requires F32 projections "
@@ -289,7 +291,7 @@ int main(int argc, char **argv) {
                              "inference.\n";
                 return 0;
             }
-            if (key == "--prepare" || key == "--reference" || key == "--probe-only" ||
+            if (key == "--prepare" || key == "--reference" || key == "--probe-only" || key == "--validate-only" ||
                 key == "--fixed-noise" || key == "--generate-latents" ||
                 key == "--f32-projections" || key == "--shuffle-samples" || key == "--dora" ||
                 key == "--group-samples" || key == "--stream-samples" || key == "--conditioning-only" || key == "--cache-flash-attn") {
@@ -317,7 +319,8 @@ int main(int argc, char **argv) {
                      key == "--eval-every" || key == "--resume" || key == "--diagnostics" ||
                      key == "--abc" || key == "--prefix" || key == "--noise-schedule" ||
                      key == "--dataset" || key == "--stop-file" || key == "--cache-kv-type" || key == "--conditioning-batch" ||
-                     key == "--prepare-batch" || key == "--cache-identity") {
+                     key == "--prepare-batch" || key == "--cache-identity" ||
+                     key == "--eval-scope" || key == "--probe-ar-slots") {
                 if (!args.emplace(key, value).second)
                     throw std::runtime_error("duplicate argument " + key);
             } else
@@ -417,6 +420,13 @@ int main(int argc, char **argv) {
         const int eval_every = args.count("--eval-every") ? std::stoi(args.at("--eval-every")) : 10;
         if (steps < 1 || every < 1 || eval_every < 1 || options.run_identity.empty())
             throw std::runtime_error("steps/intervals/identity must be positive/nonempty");
+        const auto eval_scope = args.count("--eval-scope") ? args.at("--eval-scope") : "full";
+        if (eval_scope != "full" && eval_scope != "heldout")
+            throw std::runtime_error("--eval-scope must be full or heldout");
+        if (eval_scope == "heldout" && validations.empty())
+            throw std::runtime_error("heldout evaluation requires validation samples");
+        if (args.count("--probe-ar-slots") && !args.count("--probe-only"))
+            throw std::runtime_error("--probe-ar-slots is only valid for a preflight probe");
         uint32_t ar = 0;
         size_t frames = 0;
         uint64_t content_hash = 14695981039346656037ULL;
@@ -446,6 +456,7 @@ int main(int argc, char **argv) {
         auto loader = [&](const std::string &path) { return load(path, args.at("--model"), fixed, conditioning); };
         using Store = yue2::detail::TrainingSampleStore<yue2::NarTrainingSample>;
         const bool streaming = args.count("--stream-samples") != 0;
+        const auto validation_start = std::chrono::steady_clock::now();
         size_t validated = 0;
         const auto cache_count = samples.size() + validations.size() + retentions.size();
         training_event("cache-validation", 0, cache_count);
@@ -455,10 +466,23 @@ int main(int argc, char **argv) {
         mix(samples.size()); Store train(samples, streaming, loader, inspect, validation_progress);
         mix(validations.size()); Store validation(validations, streaming, loader, inspect, validation_progress);
         mix(retentions.size()); Store retention(retentions, streaming, loader, inspect, validation_progress);
+        if (args.count("--probe-ar-slots")) {
+            const auto capacity = std::stoul(args.at("--probe-ar-slots"));
+            if (capacity < ar || capacity > 24576)
+                throw std::runtime_error("probe AR capacity is smaller than a sample or exceeds 24576");
+            ar = static_cast<uint32_t>(capacity);
+        }
         if (args.count("--dataset")) {
             mix(groups.size()); for (auto group : groups) mix(group);
             std::ostringstream signature; signature << std::hex << content_hash;
             options.run_identity += ":nar-cache-fnv1a64-v1:" + signature.str();
+        }
+        if (args.count("--validate-only")) {
+            std::cout << "CACHE_AUDIT {\"files\":" << cache_count << ",\"frames\":" << frames
+                      << ",\"ar_slots\":" << ar << ",\"seconds\":"
+                      << std::chrono::duration<double>(std::chrono::steady_clock::now()-validation_start).count()
+                      << ",\"identity\":" << yue2::server::json::quote(options.run_identity) << "}" << std::endl;
+            return 0;
         }
         const auto directory = std::filesystem::path(args.at("--out"));
         if (std::filesystem::exists(directory) && !args.count("--resume"))
@@ -508,12 +532,12 @@ int main(int argc, char **argv) {
         std::ofstream history(directory / "history.jsonl", std::ios::app);
         auto evaluate_all = [&](uint64_t step) {
             size_t completed = 0;
-            const auto total = train.size() + validation.size() + retention.size();
+            const auto total = (eval_scope == "full" ? train.size() : 0) + validation.size() + retention.size();
             training_event("evaluation", 0, total, step);
             double training = 0, heldout = 0;
             std::array<double, 3> heldout_by_sigma{};
             std::vector<float> heldout_values;
-            for (size_t i = 0; i < train.size(); ++i) {
+            for (size_t i = 0; eval_scope == "full" && i < train.size(); ++i) {
                 const auto values = evaluate(train.get(i));
                 training += (values[0] + values[1] + values[2]) / 3;
                 training_event("evaluation", ++completed, total, step);
@@ -527,7 +551,8 @@ int main(int argc, char **argv) {
                 training_event("evaluation", ++completed, total, step);
             }
             std::ostringstream line;
-            line << "{\"step\":" << step << ",\"train_eval\":" << training / train.size();
+            line << "{\"step\":" << step << ",\"evaluation_scope\":\"" << eval_scope << "\"";
+            if (eval_scope == "full") line << ",\"train_eval\":" << training / train.size();
             if (!validation.empty()) {
                 line << ",\"heldout_eval\":" << heldout / validation.size();
                 line << ",\"heldout_per_sample\":[";

@@ -156,6 +156,7 @@ def main():
          '--weight-decay',str(training['weight_decay']),'--clip',str(training['clip']),'--seed',str(training.get('seed',831001)),
          '--identity',run_hash]
     if args.family=='dora':cmd+=['--dora']
+    if args.phase=='fit' and 'evaluation_scope' in training:cmd+=['--eval-scope',training['evaluation_scope']]
     resumed_step=0
     if args.phase=='fit':
         native=out/args.segment;cmd+=['--out',str(native),'--save-every',str(training.get('checkpoint_every',100)),

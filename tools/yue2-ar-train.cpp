@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
                                            "--eval-every",
                                            "--kl-weight",
                                            "--early-stop-patience",
-                                           "--early-stop-min-steps", "--dataset", "--stop-file"};
+                                           "--early-stop-min-steps", "--dataset", "--stop-file", "--eval-scope"};
         for (int i = 1; i < argc; ++i) {
             const std::string key = argv[i];
             if (key == "--help") {
@@ -121,7 +121,7 @@ int main(int argc, char **argv) {
                              "Or --dataset PREPARED.json [--group-samples] for track-balanced windows.\n"
                              "Repeat --validation-prefix/--validation-tokens and "
                              "--retention-prefix/--retention-tokens\n"
-                             "for evaluation only. [--max-prefix N --eval-every N]\n"
+                             "for evaluation only. [--max-prefix N --eval-every N --eval-scope full|heldout]\n"
                              "[--kl-weight .2 --shuffle-samples --early-stop-patience "
                              "N --early-stop-min-steps N]\n"
                              "[--dora] [--stop-file PATH (save and stop after an update)]\n"
@@ -266,6 +266,11 @@ int main(int argc, char **argv) {
             args.count("--early-stop-min-steps") ? std::stoi(args.at("--early-stop-min-steps")) : 0;
         if (steps < 0 || save_every < 1 || eval_every < 1)
             throw std::runtime_error("invalid step count");
+        const auto eval_scope = args.count("--eval-scope") ? args.at("--eval-scope") : "full";
+        if (eval_scope != "full" && eval_scope != "heldout")
+            throw std::runtime_error("--eval-scope must be full or heldout");
+        if (eval_scope == "heldout" && validation.empty())
+            throw std::runtime_error("heldout evaluation requires validation examples");
         if (patience < 0 || min_stop < 0 || (patience && validation.empty()))
             throw std::runtime_error("invalid early stopping configuration");
         const std::filesystem::path out(require("--out"));
@@ -316,9 +321,11 @@ int main(int argc, char **argv) {
             double held_mean = 0;
             metrics.precision(10);
             metrics << "{\"step\":" << step;
+            metrics << ",\"evaluation_scope\":\"" << eval_scope << "\"";
             for (const auto &entry :
                  {std::make_pair("train", &samples), std::make_pair("heldout", &validation),
                   std::make_pair("retention", &retention)}) {
+                if (eval_scope == "heldout" && std::string(entry.first) == "train") continue;
                 double sum = 0;
                 metrics << ",\"" << entry.first << "_per_sample\":[";
                 for (size_t i = 0; i < entry.second->size(); ++i) {

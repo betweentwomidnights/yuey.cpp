@@ -94,11 +94,18 @@ def settings(request):
     if family not in ['lora','dora']:raise ValueError('AR family must be lora or dora')
     trigger=request.get('trigger',request['id']+'_style')
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',trigger):raise ValueError('Trigger must be one word using letters, numbers, hyphens or underscores')
-    return dict(window_seconds=number('window_seconds',30,2,60,True),rank=number('rank',32,1,128,True),
+    options=dict(window_seconds=number('window_seconds',30,2,60,True),rank=number('rank',32,1,128,True),
                 ar_steps=number('ar_steps',800,1,10000,True),nar_steps=number('nar_steps',400,1,10000,True),
                 ar_lr=number('ar_lr',2e-5,1e-7,.001),nar_lr=number('nar_lr',3e-5,1e-7,.001),
                 kl_weight=number('kl_weight',.2,0,5),seed=number('seed',831001,0,2**32-1,True),
                 eval_every=number('eval_every',100,1,1000,True),family=family,trigger=trigger)
+    version=request.get('recipe_version',1)
+    if type(version)!=int or version not in [1,2]:raise ValueError('Unsupported training recipe version')
+    if version==2:
+        scope=request.get('evaluation_scope','heldout')
+        if scope not in ['heldout','full']:raise ValueError('Evaluation scope must be heldout or full')
+        options['evaluation_scope']=scope
+    return options
 
 
 def inventory(folder,seconds,seed):
@@ -206,6 +213,7 @@ class Workflow:
             preparation=dict(window_seconds=o['window_seconds']),
             training=dict(rank=o['rank'],learning_rate=o['ar_lr'],kl_weight=o['kl_weight'],weight_decay=.01,clip=1,
                 token_budget=o['ar_steps']*o['window_seconds']*25,seed=o['seed'],checkpoint_every=o['eval_every'],eval_every=o['eval_every']))
+        if 'evaluation_scope' in o:cfg['training']['evaluation_scope']=o['evaluation_scope']
         path=self.run/'ar-job.json'
         if path.exists() and json.loads(path.read_text())!=cfg:raise ValueError('Resolved dataset/runtime changed; create a new run')
         save(path,cfg);self.update(dataset=rows,status='running')
@@ -259,6 +267,8 @@ class Workflow:
             models=dict(base=cfg['models']['base'],companion=cfg['models']['companion'],ar=str(ar)),
             training=dict(rank=o['rank'],learning_rate=o['nar_lr'],weight_decay=.01,clip=1,seed=o['seed'],noise_schedule='uniform',
                           steps=o['nar_steps'],checkpoint_every=o['eval_every'],eval_every=o['eval_every']))
+        if 'evaluation_scope' in o:
+            nar_cfg['training'].update(evaluation_scope=o['evaluation_scope'],probe_scope='first-at-maximum-context')
         nar_path=self.run/'nar-job.json'
         if nar_path.exists() and json.loads(nar_path.read_text())!=nar_cfg:raise ValueError('Frozen AR/NAR run changed')
         save(nar_path,nar_cfg)

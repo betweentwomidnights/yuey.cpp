@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-27",
+  "hardware": "Windows; RTX 5070 Laptop 8 GB; 64 GB host RAM",
+  "ggml_commit": "b77ae790e628270af46a8af1eca38441c23f1252",
+  "cache_audit": {
+    "header_scan_seconds": 0.09399999992456287,
+    "files": 166,
+    "maximum_ar_slots": 1900,
+    "bytes": 28068640448,
+    "first": {
+      "wall_seconds": 0.4220000000204891,
+      "files": 1,
+      "frames": 750,
+      "ar_slots": 1384,
+      "seconds": 0.285272,
+      "identity": "78f2b7c74b979c07e1cf540a986dc5ebf83c773676d2bedda95594c2ad5b0f37"
+    },
+    "full": {
+      "wall_seconds": 183.14000000001397,
+      "files": 166,
+      "frames": 750,
+      "ar_slots": 1900,
+      "seconds": 182.764,
+      "identity": "78f2b7c74b979c07e1cf540a986dc5ebf83c773676d2bedda95594c2ad5b0f37:nar-cache-fnv1a64-v1:81eaf929f8e20ed3"
+    }
+  },
+  "cpu_nar_fixture_wall_seconds": {
+    "full": 23.65700000000652,
+    "heldout": 15.75,
+    "resumed": 8.655999999959022,
+    "probe-full": 6.625,
+    "probe-fast": 6.609000000054948
+  },
+  "checks": {
+    "ar_lora_optimizer_and_rng_exact": true,
+    "ar_dora_optimizer_and_rng_exact": true,
+    "nar_optimizer_rng_and_resume_exact": true,
+    "heldout_and_retention_scores_exact": true,
+    "maximum_context_preflight_diagnostics_exact": true,
+    "legacy_corpus_fingerprint_exact": true
+  },
+  "evaluation_work": {
+    "training_windows": 138,
+    "heldout_windows": 28,
+    "noise_levels": 3,
+    "full_passes": 498,
+    "heldout_passes": 84,
+    "reduction_percent": 83.13253012048193
+  },
+  "native_nar_state_tensors": 1176,
+  "limitations": [
+    "Correctness fixtures use real weights with small synthetic CPU inputs.",
+    "No concurrent GPU benchmark was run alongside the user training job.",
+    "Cache audit timings exclude coordinator SHA-256 passes and model/gradient work."
+  ],
+  "remaining_work": [
+    "Versioned native byte hashing to avoid decoded-float fingerprint pass",
+    "Persisted AR teacher distributions for resume",
+    "Measure and overlap cache reads with update compute"
+  ]
+}

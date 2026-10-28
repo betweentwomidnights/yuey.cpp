@@ -38,8 +38,9 @@ uses the same GGML graph but awaits testing on Apple hardware. See the
 
 The tested machine has an RTX 5070 Laptop GPU with 8 GB VRAM and **64 GB host
 RAM**. The AR teacher distribution cache uses substantial host memory; an 8 GB
-GPU fit does not establish a small host-memory requirement. Validation is full
-and can dominate a small training run. CUDA is the measured GPU training backend.
+GPU fit does not establish a small host-memory requirement. Full-corpus training
+diagnostics can dominate a run; new UI jobs validate all heldout recordings and
+any retention examples by default. CUDA is the measured GPU training backend.
 Use one inference server per device; unrelated servers/applications are outside
 this server's device reservation.
 
@@ -56,18 +57,24 @@ evaluation time are additional to that update duration.
 Both expert charts show completed evaluations during fitting, using the same
 recording-balanced heldout loss as final checkpoint selection. “Best so far”
 remains provisional until the expert finishes. The update counter reaching its
-ceiling (for example 800/800) still leaves the final full evaluation and checkpoint
+ceiling (for example 800/800) still leaves final validation and the checkpoint
 save; AR progress identifies that phase and shows its elapsed time. A full
 evaluation can take several minutes on this laptop.
 NAR startup also validates every frozen conditioning cache on the CPU before
-loading the GPU model. Its initial evaluation runs all eligible windows at
-three fixed noise levels before update 1. Native progress reports cache files
+loading the GPU model. Its initial evaluation runs the configured validation
+windows at three fixed noise levels before update 1. Native progress reports cache files
 validated and evaluation windows completed separately from optimizer updates;
 0/400 during these phases does not mean the worker is idle. Validation and
 initial evaluation run again when the first fit starts after preflight. A NAR
 resume revalidates the caches and restores optimizer state, but skips the initial
 baseline evaluation. Existing runs retain their frozen native executable; older
 executables expose activity/elapsed time, while new runs provide exact counters.
+New requests are pinned to recipe version 2. Its NAR preflight verifies cache
+checksums and inspects all headers, then tests one training sample padded to the
+maximum context across training, holdout and retention caches. The fitter still
+validates and fingerprints the complete dataset before its first update. Legacy
+requests retain full-corpus preflight/evaluation and their frozen executables.
+See [handoff measurements and parity checks](training-handoff-performance-2026-10-27.md).
 
 ## Dataset and recipe
 
@@ -92,7 +99,8 @@ conditioning disk use, then start **Train AR + NAR**. The advanced defaults are:
 | Window | 30 seconds |
 | AR | DoRA, rank 32, LR 2e-5, teacher KL 0.2, ceiling 800 updates |
 | NAR | LoRA, rank 32, LR 3e-5, uniform noise schedule, 400 updates |
-| Save / full evaluation | Every 100 updates and the final update |
+| Save / heldout validation | Every 100 updates and the final update |
+| Validation scope | All heldout recordings and any retention examples; full training diagnostics optional |
 | Selection | Minimum recording-balanced heldout AR CE / NAR flow MSE |
 | Sampling | Shuffled recording-balanced windows |
 | Conditioning | AR-only CUDA prefill, original precision, lossless F16 K/V, resident model reuse |

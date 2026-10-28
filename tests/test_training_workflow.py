@@ -13,6 +13,14 @@ from training_workflow import settings,inventory,wait_for_owner,process_identity
 
 
 class WorkflowTest(unittest.TestCase):
+    def test_new_recipe_pins_faster_validation_without_changing_legacy_requests(self):
+        self.assertNotIn('evaluation_scope',settings(dict(id='old-run')))
+        self.assertEqual(settings(dict(id='new-run',recipe_version=2))['evaluation_scope'],'heldout')
+        self.assertEqual(settings(dict(id='new-run',recipe_version=2,evaluation_scope='full'))['evaluation_scope'],'full')
+        with self.assertRaisesRegex(ValueError,'Evaluation scope'):
+            settings(dict(id='new-run',recipe_version=2,evaluation_scope='none'))
+        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=3))
+
     def test_resume_does_not_display_previous_terminal_progress(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run=root/'run';run.mkdir()

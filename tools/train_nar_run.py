@@ -50,6 +50,25 @@ class NativeNarProgress:
         return dict(self.values,activity_elapsed_seconds=time.monotonic()-self.since)
 
 
+def preflight_sample(rows,cache_path,frames):
+    """Read GGUF headers only, then probe one real sample at the corpus maximum."""
+    largest=0;first=None
+    for row in rows:
+        reader=gguf.GGUFReader(str(cache_path(row)))
+        tokens=int(reader.get_field('yue2.training.ar_tokens').contents())
+        tensors={t.name:t for t in reader.tensors}
+        if tokens<1 or tensors['clean'].data.size!=frames*64 or tensors['clean'].tensor_type!=gguf.GGMLQuantizationType.F32:
+            raise ValueError('Invalid NAR preflight cache shape or target precision')
+        for key in ['keys','values']:
+            if tensors[key].data.size!=tokens*128*8*28 or tensors[key].tensor_type not in [gguf.GGMLQuantizationType.F16,gguf.GGMLQuantizationType.F32]:
+                raise ValueError('Invalid NAR preflight conditioning shape or precision')
+        largest=max(largest,tokens)
+        if first is None and row['split']=='train':first=cache_path(row)
+        del tensors,reader
+    if first is None:raise ValueError('NAR preflight requires a training sample')
+    return first,largest
+
+
 def select_checkpoints(out,rows,config):
     validation=[r for r in rows if r['split']=='validation'];retention=[r for r in rows if r['split']=='retention'];metrics=[]
     if not validation:raise ValueError('Heldout selection requires validation')
@@ -108,6 +127,13 @@ def main():
         '--f32-projections','--noise-schedule',training.get('noise_schedule','uniform'),'--rank',training['rank'],
         '--lr',training['learning_rate'],'--seed',training.get('seed',831001),'--identity',run_hash,
         '--device',config.get('device','cuda'),'--threads',config.get('threads',6)]))
+    if args.phase=='probe' and training.get('probe_scope')=='first-at-maximum-context':
+        first,capacity=preflight_sample(rows,cache_path,data['frames'])
+        i=command.index('--dataset');del command[i:i+2]
+        command.remove('--group-samples')
+        command+=['--sample',str(first),'--probe-ar-slots',str(capacity)]
+    if args.phase=='fit' and 'evaluation_scope' in training:
+        command+=['--eval-scope',training['evaluation_scope']]
     target=training['steps']
     resumed=0
     if args.phase=='fit':
