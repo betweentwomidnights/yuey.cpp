@@ -22,8 +22,14 @@ int main() {
     size_t inspected = 0;
     auto inspect = [&](const Sample &s) { assert(*s == int(inspected++)); };
     {
-        yue2::detail::TrainingSampleStore<Sample> store(paths, true, loader, inspect);
+        size_t progress = 0;
+        yue2::detail::TrainingSampleStore<Sample> store(paths, true, loader, inspect,
+            [&](size_t current, size_t total) {
+                assert(current == ++progress && total == paths.size());
+                assert(inspected == current); // Report only inspected examples.
+            });
         assert(store.size() == 2 && !store.empty() && inspected == 2);
+        assert(progress == paths.size());
         for (const auto &weak : allocated) assert(weak.expired());
         assert(*store.get(0) == 0);
         const auto calls = allocated.size();
@@ -51,7 +57,8 @@ int main() {
     bool rejected = false;
     try {
         yue2::detail::TrainingSampleStore<Sample> store(paths, true, loader,
-            [&](const Sample &) { std::ofstream(paths[0]) << "changed"; });
+            [&](const Sample &) { std::ofstream(paths[0]) << "changed"; },
+            [&](size_t, size_t) { assert(false && "Changed input must not report completed validation"); });
     } catch (const std::runtime_error &) { rejected = true; }
     assert(rejected);
     for (const auto &path : paths) fs::remove(path);

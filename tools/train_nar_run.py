@@ -8,6 +8,48 @@ from train_ar_run import grouped_loss,evaluation_history,native_metric_paths
 from yue2_training_audit import digest,native_runtime_identity
 
 
+class NativeNarProgress:
+    def __init__(self,log,target,resumed=0,phase='fit'):
+        self.log=Path(log);self.target=target;self.phase=phase
+        self.offset=0;self.pending='';self.events=False;self.since=time.monotonic()
+        self.values=dict(activity='Validating cached training data',step=resumed)
+
+    def activity(self,value):
+        if value!=self.values['activity']:
+            self.since=time.monotonic()
+            for key in ['phase_current','phase_total','phase_unit']:self.values.pop(key,None)
+        self.values['activity']=value
+
+    def read(self):
+        with self.log.open(encoding='utf8',errors='replace') as stream:
+            stream.seek(self.offset);text=stream.read();self.offset=stream.tell()
+        lines=(self.pending+text).split('\n');self.pending=lines.pop()
+        for line in lines:
+            if line.startswith('TRAIN_EVENT '):
+                event=json.loads(line[len('TRAIN_EVENT '):]);stage=event['stage'];self.events=True
+                if stage=='cache-validation':label='Validating cached training data'
+                elif stage=='model-loading':label='Loading native NAR model'
+                elif stage=='evaluation':
+                    step=event['step'];self.values['step']=step
+                    label='Initial evaluation' if not step else 'Final evaluation' if step>=self.target else 'Evaluating checkpoint'
+                elif stage=='checkpoint-save':
+                    self.values['step']=event['step'];label='Saving checkpoint'
+                else:continue
+                self.activity(label)
+                if stage in ['cache-validation','evaluation']:
+                    self.values.update(phase_current=event['current'],phase_total=event['total'],
+                                       phase_unit='files' if stage=='cache-validation' else 'windows')
+            elif line.startswith('[yue2:train]') and not self.events:
+                self.activity('Native preflight' if self.phase!='fit' else
+                              'Loading native optimizer state' if self.values['step'] else 'Initial evaluation')
+            elif line.startswith('{'):
+                try:record=json.loads(line)
+                except json.JSONDecodeError:continue
+                if 'loss' in record and 'step' in record:
+                    self.values['step']=record['step'];self.activity('Training')
+        return dict(self.values,activity_elapsed_seconds=time.monotonic()-self.since)
+
+
 def select_checkpoints(out,rows,config):
     validation=[r for r in rows if r['split']=='validation'];retention=[r for r in rows if r['split']=='retention'];metrics=[]
     if not validation:raise ValueError('Heldout selection requires validation')
@@ -88,10 +130,9 @@ def main():
     wait_for_inference(config.get('inference_urls',[]));start=time.monotonic();peak=0;step=0
     save(out/'run.json',dict(status='running',stage=args.phase,name=config.get('name','NAR'),identity_sha256=run_hash,output=str(native)))
     print('START NAR',args.phase,flush=True)
-    previous_activity=None;activity_since=time.monotonic()
     with log.open('w') as stream:
-        save(out/'progress.json',dict(stage=args.phase,status='running',step=resumed,target_steps=target,
-             activity='Loading trainer and initial evaluation' if args.phase=='fit' and not resumed else 'Loading native trainer'))
+        native_progress=NativeNarProgress(log,target,resumed,args.phase)
+        save(out/'progress.json',dict(stage=args.phase,status='running',target_steps=target,**native_progress.values))
         process=subprocess.Popen(command,cwd=config['workspace'],stdout=stream,stderr=subprocess.STDOUT)
         try:
             try:save(out/'process.json',dict(pid=process.pid,phase=args.phase,native=str(native)))
@@ -102,6 +143,7 @@ def main():
                     if query.returncode==0:peak=max(peak,int(query.stdout.strip().splitlines()[0]))
                 except (OSError,subprocess.TimeoutExpired,ValueError):pass
                 try:
+                    progress=native_progress.read()
                     history=native/'history.jsonl'
                     if history.exists():
                         lines=history.read_text().splitlines()
@@ -109,16 +151,16 @@ def main():
                             latest=json.loads(lines[-1]);step=latest['step']
                             evaluations=evaluation_history(out,rows,'nar')
                             evaluated=any(m['step']==step for m in evaluations['evaluations'])
-                            if step==0:activity='Evaluating training and validation windows'
-                            elif step==target:activity='Saving final checkpoint' if evaluated else 'Final evaluation and checkpoint save'
-                            elif step % training.get('eval_every',100)==0:activity='Saving checkpoint' if evaluated else 'Evaluating checkpoint'
-                            else:activity='Training'
-                            if activity!=previous_activity:
-                                previous_activity=activity;activity_since=time.monotonic()
-                            activity_time=dict(activity_elapsed_seconds=time.monotonic()-activity_since) if 'evaluat' in activity.lower() else {}
-                            save(out/'progress.json',dict(stage=args.phase,status='running',step=step,target_steps=target,
-                                tokens_seen=step*data['frames'],elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,
-                                activity=activity,evaluation_history=evaluations,**activity_time))
+                            if not native_progress.events:
+                                if step==0:activity='Initial evaluation'
+                                elif step==target:activity='Saving final checkpoint' if evaluated else 'Final evaluation'
+                                elif step % training.get('eval_every',100)==0:activity='Saving checkpoint' if evaluated else 'Evaluating checkpoint'
+                                else:activity='Training'
+                                native_progress.activity(activity);progress=native_progress.read()
+                            progress.update(step=step,evaluation_history=evaluations)
+                    save(out/'progress.json',dict(stage=args.phase,status='running',target_steps=target,
+                         tokens_seen=progress['step']*data['frames'],elapsed_seconds=time.monotonic()-start,
+                         observed_gpu_peak_mib=peak,**progress))
                 except (OSError,ValueError):pass
                 time.sleep(1)
         finally:

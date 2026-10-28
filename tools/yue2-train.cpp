@@ -18,6 +18,10 @@
 #include <sstream>
 
 namespace {
+void training_event(const char *stage, size_t current, size_t total, uint64_t step = 0) {
+    std::cout << "TRAIN_EVENT {\"stage\":\"" << stage << "\",\"current\":" << current
+              << ",\"total\":" << total << ",\"step\":" << step << "}" << std::endl;
+}
 template <class T> std::vector<T> read(const std::string &path) {
     const auto size = std::filesystem::file_size(path);
     if (!size || size % sizeof(T))
@@ -442,9 +446,15 @@ int main(int argc, char **argv) {
         auto loader = [&](const std::string &path) { return load(path, args.at("--model"), fixed, conditioning); };
         using Store = yue2::detail::TrainingSampleStore<yue2::NarTrainingSample>;
         const bool streaming = args.count("--stream-samples") != 0;
-        mix(samples.size()); Store train(samples, streaming, loader, inspect);
-        mix(validations.size()); Store validation(validations, streaming, loader, inspect);
-        mix(retentions.size()); Store retention(retentions, streaming, loader, inspect);
+        size_t validated = 0;
+        const auto cache_count = samples.size() + validations.size() + retentions.size();
+        training_event("cache-validation", 0, cache_count);
+        auto validation_progress = [&](size_t, size_t) {
+            training_event("cache-validation", ++validated, cache_count);
+        };
+        mix(samples.size()); Store train(samples, streaming, loader, inspect, validation_progress);
+        mix(validations.size()); Store validation(validations, streaming, loader, inspect, validation_progress);
+        mix(retentions.size()); Store retention(retentions, streaming, loader, inspect, validation_progress);
         if (args.count("--dataset")) {
             mix(groups.size()); for (auto group : groups) mix(group);
             std::ostringstream signature; signature << std::hex << content_hash;
@@ -455,7 +465,9 @@ int main(int argc, char **argv) {
             throw std::runtime_error(
                 "output directory exists; choose a new run or explicit resume");
         std::filesystem::create_directories(directory);
+        training_event("model-loading", 0, 1);
         yue2::NarTrainer trainer(args.at("--model"), static_cast<uint32_t>(frames), ar, options);
+        training_event("model-loading", 1, 1);
         std::mt19937 rng(options.seed);
         std::mt19937 time_rng(options.seed ^ 0x6e617274U);
         const auto schedule = yue2::detail::noise_schedule(
@@ -495,12 +507,16 @@ int main(int argc, char **argv) {
         };
         std::ofstream history(directory / "history.jsonl", std::ios::app);
         auto evaluate_all = [&](uint64_t step) {
+            size_t completed = 0;
+            const auto total = train.size() + validation.size() + retention.size();
+            training_event("evaluation", 0, total, step);
             double training = 0, heldout = 0;
             std::array<double, 3> heldout_by_sigma{};
             std::vector<float> heldout_values;
             for (size_t i = 0; i < train.size(); ++i) {
                 const auto values = evaluate(train.get(i));
                 training += (values[0] + values[1] + values[2]) / 3;
+                training_event("evaluation", ++completed, total, step);
             }
             for (size_t i = 0; i < validation.size(); ++i) {
                 const auto values = evaluate(validation.get(i));
@@ -508,6 +524,7 @@ int main(int argc, char **argv) {
                 for (size_t i = 0; i < 3; ++i) heldout_by_sigma[i] += values[i];
                 heldout += value;
                 heldout_values.push_back(value);
+                training_event("evaluation", ++completed, total, step);
             }
             std::ostringstream line;
             line << "{\"step\":" << step << ",\"train_eval\":" << training / train.size();
@@ -537,6 +554,7 @@ int main(int argc, char **argv) {
                     total += mean;
                     per_sample.push_back(mean);
                     for (size_t i = 0; i < 3; ++i) by_sigma[i] += values[i];
+                    training_event("evaluation", ++completed, total, step);
                 }
                 line << ",\"retention_eval\":" << total / retention.size();
                 line << ",\"retention_per_sample\":[";
@@ -597,6 +615,7 @@ int main(int argc, char **argv) {
             if (result.optimizer_step % eval_every == 0 || i == steps - 1)
                 evaluate_all(result.optimizer_step);
             if (result.optimizer_step % every == 0 || i == steps - 1 || requested_stop) {
+                training_event("checkpoint-save", 0, 1, result.optimizer_step);
                 const auto stem = "step-" + std::to_string(result.optimizer_step);
                 trainer.save_adapter((directory / (stem + ".gguf")).string());
                 std::ostringstream state;
@@ -610,6 +629,7 @@ int main(int argc, char **argv) {
                 if (shuffle)
                     state << '\n' << sampler.save();
                 trainer.save_state((directory / (stem + ".state.gguf")).string(), state.str());
+                training_event("checkpoint-save", 1, 1, result.optimizer_step);
             }
             if (requested_stop) {
                 std::cout << "requested_stop step=" << result.optimizer_step << std::endl;

@@ -59,6 +59,15 @@ remains provisional until the expert finishes. The update counter reaching its
 ceiling (for example 800/800) still leaves the final full evaluation and checkpoint
 save; AR progress identifies that phase and shows its elapsed time. A full
 evaluation can take several minutes on this laptop.
+NAR startup also validates every frozen conditioning cache on the CPU before
+loading the GPU model. Its initial evaluation runs all eligible windows at
+three fixed noise levels before update 1. Native progress reports cache files
+validated and evaluation windows completed separately from optimizer updates;
+0/400 during these phases does not mean the worker is idle. Validation and
+initial evaluation run again when the first fit starts after preflight. A NAR
+resume revalidates the caches and restores optimizer state, but skips the initial
+baseline evaluation. Existing runs retain their frozen native executable; older
+executables expose activity/elapsed time, while new runs provide exact counters.
 
 ## Dataset and recipe
 

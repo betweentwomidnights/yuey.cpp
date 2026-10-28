@@ -17,9 +17,11 @@ template <class Sample> class TrainingSampleStore {
   public:
     using Loader = std::function<Sample(const std::string &)>;
     using Inspector = std::function<void(const Sample &)>;
+    using Progress = std::function<void(size_t, size_t)>;
     TrainingSampleStore(const std::vector<std::string> &paths, bool streaming,
-                        Loader loader, Inspector inspect)
+                        Loader loader, Inspector inspect, Progress progress = {})
         : paths_(paths), streaming_(streaming), loader_(std::move(loader)) {
+        size_t completed = 0;
         for (const auto &path : paths_) {
             stamps_.push_back(stamp(path));
             auto sample = loader_(path);
@@ -27,6 +29,7 @@ template <class Sample> class TrainingSampleStore {
             if (stamp(path) != stamps_.back())
                 throw std::runtime_error("training sample changed while loading: " + path);
             if (!streaming_) samples_.push_back(std::move(sample));
+            if (progress) progress(++completed, paths_.size());
         }
     }
     const Sample &get(size_t index) {
