@@ -65,3 +65,5 @@ states are in `outputs/training-final-2026-10-27`. The GPU reservation is releas
 after checks. Teacher-distribution persistence and asynchronous cache prefetch
 remain separate follow-ups: they add disk-space and concurrency contracts and
 are not needed to land this bounded optimization.
+The subsequent [host-overhead change](training-host-overhead-2026-10-28.md)
+adds window prefetch and other host-side reductions with exact parity.
