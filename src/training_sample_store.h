@@ -24,11 +24,23 @@ template <class Sample> class TrainingSampleStore {
     using Inspector = std::function<void(const Sample &)>;
     using Progress = std::function<void(size_t, size_t)>;
     using PathInspector = std::function<void(const std::string &)>;
+    // Deferred stores never touch the files at construction: inspect_path
+    // supplies every identity fact and the loader verifies each file itself
+    // when consumed (rolling caches) or there is no file (resident inputs).
     TrainingSampleStore(const std::vector<std::string> &paths, bool streaming,
-                        Loader loader, Inspector inspect, Progress progress = {}, PathInspector inspect_path = {})
-        : paths_(paths), streaming_(streaming), loader_(std::move(loader)) {
+                        Loader loader, Inspector inspect, Progress progress = {}, PathInspector inspect_path = {},
+                        bool deferred = false)
+        : paths_(paths), streaming_(streaming), deferred_(deferred), loader_(std::move(loader)) {
+        if (deferred_ && (!streaming_ || !inspect_path))
+            throw std::runtime_error("deferred samples require streaming and a path inspector");
         size_t completed = 0;
         for (const auto &path : paths_) {
+            if (deferred_) {
+                inspect_path(path);
+                stamps_.emplace_back();
+                if (progress) progress(++completed, paths_.size());
+                continue;
+            }
             stamps_.push_back(stamp(path));
             if (inspect_path) {
                 // An equivalent header/content validator can avoid decoding a
@@ -53,7 +65,7 @@ template <class Sample> class TrainingSampleStore {
     const Sample &get(size_t index) {
         if (!streaming_) return samples_.at(index);
         const auto &path = paths_.at(index);
-        if (stamp(path) != stamps_.at(index))
+        if (!deferred_ && stamp(path) != stamps_.at(index))
             throw std::runtime_error("training sample changed after validation: " + path);
         if (!current_ || current_index_ != index) {
             current_.reset();
@@ -63,7 +75,7 @@ template <class Sample> class TrainingSampleStore {
                 current_.emplace(loader_(path));
             }
             current_index_ = index;
-            if (stamp(path) != stamps_.at(index))
+            if (!deferred_ && stamp(path) != stamps_.at(index))
                 throw std::runtime_error("training sample changed while loading: " + path);
         }
         return *current_;
@@ -78,10 +90,10 @@ template <class Sample> class TrainingSampleStore {
         pending_index_ = index;
         pending_ = std::async(std::launch::async, [this, index] {
             const auto &path = paths_[index];
-            if (stamp(path) != stamps_[index])
+            if (!deferred_ && stamp(path) != stamps_[index])
                 throw std::runtime_error("training sample changed after validation: " + path);
             auto sample = loader_(path);
-            if (stamp(path) != stamps_[index])
+            if (!deferred_ && stamp(path) != stamps_[index])
                 throw std::runtime_error("training sample changed while loading: " + path);
             return sample;
         });
@@ -97,6 +109,7 @@ template <class Sample> class TrainingSampleStore {
     std::vector<std::string> paths_;
     std::vector<Stamp> stamps_;
     bool streaming_;
+    bool deferred_;
     Loader loader_;
     std::vector<Sample> samples_;
     std::optional<Sample> current_;

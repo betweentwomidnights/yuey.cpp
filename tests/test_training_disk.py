@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).parents[1]/'tools'))
 from train_ar_run import prune_checkpoints,select_checkpoints
-from training_workflow import Workflow,checkpoint_allowance,settings
+from training_workflow import Workflow,checkpoint_allowance,conditioning_bytes,settings
 
 
 def metric(step,value):
@@ -105,6 +105,18 @@ class CacheReleaseTest(unittest.TestCase):
         (run/'runtime.json').write_text(json.dumps(dict(workspace=str(root))))
         (run/'request.json').write_text(json.dumps(dict(id='fixture',family='lora',rank=4,**request)))
         return run
+
+    def test_conditioning_disk_by_storage_mode(self):
+        # Shaped like the 38-recording laptop corpus: 138 training, 28 heldout windows.
+        rows=[dict(split='train',frames=750,prefix_tokens=1131)]*138+[dict(split='validation',frames=750,prefix_tokens=1131)]*28
+        cache,rolling=(conditioning_bytes(rows,mode,'heldout')/2**30 for mode in ['cache','rolling'])
+        self.assertAlmostEqual(cache,33.4,delta=.05)  # every prefix at the maximum
+        self.assertAlmostEqual(rolling,(25+28)*conditioning_bytes(rows[:1])/2**30,delta=1e-6)
+        self.assertLess(rolling,cache/3)
+        self.assertEqual(conditioning_bytes(rows,'resident'),0)
+        # Full-scope evaluation needs every window, so rolling saves nothing.
+        self.assertEqual(conditioning_bytes(rows,'rolling','full'),conditioning_bytes(rows))
+        self.assertEqual(conditioning_bytes(rows[:3],'rolling','heldout'),conditioning_bytes(rows[:3]))
 
     def test_keep_caches_is_a_validated_boolean_defaulting_to_release(self):
         self.assertFalse(settings(dict(id='run'))['keep_caches'])

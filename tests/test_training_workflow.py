@@ -9,7 +9,7 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0,str(Path(__file__).parents[1]/'tools'))
-from training_workflow import settings,inventory,wait_for_owner,process_identity,Workflow,ar_resource_estimate
+from training_workflow import settings,inventory,wait_for_owner,process_identity,Workflow,ar_resource_estimate,capabilities
 
 
 class WorkflowTest(unittest.TestCase):
@@ -42,6 +42,16 @@ class WorkflowTest(unittest.TestCase):
         streamed=ar_resource_estimate(rows,online,'cuda')
         self.assertEqual(streamed['estimated_teacher_disk_gib'],0)
         self.assertEqual(streamed['estimated_ar_host_ram_gib'],cached['estimated_ar_host_ram_gib'])
+
+    def test_capabilities_list_exactly_the_server_request_settings(self):
+        import re
+        server=(Path(__file__).parents[1]/'tools/server/training.h').read_text()
+        allowed=set(re.findall(r'key!="([a-z_]+)"',server))
+        caps=capabilities()
+        self.assertEqual(set(caps['request_settings']),allowed)
+        self.assertEqual(caps['default_recipe'],int(re.search(r'recipe_version"\]=json::parse\("(\d+)"\)',server)[1]))
+        self.assertEqual(set(caps['storage']['conditioning_storage']),{'cache','rolling','resident'})
+        self.assertIsNone(caps['native'])
 
     def test_teacher_estimates_match_measured_koan_corpus(self):
         # 157 training and 38 validation 30-second windows, measured in

@@ -47,6 +47,36 @@ std::string fixed_identity(const std::vector<yue2::LoraAdapterSpec> &fixed) {
                   std::to_string(spec.strength) + "\n";
     return result;
 }
+// Frozen AR K/V come from the model's F16 KV cache, so F16 storage is exact.
+std::vector<ggml_fp16_t> exact_half(const std::vector<float> &source) {
+    std::vector<ggml_fp16_t> half(source.size());
+    ggml_fp32_to_fp16_row(source.data(), half.data(), source.size());
+    for (size_t i = 0; i < source.size(); ++i) {
+        const float roundtrip = ggml_fp16_to_fp32(half[i]);
+        if (!std::isfinite(source[i]) || std::memcmp(&roundtrip, &source[i], sizeof(float)))
+            throw std::runtime_error("conditioning cannot be represented losslessly in F16");
+    }
+    return half;
+}
+// Recipe 5 resident conditioning: the sample a compact F16 cache would hold,
+// computed in this process from the same inputs, so no cache is written.
+yue2::NarTrainingSample condition(yue2::AutoregressiveModel &model, const std::string &prefix_path,
+                                  const std::string &tokens_path, const std::string &latents_path) {
+    const auto prefix = read<int32_t>(prefix_path);
+    if (prefix.back() != yue2::kMusicStartToken)
+        throw std::runtime_error("exact prefix must end in MUSIC_START");
+    const auto codes = read<int32_t>(tokens_path);
+    auto clean = read<float>(latents_path);
+    if (clean.size() != codes.size() * 64)
+        throw std::runtime_error("tokens/latents are not frame aligned");
+    const auto conditioning = model.freeze_nar_conditioning(prefix, codes);
+    yue2::NarTrainingSample sample;
+    sample.conditioning.token_count = conditioning.token_count;
+    sample.half_keys = exact_half(conditioning.keys);
+    sample.half_values = exact_half(conditioning.values);
+    sample.clean_latents = std::move(clean);
+    return sample;
+}
 yue2::NarTrainingSample load(const std::string &path, const std::string &model,
                              const std::vector<yue2::LoraAdapterSpec> &fixed,
                              const std::vector<yue2::LoraAdapterSpec> &conditioning) {
@@ -199,16 +229,6 @@ void prepare(const std::map<std::string, std::string> &args,
     add("clean", GGML_TYPE_F32, clean.data(), 64, codes.size());
     std::vector<ggml_fp16_t> half_keys,half_values;
     if(kv_type=="f16") {
-        auto exact_half=[](const std::vector<float> &source) {
-            std::vector<ggml_fp16_t> half(source.size());
-            ggml_fp32_to_fp16_row(source.data(),half.data(),source.size());
-            for(size_t i=0;i<source.size();++i) {
-                const float roundtrip=ggml_fp16_to_fp32(half[i]);
-                if(!std::isfinite(source[i])||std::memcmp(&roundtrip,&source[i],sizeof(float)))
-                    throw std::runtime_error("conditioning cannot be represented losslessly in F16");
-            }
-            return half;
-        };
         half_keys=exact_half(conditioning.keys);half_values=exact_half(conditioning.values);
         add("keys",GGML_TYPE_F16,half_keys.data(),128,conditioning.token_count,8,28);
         add("values",GGML_TYPE_F16,half_values.data(),128,conditioning.token_count,8,28);
@@ -295,6 +315,12 @@ int main(int argc, char **argv) {
                              "  [--dataset prepared.json --group-samples] recording-balanced "
                              "windows; manifest replaces explicit sample lists.\n"
                              "  [--stream-samples] loads caches on demand to bound host RAM.\n"
+                             "  [--resident-conditioning] computes each window's frozen AR K/V in this\n"
+                             "  process from the dataset's prefix/codes/means (needs VRAM for both experts).\n"
+                             "  [--rolling-caches] trusts the dataset's recorded cache sizes/fingerprints\n"
+                             "  for the run identity; absent caches must exist and match when consumed.\n"
+                             "  [--sample-plan N] prints the next N training windows (optionally after\n"
+                             "  --resume) without loading a model. [--no-final-eval] segment ends save only.\n"
                              "  [--stop-file PATH] checkpoints after the current update.\n"
                              "  [--noise-schedule uniform|sigmoid] default uniform; separate "
                              "time RNG preserves paired example/Gaussian streams.\n"
@@ -306,7 +332,8 @@ int main(int argc, char **argv) {
             if (key == "--prepare" || key == "--reference" || key == "--probe-only" || key == "--validate-only" ||
                 key == "--fixed-noise" || key == "--generate-latents" ||
                 key == "--f32-projections" || key == "--shuffle-samples" || key == "--dora" ||
-                key == "--group-samples" || key == "--stream-samples" || key == "--conditioning-only" || key == "--cache-flash-attn") {
+                key == "--group-samples" || key == "--stream-samples" || key == "--conditioning-only" || key == "--cache-flash-attn" ||
+                key == "--resident-conditioning" || key == "--rolling-caches" || key == "--no-final-eval") {
                 args[key] = "1";
                 continue;
             }
@@ -332,7 +359,8 @@ int main(int argc, char **argv) {
                      key == "--abc" || key == "--prefix" || key == "--noise-schedule" ||
                      key == "--dataset" || key == "--stop-file" || key == "--cache-kv-type" || key == "--conditioning-batch" ||
                      key == "--prepare-batch" || key == "--cache-identity" ||
-                     key == "--eval-scope" || key == "--probe-ar-slots" || key == "--cache-fingerprint") {
+                     key == "--eval-scope" || key == "--probe-ar-slots" || key == "--cache-fingerprint" ||
+                     key == "--sample-plan") {
                 if (!args.emplace(key, value).second)
                     throw std::runtime_error("duplicate argument " + key);
             } else
@@ -360,9 +388,18 @@ int main(int argc, char **argv) {
                 }
                 const auto started = std::chrono::steady_clock::now();
                 prepare(item_args, fixed, conditioning, resident);
+                // Facts a rolling run needs to bind its identity to this cache
+                // without keeping it: the same values the bytes-v2 audit reads.
+                const auto &written = item_args.at("--cache-out");
+                const auto header = yue2::detail::inspect_nar_cache_header(written, args.at("--model"),
+                    fixed_identity(fixed), fixed_identity(conditioning));
+                std::ostringstream fnv; fnv << std::hex << yue2::detail::training_file_fingerprint(written);
                 std::cout << "CACHE_EVENT {\"index\":" << i << ",\"path\":"
-                          << json::quote(item_args.at("--cache-out")) << ",\"seconds\":"
+                          << json::quote(written) << ",\"seconds\":"
                           << std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count()
+                          << ",\"bytes\":\"" << header.bytes << "\",\"fnv\":\"" << fnv.str()
+                          << "\",\"tokens\":\"" << header.tokens << "\",\"frames\":\"" << header.frames
+                          << "\",\"half\":" << (header.half_conditioning ? "true" : "false")
                           << "}" << std::endl;
             }
             return 0;
@@ -373,6 +410,9 @@ int main(int argc, char **argv) {
             return 0;
         }
         std::vector<size_t> groups;
+        struct RecordedCache { uint64_t bytes = 0, hash = 0; uint32_t tokens = 0; size_t frames = 0; bool half = false; };
+        std::map<std::string, std::array<std::string, 3>> inputs;
+        std::map<std::string, RecordedCache> caches;
         if (args.count("--dataset")) {
             if (!samples.empty() || !validations.empty() || !retentions.empty())
                 throw std::runtime_error("dataset and explicit samples are mutually exclusive");
@@ -392,6 +432,18 @@ int main(int argc, char **argv) {
                 std::filesystem::path path(json::string(row, "cache"));
                 if (path.empty()) throw std::runtime_error("dataset cache path is missing");
                 if (!path.is_absolute()) path = manifest.parent_path() / path;
+                inputs[path.string()] = {json::string(row, "prefix"), json::string(row, "codes"), json::string(row, "means")};
+                if (args.count("--rolling-caches")) {
+                    RecordedCache recorded;
+                    recorded.bytes = std::stoull(json::string(row, "cache_bytes", "0"));
+                    recorded.hash = std::stoull(json::string(row, "cache_fnv", "0"), nullptr, 16);
+                    recorded.tokens = static_cast<uint32_t>(std::stoul(json::string(row, "cache_tokens", "0")));
+                    recorded.frames = std::stoull(json::string(row, "cache_frames", "0"));
+                    recorded.half = json::boolean(row, "cache_half", false);
+                    if (!recorded.bytes || !recorded.tokens || !recorded.frames)
+                        throw std::runtime_error("rolling caches need recorded size, fingerprint and shape");
+                    caches[path.string()] = recorded;
+                }
                 const auto split = json::string(row, "split");
                 if (split == "train") {
                     if (args.count("--group-samples")) {
@@ -408,6 +460,42 @@ int main(int argc, char **argv) {
         if (args.count("--group-samples") &&
             (groups.empty() || !args.count("--shuffle-samples")))
             throw std::runtime_error("group sampling requires a dataset and --shuffle-samples");
+        if (args.count("--sample-plan")) {
+            // The windows a later invocation will consume, so a coordinator can
+            // materialize exactly those caches first. The sampler is independent
+            // of the noise RNGs, which are skipped exactly as resume parses them.
+            if (!args.count("--dataset") || !args.count("--shuffle-samples"))
+                throw std::runtime_error("sample plans require a dataset and --shuffle-samples");
+            const auto count = std::stoull(args.at("--sample-plan"));
+            const auto seed = args.count("--seed") ? static_cast<uint32_t>(std::stoul(args.at("--seed"))) : 831001U;
+            yue2::detail::TrainingSampler sampler(samples.size(), true, seed, groups);
+            uint64_t step = 0;
+            if (args.count("--resume")) {
+                ggml_context *unused = nullptr;
+                std::unique_ptr<gguf_context, decltype(&gguf_free)> file(
+                    gguf_init_from_file(args.at("--resume").c_str(), {true, &unused}), gguf_free);
+                if (!file) throw std::runtime_error("cannot read resume state");
+                const auto rng_key = gguf_find_key(file.get(), "yue2.training.rng");
+                const auto step_key = gguf_find_key(file.get(), "yue2.training.step");
+                if (rng_key < 0 || step_key < 0) throw std::runtime_error("resume state has no sampler");
+                step = gguf_get_val_u64(file.get(), step_key);
+                std::string saved = gguf_get_val_str(file.get(), rng_key);
+                if (unused) ggml_free(unused);
+                const std::string time_marker = "nar-sigmoid-v1\n", marker = "nar-shuffle-v1\n";
+                const bool saved_sigmoid = saved.rfind(time_marker, 0) == 0;
+                if (saved_sigmoid) saved.erase(0, time_marker.size());
+                if (saved.rfind(marker, 0) != 0) throw std::runtime_error("checkpoint does not use shuffled samples");
+                std::istringstream state(saved.substr(marker.size()));
+                std::mt19937 skipped;
+                if (!(state >> skipped) || (saved_sigmoid && !(state >> skipped)))
+                    throw std::runtime_error("invalid checkpoint RNG state");
+                sampler.load(std::string(std::istreambuf_iterator<char>(state), {}));
+            }
+            std::cout << "SAMPLE_PLAN {\"step\":" << step << ",\"samples\":[";
+            for (uint64_t i = 0; i < count; ++i) std::cout << (i ? "," : "") << sampler.next();
+            std::cout << "]}" << std::endl;
+            return 0;
+        }
         if (!args.count("--model") || !args.count("--out") || !args.count("--identity") ||
             samples.empty())
             throw std::runtime_error("training requires --model, --sample, --out and "
@@ -490,7 +578,45 @@ int main(int argc, char **argv) {
                 }
             }
         };
-        auto loader = [&](const std::string &path) { return load(path, args.at("--model"), fixed, conditioning); };
+        const bool resident = args.count("--resident-conditioning") != 0;
+        const bool rolling = args.count("--rolling-caches") != 0;
+        if ((resident || rolling) && (!args.count("--dataset") || !args.count("--stream-samples")))
+            throw std::runtime_error("resident or rolling conditioning needs a dataset and --stream-samples");
+        if (resident && rolling) throw std::runtime_error("choose resident or rolling conditioning");
+        if (rolling && fingerprint != "bytes-v2") throw std::runtime_error("rolling caches require bytes-v2 fingerprints");
+        std::unique_ptr<yue2::AutoregressiveModel> conditioner;
+        if (resident) {
+            // Same frozen AR runtime as cache preparation: conditioning-only,
+            // unbatched prefill, no flash attention, companions then AR adapter.
+            yue2::AutoregressiveOptions runtime;
+            runtime.device = args.count("--device") ? args.at("--device") : "cuda";
+            runtime.threads = args.count("--threads") ? std::stoi(args.at("--threads")) : 4;
+            runtime.conditioning_only = true;
+            runtime.flash_attention = false;  // Inference defaults to fused attention.
+            runtime.lora_adapters = fixed;
+            runtime.lora_adapters.insert(runtime.lora_adapters.end(), conditioning.begin(), conditioning.end());
+            training_event("model-loading", 0, 2);
+            conditioner = std::make_unique<yue2::AutoregressiveModel>(args.at("--model"), runtime);
+        }
+        auto loader = [&](const std::string &path) {
+            if (resident) {
+                const auto &files = inputs.at(path);
+                return condition(*conditioner, files[0], files[1], files[2]);
+            }
+            if (rolling) {
+                // Regenerated caches must be byte-identical to the recorded ones.
+                const auto &recorded = caches.at(path);
+                if (!std::filesystem::exists(path) || std::filesystem::file_size(path) != recorded.bytes ||
+                    yue2::detail::training_file_fingerprint(path) != recorded.hash)
+                    throw std::runtime_error("rolling cache is missing or differs from its recorded bytes: " + path);
+                const auto header = yue2::detail::inspect_nar_cache_header(path, args.at("--model"),
+                    fixed_identity(fixed), fixed_identity(conditioning));
+                if (header.tokens != recorded.tokens || header.frames != recorded.frames ||
+                    header.half_conditioning != recorded.half || header.bytes != recorded.bytes)
+                    throw std::runtime_error("rolling cache header differs from its record: " + path);
+            }
+            return load(path, args.at("--model"), fixed, conditioning);
+        };
         using Store = yue2::detail::TrainingSampleStore<yue2::NarTrainingSample>;
         const bool streaming = args.count("--stream-samples") != 0;
         const auto validation_start = std::chrono::steady_clock::now();
@@ -502,7 +628,7 @@ int main(int argc, char **argv) {
         };
         Store::PathInspector inspect_path;
         std::map<std::string, yue2::detail::TrainingFileFingerprint> encoded;
-        if (fingerprint=="bytes-v2") {
+        if (fingerprint=="bytes-v2" && !rolling && !resident) {
             std::vector<std::string> paths(samples);
             paths.insert(paths.end(), validations.begin(), validations.end());
             paths.insert(paths.end(), retentions.begin(), retentions.end());
@@ -510,7 +636,31 @@ int main(int argc, char **argv) {
             for (size_t i=0;i<paths.size();++i) encoded.emplace(paths[i], hashes[i]);
             validation_progress = {};
         }
-        if (fingerprint=="bytes-v2") inspect_path=[&](const std::string &path) {
+        if (resident) inspect_path=[&](const std::string &path) {
+            // No cache exists: bind the identity to the exact input bytes.
+            const auto &files = inputs.at(path);
+            const auto prefix = std::filesystem::file_size(files[0]) / 4, codes = std::filesystem::file_size(files[1]) / 4;
+            if (!prefix || !codes || std::filesystem::file_size(files[2]) != codes * 64 * 4)
+                throw std::runtime_error("resident conditioning inputs are malformed: " + path);
+            if (!frames) frames = codes;
+            if (frames != codes) throw std::runtime_error("differently shaped training inputs");
+            const auto tokens = static_cast<uint32_t>(prefix + codes + 1);
+            ar = std::max(ar, tokens);
+            mix(tokens);
+            for (const auto &file : files) {
+                mix(std::filesystem::file_size(file)); mix(yue2::detail::training_file_fingerprint(file));
+            }
+        };
+        else if (rolling) inspect_path=[&](const std::string &path) {
+            // Identical mixing to the cached bytes-v2 audit, from recorded facts.
+            const auto &recorded = caches.at(path);
+            if (!frames) frames = recorded.frames;
+            if (frames != recorded.frames) throw std::runtime_error("differently shaped training caches");
+            ar = std::max(ar, recorded.tokens);
+            all_half = all_half && recorded.half;
+            mix(recorded.bytes); mix(recorded.hash);
+        };
+        else if (fingerprint=="bytes-v2") inspect_path=[&](const std::string &path) {
             const auto header=yue2::detail::inspect_nar_cache_header(path,args.at("--model"),
                 fixed_identity(fixed),fixed_identity(conditioning));
             if (!frames) frames=header.frames;
@@ -522,9 +672,10 @@ int main(int argc, char **argv) {
                 throw std::runtime_error("training sample changed after fingerprinting: " + path);
             mix(header.bytes);mix(file.hash);
         };
-        mix(samples.size()); Store train(samples, streaming, loader, inspect, validation_progress, inspect_path);
-        mix(validations.size()); Store validation(validations, streaming, loader, inspect, validation_progress, inspect_path);
-        mix(retentions.size()); Store retention(retentions, streaming, loader, inspect, validation_progress, inspect_path);
+        const bool deferred = resident || rolling;
+        mix(samples.size()); Store train(samples, streaming, loader, inspect, validation_progress, inspect_path, deferred);
+        mix(validations.size()); Store validation(validations, streaming, loader, inspect, validation_progress, inspect_path, deferred);
+        mix(retentions.size()); Store retention(retentions, streaming, loader, inspect, validation_progress, inspect_path, deferred);
         if (args.count("--probe-ar-slots")) {
             const auto capacity = std::stoul(args.at("--probe-ar-slots"));
             if (capacity < ar || capacity > 24576)
@@ -534,7 +685,8 @@ int main(int argc, char **argv) {
         if (args.count("--dataset")) {
             mix(groups.size()); for (auto group : groups) mix(group);
             std::ostringstream signature; signature << std::hex << content_hash;
-            options.run_identity += (fingerprint=="bytes-v2" ? ":nar-cache-bytes-fnv1a64-v2:" : ":nar-cache-fnv1a64-v1:") + signature.str();
+            options.run_identity += (resident ? ":nar-resident-inputs-fnv1a64-v1:" :
+                fingerprint=="bytes-v2" ? ":nar-cache-bytes-fnv1a64-v2:" : ":nar-cache-fnv1a64-v1:") + signature.str();
         }
         if (args.count("--validate-only")) {
             std::cout << "CACHE_AUDIT {\"files\":" << cache_count << ",\"frames\":" << frames
@@ -546,6 +698,7 @@ int main(int argc, char **argv) {
         }
         // Numerically identical either way; F16 halves K/V host memory and uploads.
         options.f16_conditioning = all_half;
+        if (resident) training_event("model-loading", 1, 2);
         const auto directory = std::filesystem::path(args.at("--out"));
         if (std::filesystem::exists(directory) && !args.count("--resume"))
             throw std::runtime_error(
@@ -601,7 +754,7 @@ int main(int argc, char **argv) {
             size_t cursor = 0;
             auto next = [&]() -> const yue2::NarTrainingSample & {
                 const auto &sample = order[cursor].first->get(order[cursor].second);
-                if (++cursor < order.size()) order[cursor].first->prefetch(order[cursor].second);
+                if (++cursor < order.size() && !resident) order[cursor].first->prefetch(order[cursor].second);
                 return sample;
             };
             training_event("evaluation", 0, total, step);
@@ -702,7 +855,7 @@ int main(int argc, char **argv) {
             const auto load_done=std::chrono::steady_clock::now();
             // Load the next window during this update. Peek with copies so the
             // sampler and RNG states (and so checkpoints) are unchanged.
-            if (streaming && i + 1 < steps && !args.count("--fixed-noise")) {
+            if (streaming && !resident && i + 1 < steps && !args.count("--fixed-noise")) {
                 auto peek_sampler = sampler;
                 auto peek_rng = rng;
                 train.prefetch(shuffle ? peek_sampler.next()
@@ -725,7 +878,7 @@ int main(int argc, char **argv) {
             history.flush();
             std::cout << line.str() << std::endl;
             const bool requested_stop = args.count("--stop-file") && std::filesystem::exists(args.at("--stop-file"));
-            if (result.optimizer_step % eval_every == 0 || i == steps - 1)
+            if (result.optimizer_step % eval_every == 0 || (i == steps - 1 && !args.count("--no-final-eval")))
                 evaluate_all(result.optimizer_step);
             if (result.optimizer_step % every == 0 || i == steps - 1 || requested_stop) {
                 training_event("checkpoint-save", 0, 1, result.optimizer_step);

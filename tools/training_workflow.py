@@ -175,8 +175,35 @@ def checkpoint_allowance(options,experts=2):
     return experts*per_expert
 
 
-def conditioning_bytes(eligible):
-    return sum((r['prefix_tokens']+r['frames']+1)*114688+r['frames']*256 for r in eligible)
+def window_bytes(row):
+    return (row['prefix_tokens']+row['frames']+1)*114688+row['frames']*256
+
+
+# Rolling conditioning keeps at most one segment of training windows plus the
+# heldout set (during an evaluating segment) on disk at once.
+ROLLING_WINDOW_UPDATES=25
+
+
+def conditioning_bytes(eligible,storage='cache',evaluation_scope='heldout'):
+    """Peak NAR conditioning disk for one storage mode."""
+    if storage=='resident':return 0
+    if storage=='rolling':
+        largest=max((window_bytes(r) for r in eligible),default=0)
+        evaluated=[r for r in eligible if r['split']!='train'] if evaluation_scope=='heldout' else eligible
+        # Never more than keeping every window.
+        return min(ROLLING_WINDOW_UPDATES*largest+sum(window_bytes(r) for r in evaluated),
+                   sum(window_bytes(r) for r in eligible))
+    return sum(window_bytes(r) for r in eligible)
+
+
+def storage_options(eligible,options):
+    """Disk each recipe 5 storage choice needs for this dataset, for review."""
+    train=[r for r in eligible if r['split']=='train']
+    teacher=sum(r['frames']*TEACHER_ROW_BYTES for r in train) if options['kl_weight']>0 else 0
+    scope=options.get('evaluation_scope','full')
+    return dict(teacher_storage={'cache':dict(disk_gib=teacher/2**30),'online':dict(disk_gib=0)},
+                conditioning_storage={mode:dict(disk_gib=conditioning_bytes(eligible,mode,scope)/2**30)
+                                      for mode in CONDITIONING_STORAGE})
 
 
 def folder_bytes(folder):
@@ -312,10 +339,13 @@ class Workflow:
         estimate=ar_resource_estimate(eligible,o,runtime.get('device','cuda'),
                                       sum(Path(models[k]).stat().st_size for k in ['base','companion']))
         # The teacher cache is released before NAR conditioning is written.
-        peak=max(estimate['estimated_teacher_disk_gib']*2**30,conditioning_bytes(eligible))+checkpoint_allowance(o)
+        storage=o.get('conditioning_storage','cache');scope=o.get('evaluation_scope','full')
+        conditioning=conditioning_bytes(eligible,storage,scope)
+        peak=max(estimate['estimated_teacher_disk_gib']*2**30,conditioning)+checkpoint_allowance(o)
         self.update(status='ready',stage='dataset-review',examples=len(eligible),excluded=len(data['rows'])-len(eligible),
                     train_examples=sum(r['split']=='train' for r in eligible),validation_examples=sum(r['split']=='validation' for r in eligible),
-                    estimated_conditioning_gib=conditioning_bytes(eligible)/2**30,estimated_peak_disk_gib=peak/2**30,
+                    estimated_conditioning_gib=conditioning/2**30,estimated_peak_disk_gib=peak/2**30,
+                    storage_options=storage_options(eligible,o),
                     free_disk_gib=shutil.disk_usage(self.run).free/2**30,**estimate)
 
     def fit(self,expert,config,folder,budget):
@@ -344,7 +374,9 @@ class Workflow:
         ar_done=(ar_folder/'selection.json').exists()
         teacher=0 if ar_done else max(0,ar_resource_estimate(eligible,self.options,'cuda')['estimated_teacher_disk_gib']*2**30-folder_bytes(ar_folder/'teacher'))
         complete=(nar_data/'dataset.json').exists() and json.loads((nar_data/'dataset.json').read_text()).get('completed')
-        conditioning=0 if complete else max(0,conditioning_bytes(eligible)-folder_bytes(nar_data))
+        storage=self.options.get('conditioning_storage','cache')
+        conditioning=0 if complete and storage=='cache' else max(0,conditioning_bytes(
+            eligible,storage,self.options.get('evaluation_scope','full'))-folder_bytes(nar_data))
         needed=max(teacher,conditioning)+checkpoint_allowance(self.options,1 if ar_done else 2)
         free=shutil.disk_usage(self.run).free
         if free<needed:
@@ -354,8 +386,6 @@ class Workflow:
         if not (self.run/'vae-targets/index.json').exists():raise ValueError('Prepare and review the dataset first')
         if self.state.get('caches_released'):raise ValueError('This run released its training caches after publishing; start a new run to train again')
         o=self.options;cfg=self.config();ar_folder=self.data/self.family
-        if o.get('conditioning_storage','cache')!='cache':
-            raise ValueError('This runtime does not implement '+o['conditioning_storage']+' NAR conditioning yet')
         nar_data=self.run/'nar-conditioning'
         self.check_disk(ar_folder,nar_data)
         self.fit('ar',self.run/'ar-job.json',ar_folder,o['ar_steps'])
@@ -372,7 +402,9 @@ class Workflow:
         if not (nar_data/'dataset.json').exists() or not json.loads((nar_data/'dataset.json').read_text()).get('completed'):
             self.command('prepare_nar_dataset.py',['--config',self.run/'ar-job.json','--targets',self.run/'vae-targets/index.json',
                 '--ar-adapter',ar,'--binary',binary,'--out',nar_data,'--conditioning-device',self.runtime.get('device','cuda'),
-                '--conditioning-batch','0','--stop-file',self.run/'stop.request'],'nar-conditioning',nar_data/'progress.json')
+                '--conditioning-batch','0','--stop-file',self.run/'stop.request',
+                *(['--storage',o['conditioning_storage']] if o.get('conditioning_storage','cache')!='cache' else [])],
+                'nar-conditioning',nar_data/'progress.json')
         nar_cfg=dict(format='yue2-nar-training-v1',workspace=str(self.workspace),output=str(self.run/'nar-run'),
             name=self.state['name'],training_dataset=str(nar_data/'dataset.json'),training_binary=str(binary),
             device=self.runtime.get('device','cuda'),threads=self.runtime.get('threads',6),inference_urls=[],
@@ -382,6 +414,10 @@ class Workflow:
         if 'evaluation_scope' in o:
             nar_cfg['training'].update(evaluation_scope=o['evaluation_scope'],probe_scope='first-at-maximum-context')
         if 'cache_fingerprint' in o:nar_cfg['training']['cache_fingerprint']=o['cache_fingerprint']
+        # Recorded only for non-default storage, so recipe 4/5-cache jobs keep their identity.
+        if o.get('conditioning_storage','cache')!='cache':
+            nar_cfg['training']['conditioning_storage']=o['conditioning_storage']
+            if o['conditioning_storage']=='rolling':nar_cfg['training']['rolling_window_updates']=ROLLING_WINDOW_UPDATES
         nar_path=self.run/'nar-job.json'
         if nar_path.exists() and json.loads(nar_path.read_text())!=nar_cfg:raise ValueError('Frozen AR/NAR run changed')
         save(nar_path,nar_cfg)
@@ -408,9 +444,50 @@ class Workflow:
         self.update(caches_released=dict(gib=self.state.get('caches_released',{}).get('gib',0)+released/2**30,at=time.time()))
 
 
+# Request settings yue2-server accepts for a new run (mirrors its allowlist).
+REQUEST_SETTINGS=['id','dataset','name','trigger','window_seconds','ar_steps','nar_steps','rank','family','ar_lr','nar_lr',
+                  'kl_weight','seed','eval_every','evaluation_scope','keep_caches','teacher_storage','conditioning_storage']
+
+
+def capabilities(runtime=None):
+    """What this installation supports, for downstream trainers to query.
+
+    Storage modes never change results: each is bit-identical to `cache`
+    and trades disk for training time or VRAM only."""
+    native={}
+    if runtime:
+        binary=Path(json.loads(Path(runtime).read_text())['bin'])
+        suffix='.exe' if os.name=='nt' else ''
+        def help_text(name):
+            try:return subprocess.run([str(binary/(name+suffix)),'--help'],capture_output=True,text=True,timeout=30).stdout
+            except OSError:return ''
+        ar,nar=help_text('yue2-ar-train'),help_text('yue2-train')
+        native=dict(teacher_online='--teacher-online' in ar,rolling_conditioning='--rolling-caches' in nar,
+                    resident_conditioning='--resident-conditioning' in nar)
+    def supported(key):return native.get(key,True) if native else None
+    return dict(schema_version=1,recipes=[1,2,3,4,5],default_recipe=5,request_settings=REQUEST_SETTINGS,
+        storage=dict(
+            teacher_storage=dict(
+                cache=dict(supported=True,trade_off='Fastest AR updates; about 94 MiB of disk per 30-second training window until AR selection'),
+                online=dict(supported=supported('teacher_online'),trade_off='No teacher disk; one extra common-model forward per AR update')),
+            conditioning_storage=dict(
+                cache=dict(supported=True,trade_off='Fastest NAR updates; about 160 MiB of disk per 30-second window until publish'),
+                rolling=dict(supported=supported('rolling_conditioning'),
+                             trade_off='Disk bounded to one segment plus heldout windows; regenerates each window before use (about 1.2 s each on an RTX 5070 Laptop)'),
+                resident=dict(supported=supported('resident_conditioning'),
+                              trade_off='No conditioning disk; computes K/V in the NAR fitter, which then needs VRAM for both experts'))),
+        native=native or None)
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--run',type=Path,required=True)
-    parser.add_argument('--action',choices=['prepare','train','resume','publish'],required=True);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--run',type=Path)
+    parser.add_argument('--action',choices=['prepare','train','resume','publish'])
+    parser.add_argument('--capabilities',action='store_true',help='Print supported recipes and storage modes as JSON')
+    parser.add_argument('--runtime',type=Path,help='With --capabilities: training-runtime.json whose native tools to check')
+    args=parser.parse_args()
+    if args.capabilities:
+        print(json.dumps(capabilities(args.runtime),indent=2));return 0
+    if not args.run or not args.action:parser.error('--run and --action are required')
     os.environ['GGML_CUDA_TF32']='0';workflow=None
     try:
         wait_for_owner(args.run)
