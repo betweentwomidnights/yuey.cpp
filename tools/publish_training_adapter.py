@@ -4,7 +4,7 @@ from pathlib import Path
 import gguf
 import numpy as np
 from prepare_ar_dataset import save
-from yue2_training_audit import digest
+from training_provenance import digest
 
 
 def publish(run,runtime,request,state):

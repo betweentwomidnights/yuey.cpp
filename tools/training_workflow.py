@@ -18,7 +18,7 @@ import time
 import traceback
 
 from prepare_ar_dataset import save
-from yue2_training_audit import digest
+from training_provenance import digest
 
 
 class Stopped(Exception): pass

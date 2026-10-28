@@ -5,12 +5,14 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
 import numpy as np
 import soundfile as sf
 
+sys.path.insert(0, str(Path(__file__).parents[1]/"tools"))
 spec = importlib.util.spec_from_file_location("audit", Path(__file__).parents[1]/"tools/yue2_training_audit.py")
 audit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(audit)

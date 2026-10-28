@@ -16,7 +16,7 @@ from pathlib import Path
 
 import gguf
 from prepare_ar_dataset import save,wait_for_inference
-from yue2_training_audit import digest,native_runtime_identity
+from training_provenance import digest,native_runtime_identity
 
 
 class NativeProgress:
@@ -189,8 +189,11 @@ def main():
         process=subprocess.Popen(cmd,cwd=root,stdout=stream,stderr=subprocess.STDOUT)
         try:
             while process.poll() is None:
-                query=subprocess.run(['nvidia-smi','--query-gpu=memory.used','--format=csv,noheader,nounits'],capture_output=True,text=True)
-                if query.returncode==0:peak=max(peak,int(query.stdout.strip().splitlines()[0]))
+                # GPU telemetry is advisory; Vulkan/AMD hosts may lack nvidia-smi.
+                try:
+                    query=subprocess.run(['nvidia-smi','--query-gpu=memory.used','--format=csv,noheader,nounits'],capture_output=True,text=True,timeout=3)
+                    if query.returncode==0:peak=max(peak,int(query.stdout.strip().splitlines()[0]))
+                except (OSError,subprocess.TimeoutExpired,ValueError,IndexError):pass
                 history=native/'history.jsonl'
                 try:
                     progress=native_progress.read()

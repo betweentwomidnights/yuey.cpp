@@ -16,7 +16,7 @@ import time
 import numpy as np
 import soundfile as sf
 from prepare_ar_dataset import save
-from yue2_training_audit import digest,native_runtime_identity
+from training_provenance import digest,native_runtime_identity
 
 def context_bounds(start,frames,total,halo):
     if start<0 or frames<1 or start+frames>total or halo<0:raise ValueError('Invalid target core')

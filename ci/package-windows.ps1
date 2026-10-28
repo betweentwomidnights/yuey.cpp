@@ -421,7 +421,7 @@ New-Item -ItemType Directory -Force $trainingTools | Out-Null
 foreach ($file in @("setup_training.py", "requirements-training.txt", "training_workflow.py",
     "publish_training_adapter.py", "prepare_ar_dataset.py", "prepare_nar_targets.py",
     "prepare_nar_dataset.py", "ar_dataset.py",
-    "train_ar_run.py", "train_nar_run.py", "yue2_training_audit.py")) {
+    "train_ar_run.py", "train_nar_run.py", "training_provenance.py")) {
     Copy-Item (Join-Path $root "tools\$file") $trainingTools
 }
 Copy-Item (Join-Path $root "docs\training.md") (Join-Path $standaloneDir "TRAINING.md")

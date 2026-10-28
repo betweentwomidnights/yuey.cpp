@@ -17,7 +17,7 @@ def main():
     args=parser.parse_args()
     if sys.platform not in ['win32','linux']:parser.error('Local training ownership currently supports Windows and Linux')
     if args.out.exists():parser.error('Output exists; choose a new config path')
-    missing=[name for name in ['numpy','soundfile','scipy','gguf'] if importlib.util.find_spec(name) is None]
+    missing=[name for name in ['numpy','soundfile','gguf'] if importlib.util.find_spec(name) is None]
     if missing:parser.error('Missing preprocessing dependencies: '+', '.join(missing)+'; install tools/requirements-training.txt')
     def model(pattern):
         paths=list(args.models_dir.rglob(pattern))

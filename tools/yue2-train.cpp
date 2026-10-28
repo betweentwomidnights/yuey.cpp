@@ -587,18 +587,18 @@ int main(int argc, char **argv) {
                 line << "],\"evaluation_sigmas\":[0.2,0.5,0.8]";
             }
             if (!retention.empty()) {
-                double total = 0;
+                double retention_sum = 0;
                 std::array<double, 3> by_sigma{};
                 std::vector<float> per_sample;
                 for (size_t i = 0; i < retention.size(); ++i) {
                     const auto values = evaluate(retention.get(i));
                     const float mean = (values[0] + values[1] + values[2]) / 3;
-                    total += mean;
+                    retention_sum += mean;
                     per_sample.push_back(mean);
                     for (size_t i = 0; i < 3; ++i) by_sigma[i] += values[i];
                     training_event("evaluation", ++completed, total, step);
                 }
-                line << ",\"retention_eval\":" << total / retention.size();
+                line << ",\"retention_eval\":" << retention_sum / retention.size();
                 line << ",\"retention_per_sample\":[";
                 for (size_t i = 0; i < per_sample.size(); ++i) {
                     if (i) line << ',';

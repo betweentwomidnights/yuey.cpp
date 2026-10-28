@@ -5,7 +5,7 @@ from pathlib import Path
 import gguf
 from prepare_ar_dataset import save,wait_for_inference
 from train_ar_run import grouped_loss,evaluation_history,native_metric_paths
-from yue2_training_audit import digest,native_runtime_identity
+from training_provenance import digest,native_runtime_identity
 
 
 class NativeNarProgress:

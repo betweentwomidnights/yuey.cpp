@@ -16,7 +16,7 @@ import subprocess
 import time
 
 from prepare_ar_dataset import save, wait_for_inference
-from yue2_training_audit import digest, native_runtime_identity
+from training_provenance import digest, native_runtime_identity
 
 
 def match_targets(rows, targets):

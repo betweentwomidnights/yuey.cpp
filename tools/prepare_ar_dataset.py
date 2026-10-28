@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from yue2_training_audit import digest, native_runtime_identity
+from training_provenance import digest, native_runtime_identity
 from ar_dataset import caption_metadata,score_from_events,window_starts
 
 
