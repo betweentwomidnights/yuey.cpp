@@ -103,7 +103,7 @@ def settings(request):
                 eval_every=number('eval_every',100,1,1000,True),family=family,trigger=trigger,
                 keep_caches=request.get('keep_caches',False))
     version=request.get('recipe_version',1)
-    if type(version)!=int or version not in [1,2,3,4]:raise ValueError('Unsupported training recipe version')
+    if type(version)!=int or version not in [1,2,3,4,5]:raise ValueError('Unsupported training recipe version')
     if version>=2:
         scope=request.get('evaluation_scope','heldout')
         if scope not in ['heldout','full']:raise ValueError('Evaluation scope must be heldout or full')
@@ -111,8 +111,27 @@ def settings(request):
     if version>=3:options['cache_fingerprint']='bytes-v2'
     # v4 streams AR KL teachers from SHA-256-indexed F32 files: fitter host RAM
     # no longer grows with the number of training windows; resume skips them.
-    if version>=4:options['teacher_cache']='f32'
+    if version==4:options['teacher_cache']='f32'
+    # v5 chooses where frozen teachers and NAR conditioning live. The defaults
+    # reproduce v4 exactly; every alternative is bit-identical by construction
+    # and verified against it, so storage trades disk for time or VRAM only.
+    storage={k:request[k] for k in ['teacher_storage','conditioning_storage'] if k in request}
+    if storage and version<5:raise ValueError('Storage modes require recipe version 5')
+    if version>=5:
+        teacher=request.get('teacher_storage','cache')
+        if teacher not in TEACHER_STORAGE:raise ValueError('teacher_storage must be '+' or '.join(TEACHER_STORAGE))
+        conditioning=request.get('conditioning_storage','cache')
+        if conditioning not in CONDITIONING_STORAGE:
+            raise ValueError('conditioning_storage must be '+', '.join(CONDITIONING_STORAGE))
+        if teacher=='cache':options['teacher_cache']='f32'
+        else:options['teacher_online']=True
+        options['conditioning_storage']=conditioning
     return options
+
+
+# Storage choices for recipe 5. `cache` is the fastest and the default.
+TEACHER_STORAGE=['cache','online']
+CONDITIONING_STORAGE=['cache','rolling','resident']
 
 
 # One frozen KL teacher row per target frame: MUSIC_END + 32768 codec classes, F32.
@@ -133,7 +152,9 @@ def ar_resource_estimate(eligible,options,device,model_bytes=0):
     window=max((r['frames'] for r in eligible),default=0)*TEACHER_ROW_BYTES
     teachers=sum(r['frames']*TEACHER_ROW_BYTES for r in train) if options['kl_weight']>0 else 0
     cached='teacher_cache' in options
-    steady=AR_HOST_STEADY_GIB*2**30+AR_STREAMED_WINDOWS*window+(0 if cached else teachers)
+    # Online teachers hold one window's distribution, like the streamed cache.
+    streamed=cached or options.get('teacher_online',False)
+    steady=AR_HOST_STEADY_GIB*2**30+AR_STREAMED_WINDOWS*window+(0 if streamed else teachers)
     ram=max(AR_HOST_LOAD_GIB*2**30,steady)+(model_bytes if device=='cpu' else 0)
     disk=sum(r['frames']*TEACHER_ROW_BYTES+(r['prefix_tokens']+r['frames'])*4+4096 for r in train) if cached and teachers else 0
     return dict(estimated_ar_host_ram_gib=ram/2**30,estimated_teacher_disk_gib=disk/2**30)
@@ -275,6 +296,7 @@ class Workflow:
                 token_budget=o['ar_steps']*o['window_seconds']*25,seed=o['seed'],checkpoint_every=o['eval_every'],eval_every=o['eval_every']))
         if 'evaluation_scope' in o:cfg['training']['evaluation_scope']=o['evaluation_scope']
         if 'teacher_cache' in o:cfg['training']['teacher_cache']=o['teacher_cache']
+        if o.get('teacher_online'):cfg['training']['teacher']='online'
         path=self.run/'ar-job.json'
         if path.exists() and json.loads(path.read_text())!=cfg:raise ValueError('Resolved dataset/runtime changed; create a new run')
         save(path,cfg);self.update(dataset=rows,status='running')
@@ -332,6 +354,8 @@ class Workflow:
         if not (self.run/'vae-targets/index.json').exists():raise ValueError('Prepare and review the dataset first')
         if self.state.get('caches_released'):raise ValueError('This run released its training caches after publishing; start a new run to train again')
         o=self.options;cfg=self.config();ar_folder=self.data/self.family
+        if o.get('conditioning_storage','cache')!='cache':
+            raise ValueError('This runtime does not implement '+o['conditioning_storage']+' NAR conditioning yet')
         nar_data=self.run/'nar-conditioning'
         self.check_disk(ar_folder,nar_data)
         self.fit('ar',self.run/'ar-job.json',ar_folder,o['ar_steps'])

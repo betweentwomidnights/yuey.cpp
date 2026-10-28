@@ -24,7 +24,24 @@ class WorkflowTest(unittest.TestCase):
         self.assertNotIn('teacher_cache',settings(dict(id='version-three',recipe_version=3)))
         four=settings(dict(id='version-four',recipe_version=4))
         self.assertEqual((four['teacher_cache'],four['cache_fingerprint'],four['evaluation_scope']),('f32','bytes-v2','heldout'))
-        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=5))
+        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=6))
+
+    def test_recipe_five_storage_defaults_reproduce_recipe_four(self):
+        four=settings(dict(id='run',recipe_version=4));five=settings(dict(id='run',recipe_version=5))
+        self.assertEqual(five.pop('conditioning_storage'),'cache')
+        self.assertEqual(five,four)
+        online=settings(dict(id='v5',recipe_version=5,teacher_storage='online'))
+        self.assertNotIn('teacher_cache',online);self.assertTrue(online['teacher_online'])
+        for mode in ['rolling','resident']:
+            self.assertEqual(settings(dict(id='v5',recipe_version=5,conditioning_storage=mode))['conditioning_storage'],mode)
+        with self.assertRaisesRegex(ValueError,'teacher_storage'):settings(dict(id='v5',recipe_version=5,teacher_storage='f16'))
+        with self.assertRaisesRegex(ValueError,'conditioning_storage'):settings(dict(id='v5',recipe_version=5,conditioning_storage='zip'))
+        with self.assertRaisesRegex(ValueError,'recipe version 5'):settings(dict(id='v4',recipe_version=4,teacher_storage='online'))
+        rows=[dict(split='train',frames=750,prefix_tokens=1000)]*157
+        cached=ar_resource_estimate(rows,five|dict(conditioning_storage='cache'),'cuda')
+        streamed=ar_resource_estimate(rows,online,'cuda')
+        self.assertEqual(streamed['estimated_teacher_disk_gib'],0)
+        self.assertEqual(streamed['estimated_ar_host_ram_gib'],cached['estimated_ar_host_ram_gib'])
 
     def test_teacher_estimates_match_measured_koan_corpus(self):
         # 157 training and 38 validation 30-second windows, measured in

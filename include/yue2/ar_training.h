@@ -14,6 +14,9 @@ struct ArTrainingOptions {
     float gradient_clip = 1.0F;
     float kl_weight = 0.0F;
     bool dora = false; // Full norm gradients around base + frozen companions.
+    // Build the common-model graph (no learned adapter) for every block, so
+    // teacher() can compute frozen distributions after updates.
+    bool online_teacher = false;
     std::uint32_t seed = 831001;
     std::vector<LoraAdapterSpec> fixed_adapters;
     // Hash model, runtime, fixed adapters, exact prefix and target streams.
@@ -56,6 +59,8 @@ class ArTrainer {
     float evaluate(const ArTrainingSample &);
     // Call before any update/resume, while learned B factors are zero.
     void prepare_teacher(ArTrainingSample &);
+    // The same frozen distribution at any step; requires online_teacher.
+    void teacher(ArTrainingSample &);
     // Check a supplied frozen distribution once, then mark it validated.
     void validate_teacher(ArTrainingSample &);
     void save_adapter(const std::string &path) const;
