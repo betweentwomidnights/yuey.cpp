@@ -13,6 +13,22 @@ from training_workflow import settings,inventory,wait_for_owner,process_identity
 
 
 class WorkflowTest(unittest.TestCase):
+    def test_resume_does_not_display_previous_terminal_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run=root/'run';run.mkdir()
+            (run/'runtime.json').write_text(json.dumps(dict(workspace=str(root))))
+            (run/'request.json').write_text(json.dumps(dict(id='fixture')))
+            progress=root/'progress.json';progress.write_text(json.dumps(dict(status='stopped',step=6)))
+            class Finished:
+                pid=123;returncode=0
+                def __init__(self,*args,**kwargs):pass
+                def poll(self):return 0
+                def wait(self):return 0
+            workflow=Workflow(run)
+            with patch('training_workflow.subprocess.Popen',Finished):
+                workflow.command('fixture.py',[],'ar-fit',progress)
+            self.assertEqual(workflow.state['progress'],{})
+
     def test_fast_child_terminal_progress_is_observed(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run=root/'run';run.mkdir()

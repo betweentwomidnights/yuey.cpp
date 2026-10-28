@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -16,6 +17,31 @@ from pathlib import Path
 import gguf
 from prepare_ar_dataset import save,wait_for_inference
 from yue2_training_audit import digest,native_runtime_identity
+
+
+class NativeProgress:
+    """Track startup separately from optimizer updates, including resumed runs."""
+    def __init__(self,log,resumed_step=0,eval_every=100,target_steps=None):
+        self.log=Path(log);self.offset=0;self.pending=''
+        self.eval_every=eval_every;self.target_steps=target_steps
+        self.values=dict(activity='Loading native trainer',step=resumed_step)
+
+    def read(self):
+        with self.log.open(encoding='utf-8',errors='replace') as stream:
+            stream.seek(self.offset);text=stream.read();self.offset=stream.tell()
+        lines=(self.pending+text).split('\n');self.pending=lines.pop()
+        for line in lines:
+            teacher=re.fullmatch(r'prepare_teacher=(\d+)/(\d+)',line.strip())
+            if teacher:
+                self.values.update(activity='Preparing frozen teacher distributions',
+                                   teacher_current=int(teacher[1]),teacher_total=int(teacher[2]))
+            elif line.startswith('initial_loss='):
+                self.values['activity']='Evaluating training and validation windows'
+            elif line.startswith('step='):
+                step=int(line.split()[0].split('=')[1])
+                evaluating=step % self.eval_every == 0 or step==self.target_steps
+                self.values.update(step=step,activity='Evaluating checkpoint' if evaluating else 'Training')
+        return dict(self.values)
 
 
 def grouped_loss(values,rows):
@@ -42,6 +68,14 @@ def select_checkpoints(out,rows,config):
     folder=Path(selected['segment']);adapter=folder/f"step-{selected['step']}.gguf"
     # The preflight probe supplies the explicit step-zero candidate.
     if selected['step']==0:adapter=out/'probe/step-0.gguf'
+    else:
+        # Resume evaluates the loaded checkpoint before updating, but that
+        # checkpoint belongs to its original segment, not the new metrics file.
+        candidates=sorted(out.glob(f"native*/step-{selected['step']}.gguf"))
+        if not candidates:raise FileNotFoundError(f"No adapter for evaluated step {selected['step']}")
+        if len({digest(path) for path in candidates})!=1:
+            raise ValueError('Conflicting adapters for evaluated optimizer step')
+        if not adapter.exists():adapter=candidates[0];folder=adapter.parent
     state=folder/f"step-{selected['step']}.state.gguf" if selected['step'] else None
     save(out/'selection.json',dict(method='Minimum recording-balanced heldout semantic CE including zero; retention separate; listening required',
          initial=ordered[0],selected=selected,final=ordered[-1],adapter=str(adapter),adapter_sha256=digest(adapter),
@@ -88,10 +122,10 @@ def main():
          '--weight-decay',str(training['weight_decay']),'--clip',str(training['clip']),'--seed',str(training.get('seed',831001)),
          '--identity',run_hash]
     if args.family=='dora':cmd+=['--dora']
+    resumed_step=0
     if args.phase=='fit':
         native=out/args.segment;cmd+=['--out',str(native),'--save-every',str(training.get('checkpoint_every',100)),
                                     '--eval-every',str(training.get('eval_every',100)),'--stop-file',str(out/'stop.request')]
-        resumed_step=0
         if args.resume:
             state=gguf.GGUFReader(str(args.resume));resumed_step=int(state.get_field('yue2.training.step').contents())
             cmd+=['--resume',str(args.resume)]
@@ -112,6 +146,11 @@ def main():
                             identity_sha256=run_hash,output=str(native)))
     print('START',args.family,args.phase,flush=True)
     with log.open('w') as stream:
+        native_progress=NativeProgress(log,resumed_step,training.get('eval_every',100),target_steps)
+        # Replace terminal progress from the previous segment before the native
+        # teacher/evaluation warmup, which can take several minutes on resume.
+        save(out/'progress.json',dict(stage=args.phase,status='running',family=args.family,
+             target_steps=target_steps,**native_progress.values))
         process=subprocess.Popen(cmd,cwd=root,stdout=stream,stderr=subprocess.STDOUT)
         try:
             while process.poll() is None:
@@ -119,6 +158,7 @@ def main():
                 if query.returncode==0:peak=max(peak,int(query.stdout.strip().splitlines()[0]))
                 history=native/'history.jsonl'
                 try:
+                    progress=native_progress.read()
                     if history.exists():
                         lines=history.read_text().splitlines()
                         if lines:
@@ -126,8 +166,9 @@ def main():
                             except json.JSONDecodeError:latest=None  # Child may be appending this line.
                             if latest is not None:
                                 step=latest.get('step',step)
-                                save(out/'progress.json',dict(stage=args.phase,status='running',family=args.family,step=step,target_steps=target_steps,
-                                     tokens_seen=step*data['frames'],elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak))
+                                progress.update(step=step,last_update_seconds=latest.get('seconds'))
+                    save(out/'progress.json',dict(stage=args.phase,status='running',family=args.family,target_steps=target_steps,
+                         tokens_seen=progress['step']*data['frames'],elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,**progress))
                 except OSError as error:
                     # Progress is advisory. A reader lock/disk error must not drop
                     # ownership of the still-running native process.

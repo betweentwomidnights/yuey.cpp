@@ -152,6 +152,18 @@ class Workflow:
 
     def command(self,script,args,stage,progress=None):
         self.check_stop();self.update(status='running',stage=stage,progress={})
+        def signature():
+            try:
+                stat=Path(progress).stat() if progress else None
+                return (stat.st_mtime_ns,stat.st_size) if stat else None
+            except OSError:return None
+        previous_progress=signature()
+        def read_progress():
+            # A resumed helper may hash models before replacing its old status.
+            # Do not display the previous segment's stopped/completed snapshot.
+            if signature()!=previous_progress:
+                try:self.update(progress=json.loads(Path(progress).read_text()))
+                except (OSError,json.JSONDecodeError):pass
         number=1
         while (self.run/f'{stage}-{number}.log').exists():number+=1
         log=self.run/f'{stage}-{number}.log';cmd=[sys.executable,str(self.tools/script),*map(str,args)]
@@ -161,16 +173,12 @@ class Workflow:
             self.update(child_pid=process.pid,log=str(log))
             try:
                 while process.poll() is None:
-                    if progress and Path(progress).exists():
-                        try:self.update(progress=json.loads(Path(progress).read_text()))
-                        except (OSError,json.JSONDecodeError):pass
+                    read_progress()
                     time.sleep(.5)
             finally:process.wait()
         # Fast native stages can finish between monitor ticks. Read their
         # committed terminal progress before leaving the stage.
-        if progress and Path(progress).exists():
-            try:self.update(progress=json.loads(Path(progress).read_text()))
-            except (OSError,json.JSONDecodeError):pass
+        read_progress()
         self.update(child_pid=None)
         self.check_stop()
         if process.returncode:raise RuntimeError(log.read_text(encoding='utf-8',errors='replace')[-5000:])

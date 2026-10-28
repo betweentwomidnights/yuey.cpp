@@ -43,6 +43,17 @@ and can dominate a small training run. CUDA is the measured GPU training backend
 Use one inference server per device; unrelated servers/applications are outside
 this server's device reservation.
 
+Unload models in other applications before starting training on an 8 GB card.
+On Windows, a trainer started under GPU memory pressure can stay slow even
+after the other model unloads. In the local 30-second LoRA test, updates took
+about 86 seconds with 170 MiB reported as shared GPU memory; a fresh trainer
+after unloading the competing model used the normal 74 MiB shared allocation
+and returned to 3.6-second updates. Use **Stop**, wait for its checkpoint, then
+**Resume** after freeing GPU memory. See the [recovery measurements](ar-training-recovery-2026-10-27.md).
+AR progress distinguishes teacher preparation, initial/checkpoint evaluation
+and updates, and reports the most recent update duration. Startup and full
+evaluation time are additional to that update duration.
+
 ## Dataset and recipe
 
 Provide at least two distinct WAV/FLAC recordings, with matching UTF-8 TXT
