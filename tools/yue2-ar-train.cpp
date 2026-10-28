@@ -1,3 +1,5 @@
+#include "ar_teacher_cache.h"
+#include "training_sample_store.h"
 #include "training_sampler.h"
 #include "yue2/ar_training.h"
 #include "yue2/tokenizer.h"
@@ -10,6 +12,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <random>
 #include <set>
 #include <sstream>
@@ -29,6 +32,13 @@ template <class T> std::vector<T> read(const std::string &path) {
 std::string text(const std::string &path) {
     auto bytes = read<char>(path);
     return {bytes.begin(), bytes.end()};
+}
+std::string fixed_identity(const std::vector<yue2::LoraAdapterSpec> &fixed) {
+    std::string result;
+    for (const auto &spec : fixed)
+        result += std::filesystem::absolute(spec.path).lexically_normal().string() + "=" +
+                  std::to_string(spec.strength) + "\n";
+    return result;
 }
 void parent(const std::filesystem::path &path) {
     if (!path.parent_path().empty())
@@ -76,7 +86,8 @@ int main(int argc, char **argv) {
                                                 "--validation-prefix", "--validation-tokens",
                                                 "--retention-prefix",  "--retention-tokens"};
         const std::set<std::string> flags{"--predict-end", "--probe-only", "--instrumental",
-                                          "--shuffle-samples", "--dora", "--group-samples"};
+                                          "--shuffle-samples", "--dora", "--group-samples",
+                                          "--prepare-teacher-only"};
         const std::set<std::string> values{"--model",
                                            "--prefix",
                                            "--tokens",
@@ -102,7 +113,9 @@ int main(int argc, char **argv) {
                                            "--eval-every",
                                            "--kl-weight",
                                            "--early-stop-patience",
-                                           "--early-stop-min-steps", "--dataset", "--stop-file", "--eval-scope"};
+                                           "--early-stop-min-steps", "--dataset", "--stop-file", "--eval-scope",
+                                           "--teacher-cache", "--teacher-identity",
+                                           "--teacher-base-sha256", "--teacher-companion-sha256"};
         for (int i = 1; i < argc; ++i) {
             const std::string key = argv[i];
             if (key == "--help") {
@@ -125,6 +138,10 @@ int main(int argc, char **argv) {
                              "[--kl-weight .2 --shuffle-samples --early-stop-patience "
                              "N --early-stop-min-steps N]\n"
                              "[--dora] [--stop-file PATH (save and stop after an update)]\n"
+                             "[--teacher-cache DIR --teacher-identity HASH --teacher-base-sha256 SHA\n"
+                             " --teacher-companion-sha256 SHA] streams frozen KL teachers from\n"
+                             " DIR/teacher-NNNNN.gguf; add --prepare-teacher-only to write missing\n"
+                             " files (no --out) and exit. Host RAM then holds one teacher window.\n"
                              "[--probe-only] [--predict-end (only for genuine complete "
                              "sequences)]\n"
                              "Prefix preparation: --prefix-out NEW.i32 --tokenizer "
@@ -172,6 +189,7 @@ int main(int argc, char **argv) {
         auto validation = load_samples("--validation-prefix", "--validation-tokens");
         auto retention = load_samples("--retention-prefix", "--retention-tokens");
         std::vector<size_t> groups;
+        std::vector<yue2::detail::ArTeacherWindow> windows;
         if(args.count("--dataset")) {
             if(!samples.empty()||!validation.empty()||!retention.empty()||args.count("--prefix")||args.count("--tokens"))throw std::runtime_error("dataset and explicit examples are mutually exclusive");
             namespace json=yue2::server::json;
@@ -192,6 +210,8 @@ int main(int argc, char **argv) {
                         if(name.empty())throw std::runtime_error("grouped example needs a source/group identity");
                         auto found=group_ids.emplace(name,group_ids.size());groups.push_back(found.first->second);
                     }
+                    windows.push_back({uint32_t(samples.size()),json::string(row,"prefix_sha256"),
+                                       json::string(row,"codes_sha256")});
                     samples.push_back(std::move(sample));
                 } else if(split=="validation")validation.push_back(std::move(sample));
                 else if(split=="retention")retention.push_back(std::move(sample));
@@ -273,20 +293,94 @@ int main(int argc, char **argv) {
             throw std::runtime_error("heldout evaluation requires validation examples");
         if (patience < 0 || min_stop < 0 || (patience && validation.empty()))
             throw std::runtime_error("invalid early stopping configuration");
-        const std::filesystem::path out(require("--out"));
-        // Entire invocation uses a new directory, including resumed invocations.
-        if (std::filesystem::exists(out))
-            throw std::runtime_error("output directory exists");
-        std::filesystem::create_directories(out);
+        const bool teacher_cached = args.count("--teacher-cache") != 0;
+        const bool prepare_only = args.count("--prepare-teacher-only") != 0;
+        yue2::detail::ArTeacherProvenance provenance;
+        std::vector<std::string> teacher_paths;
+        if (teacher_cached) {
+            if (options.kl_weight <= 0)
+                throw std::runtime_error("teacher cache requires a positive KL weight");
+            provenance.identity = require("--teacher-identity");
+            provenance.base_sha256 = require("--teacher-base-sha256");
+            provenance.companion_sha256 =
+                args.count("--teacher-companion-sha256") ? args.at("--teacher-companion-sha256") : "";
+            if (fixed.empty() != provenance.companion_sha256.empty())
+                throw std::runtime_error("teacher companion hash must match the fixed adapters");
+            provenance.fixed_adapters = fixed_identity(fixed);
+            provenance.device = options.device.empty() ? "default" : options.device;
+            provenance.frames = uint32_t(frames);
+            provenance.ar_slots = uint32_t(max_prefix);
+            provenance.predict_end = args.count("--predict-end") != 0;
+            if (windows.empty())
+                for (size_t i = 0; i < samples.size(); ++i) windows.push_back({uint32_t(i), "", ""});
+            const std::filesystem::path directory(args.at("--teacher-cache"));
+            for (size_t i = 0; i < samples.size(); ++i) {
+                std::ostringstream name;
+                name << "teacher-" << std::setw(5) << std::setfill('0') << i << ".gguf";
+                teacher_paths.push_back((directory / name.str()).string());
+            }
+        } else if (prepare_only || args.count("--teacher-identity") ||
+                   args.count("--teacher-base-sha256") || args.count("--teacher-companion-sha256"))
+            throw std::runtime_error("teacher options require --teacher-cache");
+        if (prepare_only && (args.count("--resume") || args.count("--probe-only") || args.count("--out")))
+            throw std::runtime_error("teacher preparation does not train or write a run");
+        std::filesystem::path out;
+        if (!prepare_only) {
+            out = require("--out");
+            // Entire invocation uses a new directory, including resumed invocations.
+            if (std::filesystem::exists(out))
+                throw std::runtime_error("output directory exists");
+            std::filesystem::create_directories(out);
+        }
         yue2::ArTrainer trainer(require("--model"), uint32_t(max_prefix), uint32_t(frames),
                                 args.count("--predict-end") != 0, options);
-        if (options.kl_weight > 0) {
+        if (prepare_only) {
+            // Resumable: completed files were renamed into place atomically and
+            // are only revalidated. Missing windows are computed and written.
+            for (size_t i = 0; i < samples.size(); ++i) {
+                std::cout << "prepare_teacher=" << i + 1 << '/' << samples.size() << std::endl;
+                if (std::filesystem::exists(teacher_paths[i])) {
+                    yue2::detail::inspect_ar_teacher_cache(teacher_paths[i], provenance, windows[i], samples[i]);
+                    continue;
+                }
+                std::filesystem::remove(teacher_paths[i] + ".partial");
+                auto sample = samples[i];
+                trainer.prepare_teacher(sample);
+                yue2::detail::write_ar_teacher_cache(teacher_paths[i], provenance, windows[i], sample);
+            }
+            std::cout << "teacher_cache_ready=" << samples.size() << std::endl;
+            return 0;
+        }
+        using TeacherStore = yue2::detail::TrainingSampleStore<yue2::ArTrainingSample>;
+        std::optional<TeacherStore> teachers;
+        if (teacher_cached) {
+            // Validate every header and exact window now; decode distributions
+            // only when an update consumes them. No teacher warm-up on resume.
+            std::map<std::string, size_t> index;
+            for (size_t i = 0; i < teacher_paths.size(); ++i) index[teacher_paths[i]] = i;
+            teachers.emplace(teacher_paths, true,
+                [&, index](const std::string &path) {
+                    const auto i = index.at(path);
+                    return yue2::detail::load_ar_teacher_cache(path, provenance, windows[i], samples[i]);
+                },
+                [](const yue2::ArTrainingSample &) {},
+                [](size_t current, size_t total) {
+                    std::cout << "teacher_cache=" << current << '/' << total << std::endl;
+                },
+                [&, index](const std::string &path) {
+                    const auto i = index.at(path);
+                    yue2::detail::inspect_ar_teacher_cache(path, provenance, windows[i], samples[i]);
+                });
+        } else if (options.kl_weight > 0) {
             const size_t teacher_count=args.count("--probe-only")?1:samples.size();
             for (size_t i = 0; i < teacher_count; ++i) {
                 std::cout << "prepare_teacher=" << i + 1 << '/' << teacher_count << std::endl;
                 trainer.prepare_teacher(samples[i]);
             }
         }
+        auto teacher_sample = [&](size_t i) -> const yue2::ArTrainingSample & {
+            return teachers ? teachers->get(i) : samples[i];
+        };
         yue2::detail::TrainingSampler sampler(samples.size(), args.count("--shuffle-samples") != 0,
                                               options.seed,groups);
         bool restored_stopping = false;
@@ -344,7 +438,7 @@ int main(int argc, char **argv) {
             metrics.flush();
             return held_mean;
         };
-        const auto before = trainer.step(samples.front(), false);
+        const auto before = trainer.step(teacher_sample(0), false);
         if (args.count("--diagnostics"))
             trainer.save_diagnostics(args.at("--diagnostics"));
         std::cout << "initial_loss=" << before.loss << " step=" << before.optimizer_step
@@ -368,7 +462,7 @@ int main(int argc, char **argv) {
         for (int i = 1; i <= steps; ++i) {
             const auto start = std::chrono::steady_clock::now();
             const auto sample_index = sampler.next();
-            const auto result = trainer.step(samples[sample_index]);
+            const auto result = trainer.step(teacher_sample(sample_index));
             const auto seconds =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
             log.precision(10);

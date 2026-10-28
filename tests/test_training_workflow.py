@@ -9,7 +9,7 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0,str(Path(__file__).parents[1]/'tools'))
-from training_workflow import settings,inventory,wait_for_owner,process_identity,Workflow
+from training_workflow import settings,inventory,wait_for_owner,process_identity,Workflow,ar_resource_estimate
 
 
 class WorkflowTest(unittest.TestCase):
@@ -21,7 +21,29 @@ class WorkflowTest(unittest.TestCase):
             settings(dict(id='new-run',recipe_version=2,evaluation_scope='none'))
         self.assertNotIn('cache_fingerprint',settings(dict(id='version-two',recipe_version=2)))
         self.assertEqual(settings(dict(id='version-three',recipe_version=3))['cache_fingerprint'],'bytes-v2')
-        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=4))
+        self.assertNotIn('teacher_cache',settings(dict(id='version-three',recipe_version=3)))
+        four=settings(dict(id='version-four',recipe_version=4))
+        self.assertEqual((four['teacher_cache'],four['cache_fingerprint'],four['evaluation_scope']),('f32','bytes-v2','heldout'))
+        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=5))
+
+    def test_teacher_estimates_match_measured_koan_corpus(self):
+        # 157 training and 38 validation 30-second windows, measured in
+        # docs/ar-teacher-cache-2026-10-28.md: 15.53 GiB versus 3.09 GiB peak.
+        rows=[dict(split='train',frames=750,prefix_tokens=1000)]*157+[dict(split='validation',frames=750,prefix_tokens=1000)]*38
+        old=ar_resource_estimate(rows,settings(dict(id='v3',recipe_version=3)),'cuda')
+        new=ar_resource_estimate(rows,settings(dict(id='v4',recipe_version=4)),'cuda')
+        self.assertAlmostEqual(old['estimated_ar_host_ram_gib'],15.5,delta=.1)
+        self.assertEqual(old['estimated_teacher_disk_gib'],0)
+        self.assertAlmostEqual(new['estimated_ar_host_ram_gib'],3.1,delta=.05)
+        self.assertAlmostEqual(new['estimated_teacher_disk_gib'],14.38,delta=.02)
+        # Streamed host RAM does not grow with the corpus; disk does.
+        double=ar_resource_estimate(rows*2,settings(dict(id='v4',recipe_version=4)),'cuda')
+        self.assertEqual(double['estimated_ar_host_ram_gib'],new['estimated_ar_host_ram_gib'])
+        self.assertAlmostEqual(double['estimated_teacher_disk_gib'],2*new['estimated_teacher_disk_gib'])
+        cpu=ar_resource_estimate(rows,settings(dict(id='v4',recipe_version=4)),'cpu',8*2**30)
+        self.assertAlmostEqual(cpu['estimated_ar_host_ram_gib'],11.1,delta=.05)
+        no_kl=ar_resource_estimate(rows,settings(dict(id='v4',recipe_version=4,kl_weight=0)),'cuda')
+        self.assertEqual(no_kl['estimated_teacher_disk_gib'],0)
 
     def test_resume_does_not_display_previous_terminal_progress(self):
         with tempfile.TemporaryDirectory() as directory:

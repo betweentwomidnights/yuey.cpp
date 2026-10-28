@@ -37,8 +37,11 @@ uses the same GGML graph but awaits testing on Apple hardware. See the
 [native encoder validation](native-vae-encoder-2026-10-27.md).
 
 The tested machine has an RTX 5070 Laptop GPU with 8 GB VRAM and **64 GB host
-RAM**. The AR teacher distribution cache uses substantial host memory; an 8 GB
-GPU fit does not establish a small host-memory requirement. Full-corpus training
+RAM**. Recipes 1–3 hold every AR teacher distribution in host RAM (about
+15.5 GiB working set and 22.5 GiB private on the 157-window Koan corpus).
+Recipe 4 streams them from disk instead: about 3.1 GiB working set on the same
+corpus, independent of the number of windows, plus about 94 MiB of disk per
+30-second training window. Dataset review shows both estimates. Full-corpus training
 diagnostics can dominate a run; new UI jobs validate all heldout recordings and
 any retention examples by default. CUDA is the measured GPU training backend.
 Use one inference server per device; unrelated servers/applications are outside
@@ -69,7 +72,14 @@ initial evaluation run again when the first fit starts after preflight. A NAR
 resume revalidates the caches and restores optimizer state, but skips the initial
 baseline evaluation. Existing runs retain their frozen native executable; older
 executables expose activity/elapsed time, while new runs provide exact counters.
-New requests are pinned to recipe version 3, retaining recipe 2's heldout
+New requests are pinned to recipe version 4. It keeps everything in recipe 3
+and adds a streamed AR teacher cache. Before the first fit, the native trainer
+writes one F32 GGUF per training window (`.partial`, then renamed), and the
+coordinator records each file's SHA-256 in `teacher/index.json`. The fitter checks
+every header and exact prefix/codes at startup, decodes one window per update,
+and never recomputes teachers on resume. The coordinator re-hashes the cache
+before and after every fit. See [the teacher cache measurements](ar-teacher-cache-2026-10-28.md).
+Recipe 3 retains recipe 2's heldout
 validation and maximum-context NAR preflight. Preflight verifies cache
 checksums and inspects all headers, then tests one training sample padded to the
 maximum context across training, holdout and retention caches. The fitter still

@@ -219,7 +219,13 @@ driver selects among saved checkpoints by held-out loss.
 `--kl-weight W` adds `W * KL(common teacher || adapted student)` on training
 rows. The teacher includes fixed companions and is cached before any learned
 update or checkpoint load. The full restricted-vocabulary probability targets
-are immutable, normalized and regenerated on resume. Validation/retention
+are immutable and normalized. By default they are held in RAM and regenerated
+on resume. `--teacher-cache DIR` instead streams one
+`DIR/teacher-NNNNN.gguf` window at a time; `--prepare-teacher-only` writes the
+missing files atomically and exits. Each file records the coordinator teacher
+identity, base/companion SHA-256s, device, frames, AR slots and the window's
+exact prefix/codes (plus manifest SHA-256s). Mismatches are rejected. See
+[the teacher cache measurements](ar-teacher-cache-2026-10-28.md). Validation/retention
 losses remain plain semantic cross-entropy; retention inputs remain evaluation
 only. Replay supplies ordinary training examples explicitly, with their own
 prefixes and token labels. The independent oracle also recomputes the teacher

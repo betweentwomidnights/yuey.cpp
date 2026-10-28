@@ -34,9 +34,13 @@ class NativeProgress:
         for line in lines:
             before=self.values['activity']
             teacher=re.fullmatch(r'prepare_teacher=(\d+)/(\d+)',line.strip())
+            cached=re.fullmatch(r'teacher_cache=(\d+)/(\d+)',line.strip())
             if teacher:
                 self.values.update(activity='Preparing frozen teacher distributions',
                                    teacher_current=int(teacher[1]),teacher_total=int(teacher[2]))
+            elif cached:
+                self.values.update(activity='Validating frozen teacher cache',
+                                   teacher_current=int(cached[1]),teacher_total=int(cached[2]))
             elif line.startswith('initial_loss='):
                 self.values['activity']='Evaluating training and validation windows'
             elif line.startswith('step='):
@@ -49,6 +53,102 @@ class NativeProgress:
         if 'evaluat' in result['activity'].lower():
             result['activity_elapsed_seconds']=time.monotonic()-self.activity_since
         return result
+
+
+TEACHER_FORMAT='yue2-ar-teacher-v1'
+
+
+def host_peak(process):
+    """OS peak host memory of a finished Windows child; empty elsewhere."""
+    if os.name!='nt':return {}
+    import ctypes
+    from ctypes import wintypes
+    class Counters(ctypes.Structure):
+        _fields_=[('cb',wintypes.DWORD),('faults',wintypes.DWORD),*[(name,ctypes.c_size_t) for name in
+                  ['peak_working_set','working_set','peak_paged','paged','peak_nonpaged','nonpaged','private','peak_private']]]
+    counters=Counters();counters.cb=ctypes.sizeof(Counters)
+    psapi=ctypes.WinDLL('psapi');psapi.GetProcessMemoryInfo.argtypes=[wintypes.HANDLE,ctypes.POINTER(Counters),wintypes.DWORD]
+    if not psapi.GetProcessMemoryInfo(int(process._handle),ctypes.byref(counters),counters.cb):return {}
+    return dict(observed_host_peak_working_set_gib=counters.peak_working_set/2**30,
+                observed_host_peak_private_gib=counters.peak_private/2**30)
+
+
+def teacher_identity(identity,config,data,prefix_slots,precision):
+    """Everything that changes frozen teacher bits, independent of the adapter family."""
+    if precision!='f32':raise ValueError('Unsupported AR teacher cache precision')
+    return dict(format=TEACHER_FORMAT,precision=precision,base_sha256=identity['base_sha256'],
+                companion_sha256=identity['companion_sha256'],dataset_sha256=identity['dataset_sha256'],
+                runtime=identity['runtime'],device=config.get('device','cuda'),ar_slots=prefix_slots,
+                frames=data['frames'],predict_end=False)
+
+
+def verify_teacher_cache(folder,identity_sha256,train_rows):
+    """SHA-256 every teacher file against the coordinator's completed index."""
+    index=json.loads((folder/'index.json').read_text())
+    if index.get('format')!=TEACHER_FORMAT+'-index' or not index.get('completed') or index['identity_sha256']!=identity_sha256:
+        raise ValueError('AR teacher cache index does not match this run')
+    files=index['files']
+    if len(files)!=len(train_rows):raise ValueError('AR teacher cache window count changed')
+    for i,(entry,row) in enumerate(zip(files,train_rows)):
+        if entry['path']!=f'teacher-{i:05d}.gguf' or entry['window']!=i or \
+           entry['prefix_sha256']!=row['prefix_sha256'] or entry['codes_sha256']!=row['codes_sha256']:
+            raise ValueError('AR teacher cache window provenance changed')
+        if digest(folder/entry['path'])!=entry['sha256']:raise ValueError('AR teacher cache bytes changed')
+    return index
+
+
+def teacher_args(folder,identity_sha256,identity):
+    return ['--teacher-cache',str(folder),'--teacher-identity',identity_sha256,
+            '--teacher-base-sha256',identity['base_sha256'],'--teacher-companion-sha256',identity['companion_sha256']]
+
+
+def prepare_teacher_cache(folder,cmd,cwd,out,family,resolved,train_rows,stop_file):
+    """Write missing teacher files natively, then record their SHA-256 index.
+
+    The native writer validates and skips completed files, so an interrupted or
+    stopped preparation resumes. A completed index is never rewritten."""
+    identity_sha256=hashlib.sha256(json.dumps(resolved,sort_keys=True).encode()).hexdigest()
+    folder.mkdir(exist_ok=True)
+    identity_path=folder/'identity.json'
+    if identity_path.exists():
+        if json.loads(identity_path.read_text())!=resolved:raise ValueError('AR teacher cache identity changed')
+    else:save(identity_path,resolved)
+    if (folder/'index.json').exists():return identity_sha256
+    number=1
+    while (out/f'teacher-{number}.log').exists():number+=1
+    log=out/f'teacher-{number}.log'
+    command=cmd+teacher_args(folder,identity_sha256,resolved)+['--prepare-teacher-only']
+    start=time.monotonic()
+    with log.open('w') as stream:
+        progress=NativeProgress(log)
+        progress.values['activity']='Loading native teacher'
+        process=subprocess.Popen(command,cwd=cwd,stdout=stream,stderr=subprocess.STDOUT)
+        stopped=False
+        try:
+            while process.poll() is None:
+                if Path(stop_file).exists() and not stopped:
+                    # Completed teacher files are atomic; a partial file is
+                    # discarded and recomputed by the next preparation.
+                    process.terminate();stopped=True
+                try:save(out/'progress.json',dict(stage='fit',status='running',family=family,
+                                                  elapsed_seconds=time.monotonic()-start,**progress.read()))
+                except (OSError,ValueError) as error:print('Progress update deferred:',error,flush=True)
+                time.sleep(1)
+        finally:process.wait()
+    save(log.with_suffix('.command.json'),dict(command=command,returncode=process.returncode,seconds=time.monotonic()-start,**host_peak(process)))
+    if stopped:raise SystemExit('AR teacher preparation stopped')
+    if process.returncode:raise RuntimeError(log.read_text()[-5000:])
+    files=[];total=0
+    names=sorted(p.name for p in folder.glob('teacher-*.gguf'))
+    if names!=[f'teacher-{i:05d}.gguf' for i in range(len(train_rows))]:raise ValueError('Unexpected AR teacher cache files')
+    for i,row in enumerate(train_rows):
+        path=folder/f'teacher-{i:05d}.gguf';size=path.stat().st_size;total+=size
+        files.append(dict(path=path.name,window=i,sha256=digest(path),bytes=size,
+                          prefix_sha256=row['prefix_sha256'],codes_sha256=row['codes_sha256']))
+    save(folder/'index.json',dict(format=TEACHER_FORMAT+'-index',completed=True,identity_sha256=identity_sha256,
+         base_sha256=resolved['base_sha256'],companion_sha256=resolved['companion_sha256'],
+         frames=resolved['frames'],ar_slots=resolved['ar_slots'],bytes=total,files=files))
+    return identity_sha256
 
 
 def grouped_loss(values,rows):
@@ -158,6 +258,12 @@ def main():
     if args.family=='dora':cmd+=['--dora']
     if args.phase=='fit' and 'evaluation_scope' in training:cmd+=['--eval-scope',training['evaluation_scope']]
     resumed_step=0
+    # Recipe v4+: stream frozen teacher distributions from a SHA-256-indexed
+    # disk cache instead of preparing all of them in fitter RAM each start.
+    teacher=None
+    if args.phase=='fit' and training.get('teacher_cache') and training['kl_weight']>0:
+        teacher=out/'teacher'
+        resolved_teacher=teacher_identity(identity,config,data,prefix_slots,training['teacher_cache'])
     if args.phase=='fit':
         native=out/args.segment;cmd+=['--out',str(native),'--save-every',str(training.get('checkpoint_every',100)),
                                     '--eval-every',str(training.get('eval_every',100)),'--stop-file',str(out/'stop.request')]
@@ -175,7 +281,19 @@ def main():
         cmd+=['--out',str(native),'--probe-only','--diagnostics',str(out/(args.phase+'-diagnostics.gguf'))]
     log=out/(args.phase+('-'+args.segment if args.phase=='fit' else '')+'.log')
     if log.exists() or native.exists():raise FileExistsError('Run segment already exists')
-    wait_for_inference(config.get('inference_urls',[]));start=time.monotonic();peak=0;step=0
+    wait_for_inference(config.get('inference_urls',[]))
+    train_rows=[r for r in rows if r['split']=='train']
+    if teacher:
+        indexed=(teacher/'index.json').exists()
+        if indexed:
+            save(out/'progress.json',dict(stage=args.phase,status='running',family=args.family,
+                 target_steps=target_steps,step=resumed_step,activity='Verifying frozen teacher cache'))
+        teacher_sha=prepare_teacher_cache(teacher,cmd[:cmd.index('--out')],root,out,args.family,resolved_teacher,
+                                          train_rows,out/'stop.request')
+        # A fresh index was just hashed from these bytes; an existing one is rechecked.
+        if indexed:verify_teacher_cache(teacher,teacher_sha,train_rows)
+        cmd+=teacher_args(teacher,teacher_sha,identity)
+    start=time.monotonic();peak=0;step=0
     save(out/'run.json',dict(format='yue2-ar-run-status-v1',name=config.get('name','Style')+' '+args.family,
                             family=args.family,stage=args.phase,status='running',target_steps=target_steps,
                             identity_sha256=run_hash,output=str(native)))
@@ -214,7 +332,7 @@ def main():
                     print('Progress update deferred:',error,flush=True)
                 time.sleep(1)
         finally:process.wait()
-    command_record=dict(command=cmd,returncode=process.returncode,seconds=time.monotonic()-start,observed_gpu_peak_mib=peak)
+    command_record=dict(command=cmd,returncode=process.returncode,seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,**host_peak(process))
     save(log.with_suffix('.command.json'),command_record)
     if process.returncode:
         save(out/'run.json',dict(status='failed',stage=args.phase,family=args.family,command=command_record))
@@ -223,6 +341,7 @@ def main():
     for row in rows:
         for key in ['prefix','codes']:
             if digest(Path(row[key]))!=row[key+'_sha256']:raise RuntimeError('Example changed during the run')
+    if teacher:verify_teacher_cache(teacher,teacher_sha,train_rows)
     if args.phase=='fit':
         select_checkpoints(out,rows,config)
     save(out/'run.json',dict(status='stopped' if (out/'stop.request').exists() else 'completed',stage=args.phase,family=args.family,

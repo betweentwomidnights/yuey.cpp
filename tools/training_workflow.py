@@ -100,13 +100,40 @@ def settings(request):
                 kl_weight=number('kl_weight',.2,0,5),seed=number('seed',831001,0,2**32-1,True),
                 eval_every=number('eval_every',100,1,1000,True),family=family,trigger=trigger)
     version=request.get('recipe_version',1)
-    if type(version)!=int or version not in [1,2,3]:raise ValueError('Unsupported training recipe version')
+    if type(version)!=int or version not in [1,2,3,4]:raise ValueError('Unsupported training recipe version')
     if version>=2:
         scope=request.get('evaluation_scope','heldout')
         if scope not in ['heldout','full']:raise ValueError('Evaluation scope must be heldout or full')
         options['evaluation_scope']=scope
     if version>=3:options['cache_fingerprint']='bytes-v2'
+    # v4 streams AR KL teachers from SHA-256-indexed F32 files: fitter host RAM
+    # no longer grows with the number of training windows; resume skips them.
+    if version>=4:options['teacher_cache']='f32'
     return options
+
+
+# One frozen KL teacher row per target frame: MUSIC_END + 32768 codec classes, F32.
+TEACHER_ROW_BYTES=(32768+1)*4
+# Measured CUDA AR fitter host working set on the Koan corpus, rank 32
+# (docs/ar-teacher-cache-2026-10-28.md): a 3.1 GiB transient while loading
+# weights, then 1.13 GiB steady including two 30-second windows (the decoded
+# teacher and the trainer's dense one-hot target). CPU fitting also holds the
+# weights themselves; that addition is derived, not measured.
+AR_HOST_LOAD_GIB=3.1
+AR_HOST_STEADY_GIB=0.95
+AR_STREAMED_WINDOWS=2
+
+
+def ar_resource_estimate(eligible,options,device,model_bytes=0):
+    """Peak host RAM for AR fitting and teacher-cache disk, before any fitting."""
+    train=[r for r in eligible if r['split']=='train']
+    window=max((r['frames'] for r in eligible),default=0)*TEACHER_ROW_BYTES
+    teachers=sum(r['frames']*TEACHER_ROW_BYTES for r in train) if options['kl_weight']>0 else 0
+    cached='teacher_cache' in options
+    steady=AR_HOST_STEADY_GIB*2**30+AR_STREAMED_WINDOWS*window+(0 if cached else teachers)
+    ram=max(AR_HOST_LOAD_GIB*2**30,steady)+(model_bytes if device=='cpu' else 0)
+    disk=sum(r['frames']*TEACHER_ROW_BYTES+(r['prefix_tokens']+r['frames'])*4+4096 for r in train) if cached and teachers else 0
+    return dict(estimated_ar_host_ram_gib=ram/2**30,estimated_teacher_disk_gib=disk/2**30)
 
 
 def inventory(folder,seconds,seed):
@@ -215,6 +242,7 @@ class Workflow:
             training=dict(rank=o['rank'],learning_rate=o['ar_lr'],kl_weight=o['kl_weight'],weight_decay=.01,clip=1,
                 token_budget=o['ar_steps']*o['window_seconds']*25,seed=o['seed'],checkpoint_every=o['eval_every'],eval_every=o['eval_every']))
         if 'evaluation_scope' in o:cfg['training']['evaluation_scope']=o['evaluation_scope']
+        if 'teacher_cache' in o:cfg['training']['teacher_cache']=o['teacher_cache']
         path=self.run/'ar-job.json'
         if path.exists() and json.loads(path.read_text())!=cfg:raise ValueError('Resolved dataset/runtime changed; create a new run')
         save(path,cfg);self.update(dataset=rows,status='running')
@@ -229,7 +257,9 @@ class Workflow:
         eligible=[r for r in data['rows'] if r.get('eligible',True)]
         self.update(status='ready',stage='dataset-review',examples=len(eligible),excluded=len(data['rows'])-len(eligible),
                     train_examples=sum(r['split']=='train' for r in eligible),validation_examples=sum(r['split']=='validation' for r in eligible),
-                    estimated_conditioning_gib=sum((r['prefix_tokens']+r['frames']+1)*114688+r['frames']*256 for r in eligible)/2**30)
+                    estimated_conditioning_gib=sum((r['prefix_tokens']+r['frames']+1)*114688+r['frames']*256 for r in eligible)/2**30,
+                    **ar_resource_estimate(eligible,o,runtime.get('device','cuda'),
+                                           sum(Path(models[k]).stat().st_size for k in ['base','companion'])))
 
     def fit(self,expert,config,folder,budget):
         self.check_stop()
