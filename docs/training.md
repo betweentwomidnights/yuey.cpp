@@ -191,6 +191,72 @@ manifests, metrics and logs. A released run cannot train again; start a new
 run. Set `"keep_caches": true` when creating a run to keep everything for later
 recalibration.
 
+## Storage modes
+
+Recipe 5 (the default for new runs) can trade training time or VRAM for the
+two caches. Every mode is bit-identical to the cached default: optimizer
+state, adapters, sampler state, losses and evaluations are equal, and each run
+records its mode in its identity. Choose per run when creating it:
+
+| Request key | Value | Disk | Cost |
+| --- | --- | --- | --- |
+| `teacher_storage` | `cache` (default) | AR teachers, 12.6 GiB on the full corpus, until AR selection | Fastest AR updates; teacher preparation once (47 s on 8 recordings) |
+| | `online` | None | One extra common-model forward per AR update |
+| `conditioning_storage` | `cache` (default) | All NAR conditioning, 26.1 GiB on the full corpus, until publish | Fastest NAR updates |
+| | `rolling` | One segment's windows plus the heldout set | Regenerates each window before use, about 1.2 s each |
+| | `resident` | None | The NAR fitter also holds the frozen AR expert and computes its K/V |
+
+Rolling fits run in segments of 25 updates, ending on evaluation boundaries.
+Before each segment the native sampler reports exactly which windows it will
+draw; those are regenerated, checked against the size, FNV-1a hash, header and
+SHA-256 recorded during preparation, and every other cache is deleted. With
+full-scope evaluation every window is needed at every evaluation, so rolling
+saves nothing; with heldout scope (the default) the saving grows with the
+dataset. A small dataset whose windows nearly all fall in one segment saves
+little.
+
+The experts' weights don't overlap. The NAR fitter loads only the NAR expert,
+2.7 GiB in BF16, and resident conditioning adds the AR expert without its LM
+head, 3.3 GiB. On top of that come both workspaces and the window's K/V.
+Dataset review reports `model_vram_gib` (weights only) per mode under
+`storage_options`. With 30-second windows this exceeds an 8 GB RTX 5070
+Laptop: memory spills into shared system memory and each NAR update takes
+about 190 s instead of 1.5 s. Four-second windows still fit (0.47 s against
+0.28 s cached).
+
+Measured on the 8 GB laptop with 8 recordings, 30-second windows, rank 32 and
+50 NAR updates:
+
+| Mode | Median NAR update | NAR fit wall time | Result |
+| --- | ---: | ---: | --- |
+| `cache` | 1.48 s | 99 s | Baseline; 4.8 GiB of conditioning |
+| `rolling` | 1.62 s | 159 s, with regeneration | Identical; 2 segments |
+| `resident` | 188 s (spilled) | Stopped at update 36 | Identical up to the stop |
+
+In the same session, on the synthetic 4-second set at rank 4, online-teacher
+AR updates took 0.81 s against 0.61 s cached. At 30 s windows they measured
+2.9 s and 4.9 s in two separate sessions against 3.6 s cached, so laptop clocks
+dominate that comparison. `tools/verify_training_storage.py` repeats the full
+AR fit online right after the cached baseline, which gives a same-session
+number.
+
+Downstream trainers can query what an installation supports:
+
+```bash
+python tools/training_workflow.py --capabilities --runtime training-runtime.json
+```
+
+This prints the recipes, the accepted request settings, each storage mode's
+trade-off, and whether the native tools support it. To check that the modes
+match the cached default on a machine, run:
+
+```bash
+python tools/verify_training_storage.py --runtime training-runtime.json --out outputs/storage-verify
+```
+
+Without `--dataset` it trains on two short synthetic piano recordings. Pass a
+real dataset with `--window-seconds 30 --rank 32` for representative timings.
+
 ## HTTP surface
 
 - `GET /training`: embedded trainer.

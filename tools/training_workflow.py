@@ -196,19 +196,34 @@ def conditioning_bytes(eligible,storage='cache',evaluation_scope='heldout'):
     return sum(window_bytes(r) for r in eligible)
 
 
-def storage_options(eligible,options,weight_bytes=0):
+def expert_bytes(base):
+    """Base weights the NAR fitter (NAR expert) and the conditioning-only AR
+    model (AR blocks and embeddings, no LM head) load, by the native selectors."""
+    import gguf
+    nar=ar=0
+    for tensor in gguf.GGUFReader(str(base)).tensors:
+        name=tensor.name
+        if ('.nar_' in name or name=='model.norm.weight' or name=='latent_pos_embed.pe' or
+                name.startswith(('vae2llm.','llm2vae.','time_embedder.'))):nar+=int(tensor.n_bytes)
+        if name in ['model.embed_tokens.weight','model.norm.weight'] or (name.startswith('model.layers.') and '.nar_' not in name):
+            ar+=int(tensor.n_bytes)
+    return dict(nar=nar,ar=ar)
+
+
+def storage_options(eligible,options,experts=None):
     """Disk each recipe 5 storage choice needs for this dataset, for review.
 
-    model_vram_gib counts the NAR fitter's model weights only (workspace and
-    adapters come on top): resident conditioning holds a second frozen copy
-    for the AR K/V. On an 8 GB RTX 5070 Laptop that spills into shared memory
-    and an update takes about 190 s instead of 1.5 s."""
+    model_vram_gib counts base weights the NAR fitter keeps on the device,
+    before workspace, K/V and adapters: resident conditioning adds the frozen
+    AR expert. With 30-second windows that exceeds an 8 GB RTX 5070 Laptop,
+    which spills into shared memory (about 190 s per update instead of 1.5 s)."""
+    experts=experts or dict(nar=0,ar=0)
     train=[r for r in eligible if r['split']=='train']
     teacher=sum(r['frames']*TEACHER_ROW_BYTES for r in train) if options['kl_weight']>0 else 0
     scope=options.get('evaluation_scope','full')
     return dict(teacher_storage={'cache':dict(disk_gib=teacher/2**30),'online':dict(disk_gib=0)},
                 conditioning_storage={mode:dict(disk_gib=conditioning_bytes(eligible,mode,scope)/2**30,
-                                                model_vram_gib=(2 if mode=='resident' else 1)*weight_bytes/2**30)
+                                                model_vram_gib=(experts['nar']+(experts['ar'] if mode=='resident' else 0))/2**30)
                                       for mode in CONDITIONING_STORAGE})
 
 
@@ -351,7 +366,7 @@ class Workflow:
         self.update(status='ready',stage='dataset-review',examples=len(eligible),excluded=len(data['rows'])-len(eligible),
                     train_examples=sum(r['split']=='train' for r in eligible),validation_examples=sum(r['split']=='validation' for r in eligible),
                     estimated_conditioning_gib=conditioning/2**30,estimated_peak_disk_gib=peak/2**30,
-                    storage_options=storage_options(eligible,o,weights),
+                    storage_options=storage_options(eligible,o,expert_bytes(models['base'])),
                     free_disk_gib=shutil.disk_usage(self.run).free/2**30,**estimate)
 
     def fit(self,expert,config,folder,budget):
@@ -481,9 +496,9 @@ def capabilities(runtime=None):
                 rolling=dict(supported=supported('rolling_conditioning'),
                              trade_off='Disk bounded to one segment plus heldout windows; regenerates each window before use (about 1.2 s each on an RTX 5070 Laptop)'),
                 resident=dict(supported=supported('resident_conditioning'),
-                              trade_off='No conditioning disk; the NAR fitter computes K/V with a second copy of the model weights, '
-                                        'so it needs about twice the model VRAM (two BF16 copies are about 14 GiB; on 8 GB it '
-                                        'spills into shared memory and an update takes about 190 s instead of 1.5 s)'))),
+                              trade_off='No conditioning disk; the NAR fitter also holds the frozen AR expert (3.3 GiB BF16 beside '
+                                        'the 2.7 GiB NAR expert) and its prefill. With 30-second windows an 8 GB laptop GPU spills '
+                                        'into shared memory and an update takes about 190 s instead of 1.5 s'))),
         native=native or None)
 
 
