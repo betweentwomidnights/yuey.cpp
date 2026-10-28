@@ -3,6 +3,7 @@ import json
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).parents[1]/'tools'))
 from train_ar_run import NativeProgress,select_checkpoints
@@ -55,7 +56,10 @@ class ArProgressTest(unittest.TestCase):
             with log.open('a') as stream:stream.write('step=101 loss=5.0\n')
             self.assertEqual(progress.read()['activity'],'Training')
             with log.open('a') as stream:stream.write('step=150 loss=5.0\n')
-            self.assertEqual(progress.read()['activity'],'Evaluating checkpoint')
+            with patch('train_ar_run.time.monotonic',return_value=20):
+                self.assertEqual(progress.read()['activity'],'Final evaluation and checkpoint save')
+            with patch('train_ar_run.time.monotonic',return_value=29):
+                self.assertEqual(progress.read()['activity_elapsed_seconds'],9)
 
 
 if __name__=='__main__':unittest.main()

@@ -53,6 +53,12 @@ and returned to 3.6-second updates. Use **Stop**, wait for its checkpoint, then
 AR progress distinguishes teacher preparation, initial/checkpoint evaluation
 and updates, and reports the most recent update duration. Startup and full
 evaluation time are additional to that update duration.
+Both expert charts show completed evaluations during fitting, using the same
+recording-balanced heldout loss as final checkpoint selection. “Best so far”
+remains provisional until the expert finishes. The update counter reaching its
+ceiling (for example 800/800) still leaves the final full evaluation and checkpoint
+save; AR progress identifies that phase and shows its elapsed time. A full
+evaluation can take several minutes on this laptop.
 
 ## Dataset and recipe
 

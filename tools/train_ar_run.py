@@ -25,12 +25,14 @@ class NativeProgress:
         self.log=Path(log);self.offset=0;self.pending=''
         self.eval_every=eval_every;self.target_steps=target_steps
         self.values=dict(activity='Loading native trainer',step=resumed_step)
+        self.activity_since=time.monotonic()
 
     def read(self):
         with self.log.open(encoding='utf-8',errors='replace') as stream:
             stream.seek(self.offset);text=stream.read();self.offset=stream.tell()
         lines=(self.pending+text).split('\n');self.pending=lines.pop()
         for line in lines:
+            before=self.values['activity']
             teacher=re.fullmatch(r'prepare_teacher=(\d+)/(\d+)',line.strip())
             if teacher:
                 self.values.update(activity='Preparing frozen teacher distributions',
@@ -39,9 +41,14 @@ class NativeProgress:
                 self.values['activity']='Evaluating training and validation windows'
             elif line.startswith('step='):
                 step=int(line.split()[0].split('=')[1])
-                evaluating=step % self.eval_every == 0 or step==self.target_steps
-                self.values.update(step=step,activity='Evaluating checkpoint' if evaluating else 'Training')
-        return dict(self.values)
+                activity='Final evaluation and checkpoint save' if step==self.target_steps else (
+                    'Evaluating checkpoint' if step % self.eval_every == 0 else 'Training')
+                self.values.update(step=step,activity=activity)
+            if self.values['activity']!=before:self.activity_since=time.monotonic()
+        result=dict(self.values)
+        if 'evaluat' in result['activity'].lower():
+            result['activity_elapsed_seconds']=time.monotonic()-self.activity_since
+        return result
 
 
 def grouped_loss(values,rows):
@@ -53,11 +60,38 @@ def grouped_loss(values,rows):
     return sum(sum(items)/len(items) for items in sums.values())/len(sums) if sums else 0.
 
 
+def native_metric_paths(out,filename):
+    # Numeric ordering makes the latest resumed segment win at a repeated step.
+    def segment_order(path):
+        suffix=re.search(r'-(\d+)$',path.parent.name)
+        return (int(suffix[1]) if suffix else 0,str(path))
+    return sorted(Path(out).glob('native*/'+filename),key=segment_order)
+
+
+def evaluation_history(out,rows,expert='ar'):
+    """Read completed evaluation records without publishing a selected adapter."""
+    validation=[r for r in rows if r['split']=='validation']
+    retention=[r for r in rows if r['split']=='retention'];by_step={}
+    filename='metrics.jsonl' if expert=='ar' else 'history.jsonl'
+    for path in native_metric_paths(out,filename):
+        for line in path.read_text().splitlines(keepends=True):
+            if not line.endswith('\n'):continue # Child may be writing this record.
+            metric=json.loads(line)
+            if 'heldout_per_sample' not in metric:continue # NAR optimizer record.
+            entry=dict(step=metric['step'],heldout_group_mean=grouped_loss(metric['heldout_per_sample'],validation),
+                       retention_group_mean=grouped_loss(metric.get('retention_per_sample',[]),retention))
+            if not all(math.isfinite(v) for v in (entry['heldout_group_mean'],entry['retention_group_mean'])):
+                raise ValueError('Nonfinite evaluation metric')
+            by_step[entry['step']]=entry
+    evaluations=[by_step[step] for step in sorted(by_step)]
+    return dict(evaluations=evaluations,best_so_far=min(evaluations,key=lambda m:m['heldout_group_mean']) if evaluations else None)
+
+
 def select_checkpoints(out,rows,config):
     metrics=[]
     validation=[r for r in rows if r['split']=='validation']
     retention=[r for r in rows if r['split']=='retention']
-    for path in out.glob('native*/metrics.jsonl'):
+    for path in native_metric_paths(out,'metrics.jsonl'):
         for line in path.read_text().splitlines():
             metric=json.loads(line)
             metric['heldout_group_mean']=grouped_loss(metric['heldout_per_sample'],validation)
@@ -159,6 +193,7 @@ def main():
                 history=native/'history.jsonl'
                 try:
                     progress=native_progress.read()
+                    if args.phase=='fit':progress['evaluation_history']=evaluation_history(out,rows)
                     if history.exists():
                         lines=history.read_text().splitlines()
                         if lines:
@@ -169,7 +204,7 @@ def main():
                                 progress.update(step=step,last_update_seconds=latest.get('seconds'))
                     save(out/'progress.json',dict(stage=args.phase,status='running',family=args.family,target_steps=target_steps,
                          tokens_seen=progress['step']*data['frames'],elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,**progress))
-                except OSError as error:
+                except (OSError,ValueError) as error:
                     # Progress is advisory. A reader lock/disk error must not drop
                     # ownership of the still-running native process.
                     print('Progress update deferred:',error,flush=True)
@@ -192,7 +227,7 @@ def main():
         final_step=json.loads((native/'history.jsonl').read_text().splitlines()[-1])['step']
         save(out/'progress.json',dict(stage='fit',status='completed' if final_step>=target_steps else 'stopped',family=args.family,
              step=final_step,target_steps=target_steps,tokens_seen=final_step*data['frames'],
-             elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak))
+             elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,evaluation_history=evaluation_history(out,rows)))
     print('END',args.family,args.phase,command_record,flush=True)
 
 

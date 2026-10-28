@@ -4,14 +4,14 @@ import argparse,hashlib,json,os,subprocess,time
 from pathlib import Path
 import gguf
 from prepare_ar_dataset import save,wait_for_inference
-from train_ar_run import grouped_loss
+from train_ar_run import grouped_loss,evaluation_history,native_metric_paths
 from yue2_training_audit import digest,native_runtime_identity
 
 
 def select_checkpoints(out,rows,config):
     validation=[r for r in rows if r['split']=='validation'];retention=[r for r in rows if r['split']=='retention'];metrics=[]
     if not validation:raise ValueError('Heldout selection requires validation')
-    for path in out.glob('native*/history.jsonl'):
+    for path in native_metric_paths(out,'history.jsonl'):
         for line in path.read_text().splitlines():
             metric=json.loads(line)
             if 'heldout_eval' not in metric:continue
@@ -67,8 +67,9 @@ def main():
         '--lr',training['learning_rate'],'--seed',training.get('seed',831001),'--identity',run_hash,
         '--device',config.get('device','cuda'),'--threads',config.get('threads',6)]))
     target=training['steps']
+    resumed=0
     if args.phase=='fit':
-        native=out/args.segment;resumed=0
+        native=out/args.segment
         if args.resume:
             reader=gguf.GGUFReader(str(args.resume));resumed=int(reader.get_field('yue2.training.step').contents())
             command+=['--resume',str(args.resume)]
@@ -87,7 +88,10 @@ def main():
     wait_for_inference(config.get('inference_urls',[]));start=time.monotonic();peak=0;step=0
     save(out/'run.json',dict(status='running',stage=args.phase,name=config.get('name','NAR'),identity_sha256=run_hash,output=str(native)))
     print('START NAR',args.phase,flush=True)
+    previous_activity=None;activity_since=time.monotonic()
     with log.open('w') as stream:
+        save(out/'progress.json',dict(stage=args.phase,status='running',step=resumed,target_steps=target,
+             activity='Loading trainer and initial evaluation' if args.phase=='fit' and not resumed else 'Loading native trainer'))
         process=subprocess.Popen(command,cwd=config['workspace'],stdout=stream,stderr=subprocess.STDOUT)
         try:
             try:save(out/'process.json',dict(pid=process.pid,phase=args.phase,native=str(native)))
@@ -103,9 +107,19 @@ def main():
                         lines=history.read_text().splitlines()
                         if lines:
                             latest=json.loads(lines[-1]);step=latest['step']
+                            evaluations=evaluation_history(out,rows,'nar')
+                            evaluated=any(m['step']==step for m in evaluations['evaluations'])
+                            if step==0:activity='Evaluating training and validation windows'
+                            elif step==target:activity='Saving final checkpoint' if evaluated else 'Final evaluation and checkpoint save'
+                            elif step % training.get('eval_every',100)==0:activity='Saving checkpoint' if evaluated else 'Evaluating checkpoint'
+                            else:activity='Training'
+                            if activity!=previous_activity:
+                                previous_activity=activity;activity_since=time.monotonic()
+                            activity_time=dict(activity_elapsed_seconds=time.monotonic()-activity_since) if 'evaluat' in activity.lower() else {}
                             save(out/'progress.json',dict(stage=args.phase,status='running',step=step,target_steps=target,
-                                tokens_seen=step*data['frames'],elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak))
-                except (OSError,json.JSONDecodeError):pass
+                                tokens_seen=step*data['frames'],elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,
+                                activity=activity,evaluation_history=evaluations,**activity_time))
+                except (OSError,ValueError):pass
                 time.sleep(1)
         finally:
             # Monitoring failures must not abandon ownership of a live fitter.
@@ -121,7 +135,7 @@ def main():
         select_checkpoints(out,rows,config)
         step=json.loads((native/'history.jsonl').read_text().splitlines()[-1])['step']
         save(out/'progress.json',dict(stage='fit',status='completed' if step>=target else 'stopped',step=step,target_steps=target,
-            tokens_seen=step*data['frames'],observed_gpu_peak_mib=peak))
+            tokens_seen=step*data['frames'],observed_gpu_peak_mib=peak,evaluation_history=evaluation_history(out,rows,'nar')))
     save(out/'run.json',dict(status='stopped' if (out/'stop.request').exists() else 'completed',stage=args.phase,
         elapsed_seconds=time.monotonic()-start,observed_gpu_peak_mib=peak,identity_sha256=run_hash,output=str(native)))
     print('END NAR',args.phase,record,flush=True)
