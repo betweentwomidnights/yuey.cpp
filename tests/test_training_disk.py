@@ -173,5 +173,23 @@ class CacheReleaseTest(unittest.TestCase):
             Usage.free=checkpoint_allowance(workflow.options,1)
             with patch('training_workflow.shutil.disk_usage',return_value=Usage):workflow.check_disk(ar,nar)
 
+    def test_rolling_regenerates_a_redrawn_window_once(self):
+        import hashlib
+        import prepare_nar_dataset
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);manifest=root/'dataset.json'
+            manifest.write_text(json.dumps(dict(identity=dict(device='cuda',threads=6,kv_type='f16',prefill_batch=0))))
+            facts=dict(cache_bytes='5',cache_fnv='0',cache_tokens='1',cache_frames='1',cache_half=True)
+            row=dict(prefix='p',codes='c',means='m',cache=str(root/'a/sample.gguf'),cache_identity='i',
+                     cache_sha256=hashlib.sha256(b'cache').hexdigest(),**facts)
+            def batch(command,workspace,log,on_event):
+                plan=json.loads((root/'materialize.json').read_text())
+                self.assertEqual(len(plan),1)
+                path=Path(plan[0]['cache-out']);path.parent.mkdir(exist_ok=True);path.write_bytes(b'cache')
+                on_event(dict(path=str(path),bytes='5',fnv='0',tokens='1',frames='1',half=True))
+            # The sampler drew the same window twice in one segment.
+            with patch('prepare_nar_dataset.run_batch',batch):
+                self.assertEqual(prepare_nar_dataset.materialize(manifest,[row,dict(row)],'yue2-train','b','c','a'),1)
+
 
 if __name__=='__main__':unittest.main()

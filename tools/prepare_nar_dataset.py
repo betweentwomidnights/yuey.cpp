@@ -101,7 +101,8 @@ def materialize(manifest, rows, binary, base, common, adapter, stop_file=None):
     """Regenerate absent rolling caches. Each must be byte-identical to the one
     recorded by the preparation pass; any difference fails the run."""
     identity=json.loads(Path(manifest).read_text())['identity']
-    pending=[r for r in rows if not Path(r['cache']).exists()]
+    # A segment may draw the same window more than once; generate it once.
+    pending=list({str(Path(r['cache']).resolve()):r for r in rows if not Path(r['cache']).exists()}.values())
     if not pending:return 0
     out=Path(manifest).parent;plan=out/'materialize.json'
     save(plan,[dict(prefix=r['prefix'],tokens=r['codes'],latents=r['means'],
