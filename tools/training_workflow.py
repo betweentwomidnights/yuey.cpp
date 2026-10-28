@@ -166,6 +166,11 @@ class Workflow:
                         except (OSError,json.JSONDecodeError):pass
                     time.sleep(.5)
             finally:process.wait()
+        # Fast native stages can finish between monitor ticks. Read their
+        # committed terminal progress before leaving the stage.
+        if progress and Path(progress).exists():
+            try:self.update(progress=json.loads(Path(progress).read_text()))
+            except (OSError,json.JSONDecodeError):pass
         self.update(child_pid=None)
         self.check_stop()
         if process.returncode:raise RuntimeError(log.read_text(encoding='utf-8',errors='replace')[-5000:])
@@ -178,6 +183,8 @@ class Workflow:
         suffix='.exe' if os.name=='nt' else ''
         for name in ['yue2-ar-train','yue2-train','yue2-score','yue2-transcribe','yue2-semantic-tokenize']:
             if not (binary/(name+suffix)).is_file():raise ValueError('Training tool missing: '+name)
+        vae_binary=Path(runtime.get('vae_binary',binary/('yue2-vae-encode'+suffix)))
+        if not vae_binary.is_file():raise ValueError('Training tool missing: yue2-vae-encode')
         for name in ['base','semantic','transcriber','tokenizer','companion','vae']:
             if not Path(models[name]).is_file():raise ValueError('Training model missing: '+name)
         rows=inventory(self.request['dataset'],o['window_seconds'],o['seed'])
@@ -197,7 +204,10 @@ class Workflow:
         self.command('prepare_ar_dataset.py',['--config',path,'--phase','semantic'],'semantic',self.data/'preparation-progress.json')
         self.command('prepare_ar_dataset.py',['--config',path,'--phase','scores'],'scores',self.data/'preparation-progress.json')
         self.command('prepare_nar_targets.py',['--dataset',cfg['training_dataset'],'--vae',models['vae'],
-                     '--out',self.run/'vae-targets','--stop-file',self.run/'stop.request'],'vae-targets',self.run/'vae-targets/progress.json')
+                     '--binary',vae_binary,'--device',runtime.get('vae_device',runtime.get('device','cuda')),
+                     '--core-frames',runtime.get('vae_core_frames',128),
+                     '--threads',runtime.get('threads',6),'--out',self.run/'vae-targets','--stop-file',self.run/'stop.request'],
+                     'vae-targets-native',self.run/'vae-targets/progress.json')
         data=json.loads(Path(cfg['training_dataset']).read_text())
         eligible=[r for r in data['rows'] if r.get('eligible',True)]
         self.update(status='ready',stage='dataset-review',examples=len(eligible),excluded=len(data['rows'])-len(eligible),

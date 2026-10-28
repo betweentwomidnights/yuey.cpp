@@ -1,5 +1,9 @@
 # Training conditioning optimization and first web workflow
 
+The subsequent [native VAE encoder](native-vae-encoder-2026-10-27.md) also removes
+the CPU/PyTorch target-preparation path described in this initial measurement.
+All model computation in the current training workflow now uses native GGML.
+
 Measured on the same 8 GB RTX 5070 Laptop GPU / 64 GB host machine, with GGML
 `b77ae790e628270af46a8af1eca38441c23f1252` and TF32 disabled. No GGML source
 change was needed. The expensive cache stage was loading inference components

@@ -354,6 +354,7 @@ $coreDir = Stage "core" @(
     "yue2-train.exe",
     "yue2-score.exe",
     "yue2-semantic-tokenize.exe",
+    "yue2-vae-encode.exe",
     "yue2.dll",
     "ggml.dll",
     "ggml-base.dll",
@@ -419,7 +420,7 @@ $trainingTools = Join-Path $standaloneDir "tools"
 New-Item -ItemType Directory -Force $trainingTools | Out-Null
 foreach ($file in @("setup_training.py", "requirements-training.txt", "training_workflow.py",
     "publish_training_adapter.py", "prepare_ar_dataset.py", "prepare_nar_targets.py",
-    "prepare_nar_dataset.py", "encode_yue2_vae_targets.py", "ar_dataset.py",
+    "prepare_nar_dataset.py", "ar_dataset.py",
     "train_ar_run.py", "train_nar_run.py", "yue2_training_audit.py")) {
     Copy-Item (Join-Path $root "tools\$file") $trainingTools
 }

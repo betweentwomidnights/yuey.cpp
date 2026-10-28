@@ -87,6 +87,7 @@ add_library(yue2 STATIC
     src/tokenizer.cpp
     src/transcription.cpp
     src/vae.cpp
+    src/vae_encoder.cpp
 )
 set_target_properties(yue2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(yue2 PUBLIC
@@ -124,6 +125,9 @@ if(YUE2_BUILD_TOOLS)
 
     add_executable(yue2-render-tokens tools/yue2-render-tokens.cpp)
     target_link_libraries(yue2-render-tokens PRIVATE yue2)
+
+    add_executable(yue2-vae-encode tools/yue2-vae-encode.cpp)
+    target_link_libraries(yue2-vae-encode PRIVATE yue2 yue2-server-support)
 
     add_executable(yue2-training-probe tools/yue2-training-probe.cpp)
     target_include_directories(yue2-training-probe PRIVATE src)
@@ -242,6 +246,10 @@ if(YUE2_BUILD_TESTS)
     add_executable(yue2-vae-decoder-test tests/vae_decoder_test.cpp)
     target_link_libraries(yue2-vae-decoder-test PRIVATE yue2)
     yue2_enable_test_assertions(yue2-vae-decoder-test)
+
+    add_executable(yue2-vae-encoder-test tests/vae_encoder_test.cpp)
+    target_link_libraries(yue2-vae-encoder-test PRIVATE yue2)
+    yue2_enable_test_assertions(yue2-vae-encoder-test)
 
     add_executable(yue2-tokenizer-test tests/tokenizer_test.cpp)
     target_link_libraries(yue2-tokenizer-test PRIVATE yue2)

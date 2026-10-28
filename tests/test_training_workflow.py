@@ -3,15 +3,31 @@ from pathlib import Path
 import sys
 import tempfile
 import os
+from unittest.mock import patch
 import unittest
 import numpy as np
 import soundfile as sf
 
 sys.path.insert(0,str(Path(__file__).parents[1]/'tools'))
-from training_workflow import settings,inventory,wait_for_owner,process_identity
+from training_workflow import settings,inventory,wait_for_owner,process_identity,Workflow
 
 
 class WorkflowTest(unittest.TestCase):
+    def test_fast_child_terminal_progress_is_observed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run=root/'run';run.mkdir()
+            (run/'runtime.json').write_text(json.dumps(dict(workspace=str(root))))
+            (run/'request.json').write_text(json.dumps(dict(id='fixture')))
+            progress=root/'progress.json'
+            class Finished:
+                pid=123;returncode=0
+                def __init__(self,*args,**kwargs):progress.write_text(json.dumps(dict(current=7,total=7)))
+                def poll(self):return 0
+                def wait(self):return 0
+            workflow=Workflow(run)
+            with patch('training_workflow.subprocess.Popen',Finished):
+                workflow.command('fixture.py',[],'fixture',progress)
+            self.assertEqual(workflow.state['progress'],dict(current=7,total=7))
     @unittest.skipUnless(sys.platform in ['win32','linux'],'Native owner identity uses Windows creation time or Linux procfs')
     def test_worker_requires_committed_pid_and_creation_identity(self):
         with tempfile.TemporaryDirectory() as directory:

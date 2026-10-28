@@ -5,9 +5,10 @@ learns the AR style adapter, freezes its validation-selected checkpoint, prepare
 matched NAR conditioning, and calibrates the NAR adapter. Publication combines
 the pair into one style entry with a caption pool. Planning remains base/common.
 
-This is an instrumental training workflow. It uses native GGML optimization and
-Python preprocessing, including the current **CPU VAE encoder**. The CUDA
-conditioning optimization does not move that encoder to the GPU.
+This is an instrumental training workflow. **All model computation uses native
+GGML**, including VAE posterior-mean encoding. Python coordinates manifests,
+provenance and processes; the training add-on does not require or import PyTorch.
+The optional PyTorch encoder remains a developer-only numerical oracle.
 
 ## Setup
 
@@ -29,6 +30,11 @@ Qwen text tokenizer and instrumental companion. `training-runtime.json` records
 absolute paths, Python, device, native binary folder, managed run root and model
 publication folder. Use that same models folder as the inference adapter folder.
 Model/runtime paths are installation settings; the browser cannot override them.
+VAE encoding follows `device` by default. Optional `vae_device`, `vae_binary`
+and `vae_core_frames` settings select an independent installed backend/tool and
+tile profile. CUDA and Vulkan encoding have been checked on the laptop; Metal
+uses the same GGML graph but awaits testing on Apple hardware. See the
+[native encoder validation](native-vae-encoder-2026-10-27.md).
 
 The tested machine has an RTX 5070 Laptop GPU with 8 GB VRAM and **64 GB host
 RAM**. The AR teacher distribution cache uses substantial host memory; an 8 GB
@@ -64,6 +70,7 @@ conditioning disk use, then start **Train AR + NAR**. The advanced defaults are:
 | Selection | Minimum recording-balanced heldout AR CE / NAR flow MSE |
 | Sampling | Shuffled recording-balanced windows |
 | Conditioning | AR-only CUDA prefill, original precision, lossless F16 K/V, resident model reuse |
+| VAE targets | Native GGML F32 encoder, 128-frame cores, 16-frame internal halos; native audio reader/polyphase resampler |
 
 These defaults follow the full Koan experiment, whose selected pair was AR
 DoRA500/NAR400. They do not force step 500 for a new dataset. **The initial UI

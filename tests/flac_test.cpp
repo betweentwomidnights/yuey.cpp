@@ -288,6 +288,8 @@ int main(int argc, char ** argv) {
     // the fixture WAV holds exactly the same PCM.
     if (argc >= 3) {
         same_upload(read_file(argv[1]), read_file(argv[2]));
+        const auto flac=yue2::audio::read_audio_pcm(argv[1]),wav=yue2::audio::read_audio_pcm(argv[2]);
+        assert(flac.channels==wav.channels && flac.sample_rate==wav.sample_rate && flac.interleaved_samples==wav.interleaved_samples);
     } else {
         std::fputs("flac_test: no fixtures given, third-party decode not checked\n", stderr);
     }

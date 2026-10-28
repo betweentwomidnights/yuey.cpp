@@ -1,7 +1,6 @@
 # Native GGML performs training; these packages provide dataset orchestration
-# and the current CPU reference VAE encoder. Use a 64-bit Python environment.
+# and provenance. All model computation uses native GGML. Use 64-bit Python.
 numpy>=1.26
 soundfile>=0.12
 scipy>=1.12
 gguf>=0.17
-torch>=2.5

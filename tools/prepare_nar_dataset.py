@@ -100,8 +100,9 @@ def main():
         auxiliary_targets = json.loads(args.auxiliary_targets.read_text())
         if not auxiliary['completed'] or not auxiliary_targets['completed']:
             raise ValueError('Auxiliary preparation is incomplete')
-        for key in ['vae_sha256','encoder_source_sha256','torch_version','posterior','precision','halo_frames']:
-            if targets['identity'][key] != auxiliary_targets['identity'][key]:
+        for key in ['vae_sha256','encoder_source_sha256','torch_version','posterior','precision','halo_frames',
+                    'native_runtime','device','threads','core_frames','encoder_halo_frames','resampler','precision_environment']:
+            if targets['identity'].get(key) != auxiliary_targets['identity'].get(key):
                 raise ValueError('Auxiliary VAE numerical identity differs')
         extra = [r for r in auxiliary['rows'] if r.get('eligible',True)]
         if not extra or any(r.get('kind','real')=='real' or not r.get('provenance') for r in extra):

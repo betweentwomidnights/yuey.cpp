@@ -17,14 +17,14 @@ def main():
     args=parser.parse_args()
     if sys.platform not in ['win32','linux']:parser.error('Local training ownership currently supports Windows and Linux')
     if args.out.exists():parser.error('Output exists; choose a new config path')
-    missing=[name for name in ['numpy','soundfile','scipy','gguf','torch'] if importlib.util.find_spec(name) is None]
+    missing=[name for name in ['numpy','soundfile','scipy','gguf'] if importlib.util.find_spec(name) is None]
     if missing:parser.error('Missing preprocessing dependencies: '+', '.join(missing)+'; install tools/requirements-training.txt')
     def model(pattern):
         paths=list(args.models_dir.rglob(pattern))
         if len(paths)!=1:parser.error('Expected one installed '+pattern+'; found '+str(len(paths)))
         return str(paths[0].resolve())
     suffix='.exe' if os.name=='nt' else ''
-    for tool in ['yue2-ar-train','yue2-train','yue2-score','yue2-transcribe','yue2-semantic-tokenize']:
+    for tool in ['yue2-ar-train','yue2-train','yue2-score','yue2-transcribe','yue2-semantic-tokenize','yue2-vae-encode']:
         if not (args.bin/(tool+suffix)).is_file():parser.error('Missing native tool: '+tool)
     config=dict(workspace=str(Path(__file__).resolve().parents[1]),python=sys.executable,
         bin=str(args.bin.resolve()),run_root=str(args.run_root.resolve()),models_dir=str(args.models_dir.resolve()),

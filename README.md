@@ -195,6 +195,7 @@ Things worth knowing on a Mac:
 - [Future generation and trainer control boundaries](docs/yue2-adapter-controls.md)
 - [Server and web API](docs/server.md)
 - [Local two-stage style trainer](docs/training.md)
+- [Native GGML VAE encoder and backend validation](docs/native-vae-encoder-2026-10-27.md)
 - [C/C++ embedding](docs/embedding.md)
 - [C ABI V1 contract](docs/C_ABI_V1.md)
 - [GGUF naming, conversion, and quantization](docs/distribution.md)

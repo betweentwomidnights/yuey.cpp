@@ -11,6 +11,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 
@@ -64,7 +65,8 @@ double bessel_i0(double x) {
 
 } // namespace
 
-MonoAudio decode_wav_mono(const std::uint8_t * bytes, std::size_t byte_count) {
+static MonoAudio decode_wav_channel(const std::uint8_t * bytes, std::size_t byte_count,
+                                    int selected_channel=-1,std::uint16_t *channel_count=nullptr) {
     constexpr const char * label = "memory WAV";
     if (!bytes || byte_count < 12 || std::memcmp(bytes, "RIFF", 4) != 0 ||
         std::memcmp(bytes + 8, "WAVE", 4) != 0) {
@@ -118,6 +120,8 @@ MonoAudio decode_wav_mono(const std::uint8_t * bytes, std::size_t byte_count) {
         throw std::runtime_error(std::string(label) + ": invalid WAV data length");
     }
     const std::size_t frames = payload_size / bytes_per_frame;
+    if(selected_channel>=static_cast<int>(channels))throw std::runtime_error("WAV channel out of range");
+    if(channel_count)*channel_count=channels;
     MonoAudio result;
     result.sample_rate = static_cast<std::int32_t>(rate);
     result.samples.resize(frames);
@@ -146,13 +150,47 @@ MonoAudio decode_wav_mono(const std::uint8_t * bytes, std::size_t byte_count) {
             if (!std::isfinite(value)) {
                 throw std::runtime_error(std::string(label) + ": non-finite audio sample");
             }
-            mixed += value;
+            if(selected_channel<0 || selected_channel==channel)mixed += value;
         }
-        result.samples[frame] = static_cast<float>(mixed / channels);
+        result.samples[frame] = static_cast<float>(mixed / (selected_channel<0?channels:1));
     }
     if (result.samples.size() < 1025) {
         throw std::runtime_error(std::string(label) + ": audio must contain at least 1025 samples");
     }
+    return result;
+}
+
+MonoAudio decode_wav_mono(const std::uint8_t *bytes,std::size_t byte_count) {
+    return decode_wav_channel(bytes,byte_count);
+}
+
+PcmAudio read_audio_pcm(const std::filesystem::path &path) {
+    const auto bytes=read_file(path);PcmAudio result;
+    if(std::strcmp(sniff_audio_container(bytes.data(),bytes.size()),"flac")==0) {
+        unsigned int channels=0,rate=0;drflac_uint64 frames=0;
+        float *data=drflac_open_memory_and_read_pcm_frames_f32(bytes.data(),bytes.size(),&channels,&rate,&frames,nullptr);
+        if(!data)throw std::runtime_error("Cannot decode VAE source FLAC");
+        try {
+            if(channels<1 || channels>2 || !rate || !frames)throw std::runtime_error("VAE source must be mono/stereo");
+            result.sample_rate=rate;result.channels=channels;
+            result.interleaved_samples.assign(data,data+frames*channels);
+        } catch(...) {drflac_free(data,nullptr);throw;}
+        drflac_free(data,nullptr);
+    } else {
+        std::uint16_t channels=0;
+        const auto left=decode_wav_channel(bytes.data(),bytes.size(),0,&channels);
+        if(channels<1 || channels>2)throw std::runtime_error("VAE source must be mono/stereo");
+        result.sample_rate=left.sample_rate;result.channels=channels;
+        if(channels==1)result.interleaved_samples=left.samples;
+        else {
+            const auto right=decode_wav_channel(bytes.data(),bytes.size(),1);
+            result.interleaved_samples.resize(left.samples.size()*2);
+            for(size_t i=0;i<left.samples.size();++i) {
+                result.interleaved_samples[2*i]=left.samples[i];result.interleaved_samples[2*i+1]=right.samples[i];
+            }
+        }
+    }
+    for(float x:result.interleaved_samples)if(!std::isfinite(x))throw std::runtime_error("Nonfinite VAE source audio");
     return result;
 }
 
@@ -263,6 +301,36 @@ std::vector<float> resample_sinc(
         output[i] = std::abs(weight) > 1e-12 ? static_cast<float>(sum / weight) : 0.0F;
     }
     return output;
+}
+
+std::vector<float> resample_vae(const std::vector<float> &input,int32_t input_rate,int32_t output_rate) {
+    if(input.empty() || input_rate<1 || output_rate<1)throw std::invalid_argument("Invalid VAE resampler input");
+    if(input_rate==output_rate)return input;
+    const int divisor=std::gcd(input_rate,output_rate),up=output_rate/divisor,down=input_rate/divisor;
+    if(std::max(up,down)>100000)throw std::invalid_argument("Unsupported VAE sample-rate ratio");
+    const int half=10*std::max(up,down);
+    constexpr double pi=3.14159265358979323846;
+    const double cutoff=1.0/std::max(up,down),normalizer=bessel_i0(5);
+    std::vector<double> kernel(2*half+1);double sum=0;
+    for(int i=-half;i<=half;++i) {
+        const double sinc=i==0?cutoff:std::sin(pi*cutoff*i)/(pi*i);
+        const double position=static_cast<double>(i)/half;
+        kernel[i+half]=sinc*bessel_i0(5*std::sqrt(std::max(0.0,1-position*position)))/normalizer;
+        sum+=kernel[i+half];
+    }
+    std::vector<float> coefficients(kernel.size());
+    for(size_t i=0;i<kernel.size();++i)coefficients[i]=static_cast<float>(kernel[i]/sum)*up;
+    const size_t count=(input.size()*static_cast<size_t>(up)+down-1)/down;
+    std::vector<float> result(count);
+    for(size_t i=0;i<count;++i) {
+        const int64_t center=static_cast<int64_t>(i)*down;
+        const int64_t first=std::max<int64_t>(0,(center-half+up-1)/up);
+        const int64_t last=std::min<int64_t>(input.size()-1,(center+half)/up);
+        float value=0;
+        for(int64_t j=first;j<=last;++j)value+=input[j]*coefficients[center+half-j*up];
+        result[i]=value;
+    }
+    return result;
 }
 
 MonoAudio read_wav_mono_24k(const std::filesystem::path & path) {

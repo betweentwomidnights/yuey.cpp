@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-27",
+  "hardware": "RTX 5070 Laptop GPU, 8 GB VRAM; 64 GB host RAM; Windows",
+  "ggml_commit": "b77ae790e628270af46a8af1eca38441c23f1252",
+  "cpu_reference": {
+    "samples": 1440000,
+    "channels": 2,
+    "frames": 750,
+    "load_seconds": 0.10900000005494803,
+    "encode_seconds": 9.280999999959022,
+    "source_sha256": "e61f4dbd902018dc77b8d70c75a56a4974329c21bb9401da85374bef1086ea39"
+  },
+  "cuda30": {
+    "seconds": 1.359000000054948,
+    "device_peak_mib": 1180,
+    "frames": 750,
+    "relative_l2": 6.947299880266655e-06,
+    "max_error": 0.000273972749710083
+  },
+  "vulkan30": {
+    "frames": 750,
+    "seconds": 1.78661,
+    "relative_l2": 7.520188773924019e-06,
+    "max_error": 0.0003514289855957031
+  },
+  "full_preparation_comparison": {
+    "includes_native_vs_scipy_resampling": true,
+    "relative_l2": 7.03455680195475e-06,
+    "max_error": 0.00029064714908599854
+  },
+  "synthetic_cuda_oracles": [
+    {
+      "name": "short",
+      "seconds": 0.42099999997299165,
+      "reference_seconds": 0.07800000009592623,
+      "relative_l2": 7.898355534052826e-07,
+      "max_error": 2.9802322387695312e-06,
+      "frames": 3,
+      "channels": 2
+    },
+    {
+      "name": "trim",
+      "seconds": 0.375,
+      "reference_seconds": 0.4059999999590218,
+      "relative_l2": 1.5458732605111436e-06,
+      "max_error": 7.867813110351562e-06,
+      "frames": 25,
+      "channels": 2
+    },
+    {
+      "name": "mono",
+      "seconds": 0.39000000001396984,
+      "reference_seconds": 0.125,
+      "relative_l2": 1.7183482441396336e-06,
+      "max_error": 5.841255187988281e-06,
+      "frames": 4,
+      "channels": 1
+    },
+    {
+      "name": "tile-boundary",
+      "seconds": 0.5620000000344589,
+      "reference_seconds": 3.969000000040978,
+      "relative_l2": 1.5572280744891032e-06,
+      "max_error": 8.58306884765625e-06,
+      "frames": 145,
+      "channels": 2
+    }
+  ],
+  "runtime": {
+    "torch_dependency": false,
+    "native_decoder_and_encoder": true,
+    "encoder_weight_mib": 126.314453125,
+    "maximum_observed_encoder_scratch_mib": 892.9,
+    "core_frames": 128,
+    "encoder_halo_frames": 16
+  },
+  "integration": {
+    "status": "published",
+    "ar_selected_step": 4,
+    "nar_selected_step": 4,
+    "vae_identity": {
+      "format": "native-vae-target-v1",
+      "vae_sha256": "b6d8d30e69ce997b50f25dbbdd610e9ac7e118bbda91af336550862a6d1aab1f",
+      "native_runtime": {
+        "executable": {
+          "yue2-vae-encode.exe": "3e605529e883c59dfe64d863d13de31b24170951ae2cdc9a2d973e731363081c"
+        },
+        "shared_libraries": {
+          "ggml-base.dll": "72426eff506fcfb95ade818a0f79dbf2497a2bebe23ee5b4f8eb3454600aefa0",
+          "ggml-cpu.dll": "fdb9848485932d9fbcf26d892e63ec0f897dd1a885f7acdcef115f8265d7d0a7",
+          "ggml-cuda.dll": "8eee0b6ef0eeda3919cc965170cec1afdc3e4841ce81c72249180a16a95132e2",
+          "ggml.dll": "287dce54b3d2f31ab47f774f736970c3401081900f3d17ffcdfaa5a81c6e0bac"
+        },
+        "precision_environment": {
+          "GGML_CUDA_TF32": "0",
+          "NVIDIA_TF32_OVERRIDE": null,
+          "CUBLAS_WORKSPACE_CONFIG": null
+        }
+      },
+      "device": "cuda",
+      "threads": 6,
+      "core_frames": 128,
+      "encoder_halo_frames": 16,
+      "posterior": "mean",
+      "precision": "GGML F32 weights/activations from folded F16/F32 VAE",
+      "halo_frames": 50,
+      "resampler": "native per-channel centered polyphase Kaiser5 FIR; unchanged amplitude; zero-extended context",
+      "boundary_policy": "Real source context up to halo; native encoder padding at actual recording edges",
+      "precision_environment": {
+        "GGML_CUDA_TF32": "0"
+      }
+    },
+    "torch_import_blocker_test_passed": true,
+    "cache_resume_and_missing_provenance_recovery_passed": true,
+    "published_sha256": "eea8613e74a0cd5d30e6c27c5f318a7939d3cc68b01eb93c6112552e0873587b",
+    "fast_stage_terminal_progress_test_passed": true
+  },
+  "limitations": [
+    "Metal uses the shared graph but is not tested on this Windows machine.",
+    "Timing samples are individual windows, not a full-dataset throughput benchmark.",
+    "The optional PyTorch oracle is development-only and not part of the training runtime."
+  ],
+  "reconstruction_parity": {
+    "sample_rate": 48000,
+    "samples": 1439936,
+    "signal_rms": 0.2803041253348365,
+    "difference_rms": 0.0006299439602779907,
+    "relative_l2": 0.0022473588625407954,
+    "max_error": 0.0155029296875
+  }
+}

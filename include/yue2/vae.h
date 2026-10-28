@@ -14,6 +14,8 @@ struct VaeRuntimeOptions {
     bool tiled = true;
     std::int64_t decode_core_frames = 1024;
     std::int64_t decode_halo_frames = 16;
+    std::int64_t encode_core_frames = 128;
+    std::int64_t encode_halo_frames = 16;
 };
 
 struct DecodedAudio {
@@ -48,6 +50,26 @@ public:
         const std::vector<float> & time_major_latents,
         const VaeDecodeControl & control);
 
+private:
+    class Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+using VaeEncodeControl = VaeDecodeControl;
+
+// Posterior means from 48 kHz mono/stereo PCM. Output is time-major
+// [latent_frames,64], without posterior sampling. Tiling preserves the
+// convolution stride phase and includes the complete receptive field.
+class VaeEncoder {
+public:
+    explicit VaeEncoder(const std::string &vae_gguf_path, const VaeRuntimeOptions &options = {});
+    ~VaeEncoder();
+    VaeEncoder(VaeEncoder &&) noexcept;
+    VaeEncoder &operator=(VaeEncoder &&) noexcept;
+    VaeEncoder(const VaeEncoder &) = delete;
+    VaeEncoder &operator=(const VaeEncoder &) = delete;
+    std::vector<float> encode(const float *interleaved_pcm, std::int64_t samples_per_channel,
+                              int channels = 2, const VaeEncodeControl &control = {});
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;

@@ -43,12 +43,25 @@ void write_test_wav(const std::filesystem::path & path) {
 } // namespace
 
 int main() {
+    // Independent reference impulse from scipy.signal.resample_poly(F32,
+    // up=160, down=147, Kaiser beta=5). Checks alignment and zero extension.
+    std::vector<float> impulse(64);impulse[2]=1;
+    const auto resampled=yue2::audio::resample_vae(impulse,44100,48000);
+    const float expected[]={-3.564602832e-17f,-0.07245943695f,0.9572073817f,0.2882115841f,
+        -0.1522341222f,0.1008926481f,-0.06825239956f,0.04436163232f,-0.02673763968f,
+        0.01440342329f,-0.006537545007f,0.002176153474f};
+    assert(resampled.size()==70);
+    for(size_t i=0;i<std::size(expected);++i)assert(std::abs(resampled[i]-expected[i])<2e-7f);
     const auto path = std::filesystem::temp_directory_path() / "yue2-audio-test.wav";
     const auto float_path = std::filesystem::temp_directory_path() / "yue2-audio-float-test.wav";
     write_test_wav(path);
     const auto original = yue2::audio::read_wav_mono(path);
     assert(original.sample_rate == 48000);
     assert(original.samples.size() == 4800);
+    const auto pcm=yue2::audio::read_audio_pcm(path);
+    assert(pcm.channels==2 && pcm.sample_rate==48000 && pcm.interleaved_samples.size()==9600);
+    for(size_t i=0;i<original.samples.size();++i)
+        assert(original.samples[i]==static_cast<float>((static_cast<double>(pcm.interleaved_samples[2*i])+pcm.interleaved_samples[2*i+1])/2));
     assert(std::abs(original.samples[1]) > 0.005F);
     std::ifstream input(path, std::ios::binary);
     const std::vector<std::uint8_t> encoded_input{
@@ -71,6 +84,7 @@ int main() {
     }
     yue2::audio::write_wav_float(float_path, stereo, 48000, 2);
     const auto float_roundtrip = yue2::audio::read_wav_mono(float_path);
+    assert(yue2::audio::read_audio_pcm(float_path).interleaved_samples==stereo);
     assert(float_roundtrip.sample_rate == 48000);
     assert(float_roundtrip.samples.size() == stereo.size() / 2);
     for (const auto sample : float_roundtrip.samples) assert(sample == 0.0F);
