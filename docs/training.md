@@ -127,8 +127,9 @@ DoRA500/NAR400. They do not force step 500 for a new dataset. **The initial UI
 workflow does not generate the neutral replay/retention examples used in that
 research run**; generalization and musical defaults still need broader listening
 validation before release. The underlying research CLI continues to support
-explicit auxiliary examples. Rank/family, learning rates, budgets, seed, KL and
-evaluation cadence are advanced controls. NAR uses LoRA; planning training and
+explicit auxiliary examples. Rank (2 to 128; rank 1 is not a useful adapter
+and GGML's CUDA OUT_PROD rejects it), family, learning rates, budgets, seed, KL
+and evaluation cadence are advanced controls. NAR uses LoRA; planning training and
 score dropout are not product controls.
 
 60-second windows are experimental: full AR training spilled into WDDM shared

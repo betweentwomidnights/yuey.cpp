@@ -96,7 +96,8 @@ def settings(request):
     if family not in ['lora','dora']:raise ValueError('AR family must be lora or dora')
     trigger=request.get('trigger',request['id']+'_style')
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',trigger):raise ValueError('Trigger must be one word using letters, numbers, hyphens or underscores')
-    options=dict(window_seconds=number('window_seconds',30,2,60,True),rank=number('rank',32,1,128,True),
+    # Rank 1 is not a useful adapter, and GGML's CUDA OUT_PROD rejects its shape.
+    options=dict(window_seconds=number('window_seconds',30,2,60,True),rank=number('rank',32,2,128,True),
                 ar_steps=number('ar_steps',800,1,10000,True),nar_steps=number('nar_steps',400,1,10000,True),
                 ar_lr=number('ar_lr',2e-5,1e-7,.001),nar_lr=number('nar_lr',3e-5,1e-7,.001),
                 kl_weight=number('kl_weight',.2,0,5),seed=number('seed',831001,0,2**32-1,True),

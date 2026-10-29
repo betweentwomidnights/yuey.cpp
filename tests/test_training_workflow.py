@@ -116,7 +116,7 @@ class WorkflowTest(unittest.TestCase):
             owner.write_text(json.dumps(dict(pid=os.getpid(),identity='stale')))
             with self.assertRaisesRegex(RuntimeError,'not committed'):wait_for_owner(root,.01)
     def test_rejects_unsafe_budgets_and_nonfinite_hyperparameters(self):
-        for field,value in [('ar_steps',0),('nar_steps',-1),('rank',2.5),('seed',True),
+        for field,value in [('ar_steps',0),('nar_steps',-1),('rank',2.5),('rank',1),('seed',True),
                             ('kl_weight',float('nan')),('ar_lr',float('inf')),('window_seconds',61),
                             ('family','other'),('trigger','two words')]:
             with self.subTest(field=field,value=value),self.assertRaises(ValueError):
