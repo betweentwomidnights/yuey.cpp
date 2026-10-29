@@ -4,7 +4,9 @@
 #include "yue2/autoregressive.h"
 
 #include <map>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace yue2::detail {
@@ -22,6 +24,12 @@ public:
         ggml_tensor * weight,
         ggml_tensor * input,
         bool f32_weights = false) const;
+
+    // A frozen base weight (or rows [first, first + count) of it) as F32 in a
+    // training graph: F32 as is, F16/BF16 cast, a k-quant read through
+    // get_rows, which dequantizes exactly on every backend. The row indices
+    // live in small buffers this stack owns.
+    ggml_tensor * f32_weight(ggml_context * context, ggml_tensor * weight, int64_t first = 0, int64_t count = -1) const;
 
     // Apply full adapter replacements (used by Mothersuperior's jointly
     // trained NAR vae2llm/llm2vae projections) as strength-scaled deltas.
@@ -46,6 +54,13 @@ public:
     }
 
 private:
+    struct RowIds {
+        std::unique_ptr<ggml_context, void (*)(ggml_context *)> context{nullptr, ggml_free};
+        std::unique_ptr<ggml_backend_buffer, void (*)(ggml_backend_buffer_t)> buffer{nullptr, ggml_backend_buffer_free};
+        ggml_tensor * ids = nullptr;
+    };
+    mutable std::map<std::pair<int64_t, int64_t>, std::unique_ptr<RowIds>> row_ids_;
+
     struct Adapter {
         GgufModel model;
         float scale = 0.0F;

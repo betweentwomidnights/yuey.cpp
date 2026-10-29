@@ -100,7 +100,7 @@ class ArTrainer::Impl {
           n(prefix_tokens + frames - (predict_end ? 0 : 1)),
           targets(frames + (predict_end ? 1 : 0)), predict_end(predict_end),
           model(detail::load_gguf_selected(path.c_str(), options.device.c_str(), options.threads,
-                                           ar_weight)),
+                                           ar_weight, options.dequantize_base)),
           fixed(model, options.fixed_adapters) {
         try {
             if (frames < 1 || frames > 2048 || ar < 1 || n > 4096 || options.rank < 1 ||
@@ -277,6 +277,12 @@ class ArTrainer::Impl {
         ggml_set_input(t);
         return t;
     }
+    // F32 arithmetic over F16 storage (BF16 and F16 bases) or over a k-quant
+    // base read through get_rows. A checkpoint resumes only on the same.
+    std::string projection_precision() const {
+        return ggml_is_quantized(model.get("model.layers.0.self_attn.q_proj.weight")->type)
+            ? "f32-compute-quantized-storage" : "f32-compute-f16-storage";
+    }
     ggml_tensor *linear(ggml_context *ctx, ggml_tensor *x, const std::string &name,
                         bool train = true) {
         auto *output = fixed.linear(ctx, model.get(name + ".weight"), x, true);
@@ -337,9 +343,8 @@ class ArTrainer::Impl {
         auto *selected = ggml_cont(
             ctx, ggml_view_2d(ctx, hidden, H, targets, hidden->nb[1], (ar - 1) * hidden->nb[1]));
         auto *head = model.get("lm_head.weight");
-        auto *semantic_head =
-            ggml_view_2d(ctx, head, H, kCodecSize + 1, head->nb[1], kMusicEndToken * head->nb[1]);
-        auto *logits = ggml_mul_mat(ctx, f32(ctx, semantic_head), selected);
+        auto *semantic_head = fixed.f32_weight(ctx, head, kMusicEndToken, kCodecSize + 1);
+        auto *logits = ggml_mul_mat(ctx, semantic_head, selected);
         tail.task_loss = ggml_cross_entropy_loss(ctx, logits, target);
         ggml_set_output(tail.task_loss);
         tail.loss = tail.task_loss;
@@ -641,7 +646,7 @@ class ArTrainer::Impl {
         gguf_set_val_u32(file, "yue2.training.predict_end", predict_end ? 1 : 0);
         gguf_set_val_str(file, "yue2.training.objective",
                          "semantic-only cross-entropy; no planning loss");
-        gguf_set_val_str(file, "yue2.training.projection_precision", "f32-compute-f16-storage");
+        gguf_set_val_str(file, "yue2.training.projection_precision", projection_precision().c_str());
         gguf_set_val_str(file, "yue2.training.prefix_policy",
                          "left-padding-masked-real-position-zero");
         gguf_set_val_f32(file, "yue2.training.learning_rate", options.learning_rate);
@@ -723,7 +728,7 @@ class ArTrainer::Impl {
              saved.optional_string("yue2.adapter.dora.reference_prefix").value_or("")!=reference_id)) ||
             saved.optional_string("yue2.training.kl_weight_text").value_or("0.000000") !=
                 std::to_string(options.kl_weight) ||
-            saved.string("yue2.training.projection_precision") != "f32-compute-f16-storage" ||
+            saved.string("yue2.training.projection_precision") != projection_precision() ||
             saved.u32("yue2.adapter.rank") != static_cast<uint32_t>(options.rank) ||
             saved.u32("yue2.training.frames") != frames ||
             saved.u32("yue2.training.ar_slots") != ar ||

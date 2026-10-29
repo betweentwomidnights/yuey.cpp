@@ -17,6 +17,9 @@ struct ArTrainingOptions {
     // Build the common-model graph (no learned adapter) for every block, so
     // teacher() can compute frozen distributions after updates.
     bool online_teacher = false;
+    // Load a quantized base's projections as F16 instead of dequantizing them
+    // in each graph: the reference quantized training was validated against.
+    bool dequantize_base = false;
     std::uint32_t seed = 831001;
     std::vector<LoraAdapterSpec> fixed_adapters;
     // Hash model, runtime, fixed adapters, exact prefix and target streams.

@@ -37,7 +37,7 @@ namespace training = yue2::training;
 
 constexpr const char * usage = R"(usage: yue2-train-run COMMAND [options]
 
-  setup --bin DIR --models-dir DIR [--run-root DIR] --out FILE
+  setup --bin DIR --models-dir DIR [--run-root DIR] [--base-encoding auto|bf16|q4_k_m] --out FILE
                                   write the training runtime yue2-server --training-config reads
   workflow --run DIR --action prepare|train|resume|publish
                                   a named run, as yue2-server launches it
@@ -225,7 +225,8 @@ json::Value run(const std::string & command, const Arguments & args) {
     }
     if (command == "setup") {
         training::write_training_runtime(fs::u8path(args.required("bin")), fs::u8path(option("models-dir", "models")),
-                                         fs::u8path(option("run-root", "outputs/training")), fs::u8path(option("out", "training-runtime.json")));
+                                         fs::u8path(option("run-root", "outputs/training")), fs::u8path(option("out", "training-runtime.json")),
+                                         option("base-encoding", "auto"));
         return {};
     }
     if (command == "publish") return training::publish(fs::u8path(args.required("run")));

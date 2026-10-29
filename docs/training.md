@@ -20,9 +20,11 @@ build/bin/Release/yue2-train-run setup --bin build/bin/Release --models-dir mode
 build/bin/Release/yue2-server --models-dir models --training-config training-runtime.json
 ```
 
-For an unpacked standalone package, use `--bin .`. Setup requires the BF16
-generation model, folded F16 VAE, v9 semantic tokenizer, SheetSage2 transcriber,
-Qwen text tokenizer and instrumental companion. `training-runtime.json` records
+For an unpacked standalone package, use `--bin .`. Setup requires a generation
+base (BF16 or Q4_K_M), the folded F16 VAE, v9 semantic tokenizer, SheetSage2
+transcriber, Qwen text tokenizer and instrumental companion. `--base-encoding
+auto` (the default) trains on BF16 when it is installed and on Q4_K_M
+otherwise; `bf16` or `q4_k_m` chooses. See [quantized base](#quantized-base). `training-runtime.json` records
 absolute paths, the device, the native tools' folder, the managed run root and
 the model publication folder. Use that same models folder as the inference
 adapter folder. The server starts `yue2-train-run workflow` for each run.
@@ -263,13 +265,45 @@ python tools/verify_training_storage.py --runtime training-runtime.json --out ou
 Without `--dataset` it trains on two short synthetic piano recordings. Pass a
 real dataset with `--window-seconds 30 --rank 32` for representative timings.
 
+## Quantized base
+
+Training runs against the Q4_K_M generation model as well as BF16, so an
+installation that has only the inference base can train. Both carry the same
+`yue2.checkpoint.sha256`, so a style trained on either loads on either.
+
+The trainers keep the quantized weights quantized in VRAM and read each one as
+F32 inside the training graph through `get_rows`, which dequantizes Q4_K and
+Q6_K exactly on every backend. Training on Q4_K_M is therefore the same
+arithmetic as training on an F32 copy of the dequantized weights; the base
+itself is Q4_K_M's, not BF16's. `--dequantize-base` on `yue2-ar-train` and
+`yue2-train` loads the weights as F16 instead: the reference the quantized path
+was checked against. A checkpoint records which storage it trained on and
+resumes only on the same.
+
+On the laptop with 8 recordings, 30-second windows and rank 32:
+
+| | AR update | AR peak VRAM | NAR update | NAR peak VRAM |
+| --- | --- | --- | --- | --- |
+| BF16 | 4.11 s | 7.76 GiB | 1.60 s | 4.17 GiB |
+| Q4_K_M | 4.14 s | 5.07 GiB | 1.62 s | 2.34 GiB |
+| Q4_K_M, resident conditioning | | | 2.50 s | 4.36 GiB |
+
+Quantization frees 2.7 GiB in the AR fit and 1.8 GiB in the NAR fit at the
+same speed, and makes resident conditioning practical on 8 GB: the NAR expert
+is 0.84 GiB instead of 2.63, so the fitter no longer spills. Q4_K_M probe
+gradients differ from BF16's (aggregate cosine 0.974) because quantization
+changes the model; whether a style trained on it sounds different is a
+listening question. `capabilities` lists the supported `base_encodings` and,
+with a runtime, which `base` it trains on.
+
 ## Native workflow
 
 `yue2-train-run` replaced the Python training orchestration one stage at a
 time, so that a supervisor such as gary4local can train without Python. Each
 stage was checked equal to the Python it replaced before the Python was
-removed; [training history](training-history.md) records how. Training
-against the Q4_K_M base gary4local installs is still to come.
+removed; [training history](training-history.md) records how. Training also
+runs against the Q4_K_M base gary4local installs (see
+[quantized base](#quantized-base)).
 
 The server runs `yue2-train-run workflow --run RUN --action ACTION` for every
 run. Each stage of a run is another `yue2-train-run` command, run as a child

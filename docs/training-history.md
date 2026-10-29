@@ -460,3 +460,39 @@ and after.
   - `verify_training_storage.py` drives `yue2-train-run`;
     `yue2_training_audit.py` and `benchmark_nar_cache.py` carry the few helpers
     they used.
+
+## Native workflow, stage 7: Q4_K_M base (2026-10-29)
+
+- **Problem:** gary4local installs only the Q4_K_M generation model, and
+  training required the 6.8 GB BF16 base. The trainers rejected quantized
+  weights until their gradients had an independent validation.
+- **Change:** the trainers keep k-quant weights (Q4_K, Q5_K, Q6_K, Q8_0)
+  quantized and read them as F32 through `get_rows`
+  (`LoraStack::f32_weight`), which needs no GGML fork change: CUDA has no
+  quantized `CPY` for `ggml_cast`. The AR LM head's semantic rows and both DoRA
+  row norms use the same path. `--dequantize-base` loads them as F16 for
+  reference. `setup --base-encoding auto|bf16|q4_k_m` picks the base;
+  `capabilities` reports it. See [quantized base](training.md#quantized-base).
+- **Validation:**
+  - A unit test (`yue2-lora-test`) checks that `get_rows` equals the
+    reference dequantization exactly for Q4_K and Q6_K, whole tensors and row
+    ranges, on CPU and CUDA; the F16 reference equals it rounded to F16.
+  - Probe gradients against the F16-dequantized reference: AR aggregate
+    cosine 0.99999973 (relative L2 7.4e-4), NAR 0.99999971 (8.0e-4), every
+    nonzero NAR tensor at least 0.999999. Initial losses 5.63588 and 5.63587;
+    the residual is the reference's F16 rounding. Against BF16 the cosine is
+    0.974: quantization changes the model.
+  - `verify_training_storage.py` on Q4_K_M: online teacher, rolling (6
+    segments) and resident conditioning all identical to cached.
+  - A run created, trained and published through `yue2-server` on Q4_K_M,
+    listed in `/loras`.
+- **Measured** (8 recordings, 30 s windows, rank 32, laptop): AR 4.14 s per
+  update at 5.07 GiB peak against BF16's 4.11 s at 7.76 GiB; NAR 1.62 s at
+  2.34 GiB against 1.60 s at 4.17 GiB; resident NAR 2.50 s at 4.36 GiB, where
+  BF16 spilled to about 190 s per update.
+- **Found:** with a relative output folder, conditioning and NAR fits handed
+  the native trainer relative paths while it runs from the tools' folder.
+  The Python ran from its checkout, so it never showed. Both now pass
+  absolute paths.
+- **Not yet done:** a listening comparison of styles trained on Q4_K_M and
+  BF16.

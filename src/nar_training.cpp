@@ -120,7 +120,7 @@ class NarTrainer::Impl {
          const NarTrainingOptions &options)
         : options(options), frames(frames), n(frames + 2), ar(max_ar),
           model(detail::load_gguf_selected(path.c_str(), options.device.c_str(), options.threads,
-                                           nar_weight)),
+                                           nar_weight, options.dequantize_base)),
           fixed(model, options.fixed_adapters) {
         try {
             if (frames < 1 || frames > 2048 || max_ar < 1 || max_ar + frames + 2 > 24576 ||
@@ -342,7 +342,7 @@ class NarTrainer::Impl {
             auto *b = parameters[found->second + 1].tensor;
             output = ggml_add(ctx, output, ggml_mul_mat(ctx, b, ggml_mul_mat(ctx, a, x)));
             if (options.dora) {
-                auto *denom = detail::dora_row_norm(ctx, f32(ctx, model.get(name + ".weight")),
+                auto *denom = detail::dora_row_norm(ctx, fixed.f32_weight(ctx, model.get(name + ".weight")),
                                                    a, b, base_norms.at(name));
                 auto *magnitude = parameters[found->second + 2].tensor;
                 output = ggml_mul(ctx, output,
@@ -396,6 +396,11 @@ class NarTrainer::Impl {
                           f32(ctx, ggml_view_2d(ctx, table, H, n, table->nb[1], 0)));
         front.forward = ggml_new_graph_custom(ctx, C, false);
         ggml_build_forward_expand(front.forward, ggml_cpy(ctx, hidden, boundaries[0]));
+    }
+    // f16 for BF16 and F16 bases; quantized for a k-quant base read through
+    // get_rows. A checkpoint resumes only on the same.
+    std::string projection_storage() const {
+        return ggml_is_quantized(model.get("model.layers.0.nar_self_attn.q_proj.weight")->type) ? "quantized" : "f16";
     }
     void build_tail() {
         tail.ctx = context(true);
@@ -646,6 +651,7 @@ class NarTrainer::Impl {
                          conditioning_identity().c_str());
         gguf_set_val_str(file, "yue2.training.f32_projections",
                          options.f32_projections ? "1" : "0");
+        gguf_set_val_str(file, "yue2.training.projection_storage", projection_storage().c_str());
         gguf_set_val_u64(file, "yue2.training.step", optimizer_step);
         gguf_set_val_str(file, "yue2.training.step_text", std::to_string(optimizer_step).c_str());
         gguf_set_val_u32(file, "yue2.training.frames", frames);
@@ -676,7 +682,7 @@ class NarTrainer::Impl {
         for (const auto &entry : base_norms) {
             auto ctx = context();
             const auto at = parameter_index.at(entry.first + ".lora_A");
-            auto *denom = detail::dora_row_norm(ctx.get(), f32(ctx.get(), model.get(entry.first + ".weight")),
+            auto *denom = detail::dora_row_norm(ctx.get(), fixed.f32_weight(ctx.get(), model.get(entry.first + ".weight")),
                 parameters[at].tensor, parameters[at + 1].tensor, entry.second);
             auto *graph = ggml_new_graph_custom(ctx.get(), C, false);
             ggml_set_output(denom); ggml_build_forward_expand(graph, denom);
@@ -768,6 +774,7 @@ class NarTrainer::Impl {
                 conditioning_identity() ||
             saved.optional_string("yue2.training.f32_projections").value_or("0") !=
                 (options.f32_projections ? "1" : "0") ||
+            saved.optional_string("yue2.training.projection_storage").value_or("f16") != projection_storage() ||
             saved.f32("yue2.training.weight_decay") != options.weight_decay ||
             saved.f32("yue2.training.gradient_clip") != options.gradient_clip ||
             saved.optional_string("yue2.adapter.base_sha256") !=

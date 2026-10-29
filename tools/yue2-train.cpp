@@ -333,7 +333,8 @@ int main(int argc, char **argv) {
                 key == "--fixed-noise" || key == "--generate-latents" ||
                 key == "--f32-projections" || key == "--shuffle-samples" || key == "--dora" ||
                 key == "--group-samples" || key == "--stream-samples" || key == "--conditioning-only" || key == "--cache-flash-attn" ||
-                key == "--resident-conditioning" || key == "--rolling-caches" || key == "--no-final-eval") {
+                key == "--resident-conditioning" || key == "--rolling-caches" || key == "--no-final-eval" ||
+                key == "--dequantize-base") {
                 args[key] = "1";
                 continue;
             }
@@ -505,6 +506,7 @@ int main(int argc, char **argv) {
         options.fixed_adapters = fixed;
         options.conditioning_adapters = conditioning;
         options.f32_projections = args.count("--f32-projections") != 0;
+        options.dequantize_base = args.count("--dequantize-base") != 0;
         options.dora = args.count("--dora") != 0;
         options.run_identity = args.at("--identity");
         if (args.count("--rank"))
