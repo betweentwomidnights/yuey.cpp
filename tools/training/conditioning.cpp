@@ -2,6 +2,7 @@
 // prepare_nar_dataset.py, product path only.
 #include "training/preparation.h"
 
+#include "training/gguf_file.h"
 #include "training/preparation_detail.h"
 #include "training/process.h"
 #include "training/sha256.h"
@@ -76,54 +77,6 @@ json::Value elapsed(std::chrono::steady_clock::time_point start) {
     return F(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
 }
 
-// A GGUF's metadata, with tensor payloads read from the file on demand.
-class Gguf {
-public:
-    explicit Gguf(const fs::path & path) : path_(path) {
-        gguf_init_params params{true, &meta_};
-        file_ = gguf_init_from_file(path.u8string().c_str(), params);
-        if (!file_) throw std::invalid_argument("Cannot read " + python_path(path));
-    }
-    ~Gguf() {
-        gguf_free(file_);
-        if (meta_) ggml_free(meta_);
-    }
-    Gguf(const Gguf &) = delete;
-    Gguf & operator=(const Gguf &) = delete;
-
-    std::optional<json::Value> field(const char * name) const {
-        const auto id = gguf_find_key(file_, name);
-        if (id < 0) return std::nullopt;
-        switch (gguf_get_kv_type(file_, id)) {
-            case GGUF_TYPE_STRING: return S(gguf_get_val_str(file_, id));
-            case GGUF_TYPE_UINT32: return I(gguf_get_val_u32(file_, id));
-            case GGUF_TYPE_INT32: return I(gguf_get_val_i32(file_, id));
-            case GGUF_TYPE_UINT64: return I(static_cast<long long>(gguf_get_val_u64(file_, id)));
-            case GGUF_TYPE_INT64: return I(gguf_get_val_i64(file_, id));
-            default: return json::Value{};
-        }
-    }
-    std::vector<std::string> tensors() const {
-        std::vector<std::string> names;
-        for (int64_t i = 0; i < gguf_get_n_tensors(file_); ++i) names.emplace_back(gguf_get_tensor_name(file_, i));
-        return names;
-    }
-    const ggml_tensor & tensor(const std::string & name) const { return *ggml_get_tensor(meta_, name.c_str()); }
-    std::string payload(const std::string & name) const {
-        const auto id = gguf_find_tensor(file_, name.c_str());
-        std::ifstream stream(path_, std::ios::binary);
-        stream.seekg(static_cast<std::streamoff>(gguf_get_data_offset(file_) + gguf_get_tensor_offset(file_, id)));
-        std::string bytes(gguf_get_tensor_size(file_, id), '\0');
-        if (!stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) throw std::invalid_argument("Truncated " + python_path(path_));
-        return bytes;
-    }
-
-private:
-    fs::path path_;
-    ggml_context * meta_ = nullptr;
-    gguf_context * file_ = nullptr;
-};
-
 bool finite_payload(const std::string & bytes, bool half) {
     if (half) {
         for (std::size_t i = 0; i + 1 < bytes.size(); i += 2) {
@@ -143,7 +96,7 @@ bool finite_payload(const std::string & bytes, bool half) {
 // prepare_nar_dataset.verify_cache(): native output provenance and its inputs.
 void verify_cache(const fs::path & cache, const std::string & key, const json::Value & row, const json::Value & target,
                   const fs::path & base, const fs::path & common, const fs::path & adapter, const std::string & kv_type) {
-    const Gguf file(cache);
+    const GgufFile file(cache);
     const auto field = [&](const char * name) {
         auto value = file.field(name);
         if (!value) throw std::invalid_argument(std::string("Cache metadata missing: ") + name);

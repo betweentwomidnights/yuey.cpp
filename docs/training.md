@@ -273,7 +273,7 @@ then the server still launches `training_workflow.py`.
 | --- | --- | --- |
 | 1. Settings, inventory, review | `settings()`, `inventory()`, the review estimates and `capabilities()` in `training_workflow.py`; `ar_dataset.py`; `training_provenance.py` | native, equal to Python |
 | 2. Preparation | `prepare_ar_dataset.py`, `prepare_nar_targets.py`, `prepare_nar_dataset.py` | native, equal to Python |
-| 3. Fitting | `train_ar_run.py`, `train_nar_run.py` | Python |
+| 3. Fitting | `train_ar_run.py`, `train_nar_run.py` | native, equal to Python |
 | 4. Publication | `publish_training_adapter.py` | Python |
 | 5. Switch-over | the server launches `yue2-train-run`; no Python in the training runtime | |
 | 6. Removal | the shipped Python training scripts | |
@@ -339,6 +339,24 @@ every file is compared.
 Only the product path is ported. `inference_urls`, reused semantic or
 transcription manifests, generated targets and auxiliary replay datasets are
 research options; the native commands refuse them and the Python keeps them.
+
+Stage 3's commands run the fits the workflow drives, with the scripts' arguments:
+
+```bash
+yue2-train-run fit-ar --config RUN/ar-job.json --family lora --phase probe
+yue2-train-run fit-ar --config RUN/ar-job.json --family lora --phase fit --segment native-1 --prune-checkpoints
+yue2-train-run fit-nar --config RUN/nar-job.json --phase fit --segment native-1 --prune-checkpoints [--resume STATE]
+```
+
+They build the native trainers' command lines and run identities as the
+Python did, prepare and verify the AR teacher cache, run a rolling NAR fit in
+segments with each segment's windows regenerated just before use, prune
+checkpoints, and select the heldout-best checkpoint. Progress still comes from
+the trainers' logs, read as the Python read them.
+`tools/check_native_fitting.py` prepares and trains the same clips with each
+implementation and compares every file. It covers two runs: LoRA with cached
+teachers and conditioning, and DoRA with an online teacher and rolling
+conditioning.
 
 ## HTTP surface
 

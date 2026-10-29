@@ -476,6 +476,13 @@ std::string quote_ascii(std::string_view value) {
     return output;
 }
 
+// How json.dumps writes a number json.loads read: an int as itself, a float
+// as repr() of the nearest double, so "2E-5" and "0.000020" both become 2e-05.
+std::string python_number(const std::string & lexeme) {
+    if (lexeme.find_first_of(".eE") == std::string::npos) return lexeme == "-0" ? "0" : lexeme;
+    return python_repr(std::strtod(lexeme.c_str(), nullptr));
+}
+
 void pretty_into(std::string & output, const Value & value, int depth) {
     const auto indent = [&](int level) { output += "\n" + std::string(static_cast<std::size_t>(level) * 2, ' '); };
     switch (value.type) {
@@ -506,6 +513,7 @@ void pretty_into(std::string & output, const Value & value, int depth) {
             output.push_back('}');
             return;
         }
+        case Type::number: output += python_number(value.text); return;
         default: output += stringify(value); return;
     }
 }
@@ -540,6 +548,7 @@ std::string python_dumps_sorted(const Value & value) {
             }
             return output + "}";
         }
+        case Type::number: return python_number(value.text);
         default: return stringify(value);
     }
 }
