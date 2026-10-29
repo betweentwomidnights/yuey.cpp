@@ -14,6 +14,14 @@ struct MonoAudio {
     std::int32_t sample_rate = 0;
 };
 
+struct PcmAudio {
+    std::vector<float> interleaved_samples;
+    std::int32_t sample_rate = 0;
+    std::int32_t channels = 0;
+};
+// Preserve mono/stereo channels and amplitude for VAE encoding. WAV/FLAC.
+PcmAudio read_audio_pcm(const std::filesystem::path &path);
+
 // Reads PCM16/24/32 or IEEE-float32/64 RIFF/WAVE, averages every channel, and
 // preserves sample amplitude. It intentionally performs no peak normalization.
 MonoAudio read_wav_mono(const std::filesystem::path & path);
@@ -34,6 +42,11 @@ std::vector<float> resample_sinc(
     const std::vector<float> & input,
     std::int32_t input_rate,
     std::int32_t output_rate);
+
+// VAE target compatibility profile: zero-extended, centered polyphase FIR,
+// Kaiser beta 5, half-length 10*max(up,down), preserving F32 amplitude.
+std::vector<float> resample_vae(const std::vector<float> &input,
+                               std::int32_t input_rate,std::int32_t output_rate);
 
 MonoAudio read_wav_mono_24k(const std::filesystem::path & path);
 

@@ -75,6 +75,8 @@ add_library(yue2 STATIC
     src/generation_pipeline.cpp
     src/instrumental_transfer.cpp
     src/lora.cpp
+    src/nar_training.cpp
+    src/ar_training.cpp
     src/mert2_encoder.cpp
     src/mert2_frontend.cpp
     src/quantize.cpp
@@ -85,6 +87,7 @@ add_library(yue2 STATIC
     src/tokenizer.cpp
     src/transcription.cpp
     src/vae.cpp
+    src/vae_encoder.cpp
 )
 set_target_properties(yue2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(yue2 PUBLIC
@@ -120,6 +123,27 @@ if(YUE2_BUILD_TOOLS)
     add_executable(yue2-semantic-tokenize tools/yue2-semantic-tokenize.cpp)
     target_link_libraries(yue2-semantic-tokenize PRIVATE yue2)
 
+    add_executable(yue2-render-tokens tools/yue2-render-tokens.cpp)
+    target_link_libraries(yue2-render-tokens PRIVATE yue2)
+
+    add_executable(yue2-vae-encode tools/yue2-vae-encode.cpp)
+    target_link_libraries(yue2-vae-encode PRIVATE yue2 yue2-server-support)
+
+    add_executable(yue2-training-probe tools/yue2-training-probe.cpp)
+    target_include_directories(yue2-training-probe PRIVATE src)
+    target_link_libraries(yue2-training-probe PRIVATE yue2)
+
+    add_executable(yue2-train tools/yue2-train.cpp)
+    target_include_directories(yue2-train PRIVATE src)
+    target_link_libraries(yue2-train PRIVATE yue2 yue2-server-support)
+
+    add_executable(yue2-ar-train tools/yue2-ar-train.cpp)
+    target_include_directories(yue2-ar-train PRIVATE src)
+    target_link_libraries(yue2-ar-train PRIVATE yue2 yue2-server-support)
+
+    add_executable(yue2-ar-sample tools/yue2-ar-sample.cpp)
+    target_link_libraries(yue2-ar-sample PRIVATE yue2)
+
     add_executable(yue2-inspect-generation tools/yue2-inspect-generation.cpp)
     target_link_libraries(yue2-inspect-generation PRIVATE yue2)
 
@@ -137,6 +161,9 @@ if(YUE2_BUILD_TOOLS)
     add_executable(yue2-generate tools/yue2-generate.cpp)
     target_link_libraries(yue2-generate PRIVATE yue2)
 
+    add_executable(yue2-score tools/yue2-score.cpp)
+    target_link_libraries(yue2-score PRIVATE yue2)
+
     set(YUE2_UI_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/yue2_ui_html.h")
     add_custom_command(
         OUTPUT "${YUE2_UI_HEADER}"
@@ -150,7 +177,14 @@ if(YUE2_BUILD_TOOLS)
             ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_resource.cmake
         VERBATIM
     )
-    add_executable(yue2-server tools/yue2-server.cpp "${YUE2_UI_HEADER}")
+    set(YUE2_TRAIN_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/yue2_train_html.h")
+    add_custom_command(OUTPUT "${YUE2_TRAIN_HEADER}"
+        COMMAND "${CMAKE_COMMAND}"
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/tools/ui/train.html
+            -DOUTPUT=${YUE2_TRAIN_HEADER} -DSYMBOL=train_html
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_resource.cmake
+        DEPENDS tools/ui/train.html cmake/embed_resource.cmake VERBATIM)
+    add_executable(yue2-server tools/yue2-server.cpp "${YUE2_UI_HEADER}" "${YUE2_TRAIN_HEADER}")
     target_include_directories(yue2-server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
     target_link_libraries(yue2-server PRIVATE yue2 yue2-server-support)
 endif()
@@ -163,6 +197,32 @@ if(YUE2_BUILD_TESTS)
             target_compile_options(${target} PRIVATE -UNDEBUG)
         endif()
     endfunction()
+
+    add_executable(yue2-training-sampler-test tests/training_sampler_test.cpp)
+    target_include_directories(yue2-training-sampler-test PRIVATE src)
+    yue2_enable_test_assertions(yue2-training-sampler-test)
+    add_test(NAME yue2-training-sampler-test COMMAND yue2-training-sampler-test)
+
+    add_executable(yue2-training-sample-store-test tests/training_sample_store_test.cpp)
+    target_include_directories(yue2-training-sample-store-test PRIVATE src)
+    yue2_enable_test_assertions(yue2-training-sample-store-test)
+    add_test(NAME yue2-training-sample-store-test COMMAND yue2-training-sample-store-test)
+    add_executable(yue2-training-cache-bytes-test tests/training_cache_bytes_test.cpp)
+    target_include_directories(yue2-training-cache-bytes-test PRIVATE src)
+    target_link_libraries(yue2-training-cache-bytes-test PRIVATE ggml)
+    yue2_enable_test_assertions(yue2-training-cache-bytes-test)
+    add_test(NAME yue2-training-cache-bytes-test COMMAND yue2-training-cache-bytes-test)
+    add_executable(yue2-ar-teacher-cache-test tests/ar_teacher_cache_test.cpp)
+    target_include_directories(yue2-ar-teacher-cache-test PRIVATE src include)
+    target_link_libraries(yue2-ar-teacher-cache-test PRIVATE ggml)
+    yue2_enable_test_assertions(yue2-ar-teacher-cache-test)
+    add_test(NAME yue2-ar-teacher-cache-test COMMAND yue2-ar-teacher-cache-test)
+
+    add_executable(yue2-dora-norm-test tests/dora_norm_test.cpp)
+    target_include_directories(yue2-dora-norm-test PRIVATE src)
+    target_link_libraries(yue2-dora-norm-test PRIVATE ggml)
+    yue2_enable_test_assertions(yue2-dora-norm-test)
+    add_test(NAME yue2-dora-norm-test COMMAND yue2-dora-norm-test)
 
     add_executable(yue2-audio-test tests/audio_test.cpp)
     target_link_libraries(yue2-audio-test PRIVATE yue2)
@@ -196,6 +256,10 @@ if(YUE2_BUILD_TESTS)
     add_executable(yue2-vae-decoder-test tests/vae_decoder_test.cpp)
     target_link_libraries(yue2-vae-decoder-test PRIVATE yue2)
     yue2_enable_test_assertions(yue2-vae-decoder-test)
+
+    add_executable(yue2-vae-encoder-test tests/vae_encoder_test.cpp)
+    target_link_libraries(yue2-vae-encoder-test PRIVATE yue2)
+    yue2_enable_test_assertions(yue2-vae-encoder-test)
 
     add_executable(yue2-tokenizer-test tests/tokenizer_test.cpp)
     target_link_libraries(yue2-tokenizer-test PRIVATE yue2)
@@ -234,6 +298,14 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-server-support-test PRIVATE yue2-server-support)
     yue2_enable_test_assertions(yue2-server-support-test)
     add_test(NAME yue2-server-support-test COMMAND yue2-server-support-test)
+
+    if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(yue2-training-owner-test tests/training_owner_test.cpp)
+        target_include_directories(yue2-training-owner-test PRIVATE tools)
+        target_link_libraries(yue2-training-owner-test PRIVATE yue2-server-support)
+        yue2_enable_test_assertions(yue2-training-owner-test)
+        add_test(NAME yue2-training-owner-test COMMAND yue2-training-owner-test)
+    endif()
 
     add_executable(yue2-server-progress-test tests/server_progress_test.cpp)
     target_link_libraries(yue2-server-progress-test PRIVATE yue2 yue2-server-support)

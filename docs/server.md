@@ -7,6 +7,43 @@ completion, base64 audio. This is the same contract as `sa3-server` and the
 gary4local Python services. The server depends on nothing outside this
 repository.
 
+The web UI's **style & sampling** panel discovers style exports through `/loras`.
+The October 26 DoRA-capable experimental UI runs at **http://127.0.0.1:8008/**.
+The existing server on port 8007 remains the older binary and cannot load DoRA;
+use port 8008 for comparisons involving the new exports.
+
+| Semantic adapter | Native acoustic model | Calibrated acoustic adapter |
+| --- | --- | --- |
+| AR LoRA 150 | Koan · AR LoRA 150 + native NAR | Koan · AR LoRA 150 + NAR LoRA 400 |
+| AR LoRA 200 | Koan · AR LoRA 200 + native NAR | Koan · AR LoRA 200 + NAR LoRA 400 |
+| AR DoRA 150 | Koan · AR DoRA 150 + native NAR | Koan · AR DoRA 150 + NAR LoRA 400 |
+
+The listener-preferred candidate is **AR DoRA 150 + NAR LoRA 400**. Each NAR
+checkpoint is paired with its own frozen AR; the NAR400 files are different.
+Select **none** for a base comparison under the same caption.
+Strength 1 uses the trained factors;
+0 bypasses them. The Koan prompt button supplies the taught `koan_palette`
+caption, and selecting Koan enables instrumental controls. The instrumental
+planner companion remains enabled in models & runtime.
+The earlier AR150 presets remain available. Refreshing preserves a saved model
+preference, so select the new pair explicitly when comparing it. The DoRA
+presets require the instrumental planner companion at its trained strength.
+
+Create, direct remix and edited-score rendering each have a seed field. Use a
+fixed nonnegative seed (for example 831001); -1 chooses a new one. For the closest
+remix comparison, transcribe once, keep the edited score and prompt unchanged,
+set its render seed, and switch only the style preset. Keep strength,
+temperature, decoder steps, encoding and audio ceiling fixed. A common seed
+does not force different AR adapters to sample the same semantic tokens.
+
+The shared controls apply to create, remix, score continuation and edited-score
+rendering. Temperature, decoder steps and the optional audio ceiling are under
+sampling controls. A ceiling of 0 preserves automatic stopping; a positive
+ceiling can cut a phrase and is useful for short experiments. Style/sampling
+choices persist in the browser. The local experimental server is launched with
+the `outputs/koan-ar-dora-webui-2026-10-26/runtime/yue2-server.exe` binary on
+port 8008. The ordinary CLI default remains 8007.
+
 ```bash
 yue2-server --models-dir models --encoding Q4_K_M
 # --host 127.0.0.1  --port 8007  --device cuda  --keep-models  --force-unload
@@ -322,6 +359,14 @@ dragging even when the user does not want generated audio.
 - **`loras`** entries name an adapter in `--adapters-dir` or give a `path`.
   Adapters are bound when the model loads, so a different set reloads it.
   Omitting `loras` uses the `--lora` defaults.
+- **`render_loras`** uses the same `{name|path, strength}` entries, but adds
+  them only for semantic generation and acoustic rendering. `/plan` keeps the
+  common/instrumental stack; style weights never enter symbolic planning.
+  The pipeline releases one stage's model before loading the other, and keeps
+  the active set between calls when residency is enabled. Render metadata
+  records the selected adapters, strengths, temperature and decoder steps.
+  Legacy `loras` still applies to all stages. Audio `/continue` rejects
+  `render_loras`; use score continuation to experiment with these styles.
 - **`--instrumental-lora`** (or `YUE2_INSTRUMENTAL_LORA`) names an adapter
   automatically stacked whenever a request sets `instrumental: true`. This is
   intended for score-first instrumental AR adapters: the server forces full
@@ -597,6 +642,12 @@ curl -s "localhost:8007/poll_status/$sid?consume=1" | jq -r .audio_data | base64
 ```
 
 ## Notes
+
+The embedded [style trainer](training.md) is at `/training`. Configure its optional
+preprocessing runtime with `--training-config FILE`. Training reserves this
+server's device, unloads resident inference models, and rejects new compute
+requests until its worker exits. A completed run can publish a paired style and
+caption pool into the existing `/loras` catalog.
 
 - The server binds `127.0.0.1` by default and warns when bound elsewhere:
   anyone who can reach the port can submit jobs.

@@ -181,7 +181,12 @@ Things worth knowing on a Mac:
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Experimental native NAR LoRA trainer and checkpoint results](docs/nar-training.md)
+- [Experimental semantic AR LoRA capacity probe and target audit](docs/ar-training.md)
+- [Future generation and trainer control boundaries](docs/yue2-adapter-controls.md)
 - [Server and web API](docs/server.md)
+- [Local two-stage style trainer](docs/training.md)
+- [Training development history](docs/training-history.md)
 - [C/C++ embedding](docs/embedding.md)
 - [C ABI V1 contract](docs/C_ABI_V1.md)
 - [GGUF naming, conversion, and quantization](docs/distribution.md)

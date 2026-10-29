@@ -17,7 +17,9 @@
 #include "server/policy.h"
 #include "server/prompts.h"
 #include "server/progress.h"
+#include "server/training.h"
 #include "yue2_ui_html.h"
+#include "yue2_train_html.h"
 
 #include <algorithm>
 #include <atomic>
@@ -119,6 +121,7 @@ std::string random_session_id() {
 // Configuration
 
 struct Configuration {
+    fs::path training_config;
     yue2::server::HttpServerOptions http;
     fs::path models_dir = "models";
     fs::path adapters_dir;
@@ -263,6 +266,7 @@ Configuration parse_configuration(int argc, char ** argv) {
         }
     }
     result.generation_model = option(argc, argv, "--model");
+    result.training_config = option(argc, argv, "--training-config");
     result.vae = option(argc, argv, "--vae");
     result.tokenizer = option(argc, argv, "--tokenizer");
     result.transcription_model = option(argc, argv, "--transcription-model");
@@ -482,6 +486,16 @@ std::vector<std::pair<std::string, fs::path>> list_adapters(const fs::path & dir
     return output;
 }
 
+std::string loras_json(const std::vector<yue2::LoraAdapterSpec> & adapters) {
+    std::string output = "[";
+    for (const auto & spec : adapters) {
+        if (output.size() > 1) output += ',';
+        output += "{\"name\":" + json::quote(adapter_name(fs::path(spec.path).filename().string())) +
+            ",\"path\":" + json_path(spec.path) + ",\"strength\":" + real(spec.strength) + "}";
+    }
+    return output + "]";
+}
+
 fs::path resolve_adapter(const Configuration & configuration, const std::string & reference) {
     std::error_code error;
     const fs::path candidate(reference);
@@ -667,6 +681,7 @@ struct Job {
     yue2::SongRequest song;
     yue2::GenerationRunOptions run;
     std::vector<yue2::LoraAdapterSpec> loras;
+    std::vector<yue2::LoraAdapterSpec> render_loras;
     yue2::audio::MonoAudio input;
     yue2::TranscriptionOptions transcription;
     std::uint32_t continuation_bars = 0;
@@ -749,7 +764,7 @@ void append_midi_json(std::string & body, const Job & job) {
 class ServerState {
 public:
     explicit ServerState(Configuration configuration)
-        : configuration_(std::move(configuration)), worker_([this]() { work(); }) {}
+        : configuration_(std::move(configuration)), training_(configuration_.training_config), worker_([this]() { work(); }) {}
 
     ~ServerState() {
         {
@@ -770,6 +785,22 @@ public:
             const bool get = request.method == "GET";
             const bool post = request.method == "POST";
             if (path == "/" || path == "/index.html") return get ? ui() : not_allowed();
+            if (path == "/training" || path == "/training/") {
+                if (!get) return not_allowed();
+                HttpResponse response; response.content_type = "text/html; charset=utf-8";
+                response.body.assign(reinterpret_cast<const char *>(yue2::ui::train_html), yue2::ui::train_html_size);
+                response.headers.emplace("Cache-Control", "no-cache"); return response;
+            }
+            if (starts_with(path, "/training/api")) {
+                std::lock_guard<std::mutex> admission(admission_mutex_);
+                return training_.handle(request, [this]() {
+                    std::lock_guard<std::mutex> jobs(jobs_mutex_);
+                    if (running_ || !queue_.empty()) return false;
+                    std::unique_lock<std::mutex> models(models_mutex_, std::try_to_lock);
+                    if (!models.owns_lock()) return false;
+                    release_models(); return true;
+                });
+            }
             if (path == "/health") return get ? health() : not_allowed();
             if (path == "/props") return get ? props() : not_allowed();
             if (path == "/loras") return get ? loras() : not_allowed();
@@ -851,6 +882,7 @@ private:
             queued = queue_.size();
         }
         const auto device = configuration_.device.empty() ? environment("YUE2_DEVICE") : configuration_.device;
+        busy = busy || training_.active();
         return yue2::server::json_response(
             "{\"status\":\"ok\",\"service\":\"yue2\",\"api_version\":1,\"version\":" + json::quote(yue2::version()) +
             ",\"device\":" + json::quote(device.empty() ? "auto" : device) +
@@ -889,7 +921,7 @@ private:
             "{\"success\":true,\"service\":\"yue2\",\"api_version\":1,\"version\":" +
             json::quote(yue2::version()) +
             ",\"capabilities\":{\"plan\":true,\"generate\":true,\"transcribe\":true,\"cover\":true,\"continue\":true,"
-            "\"planning_controls\":true,\"instrumental\":true,"
+            "\"planning_controls\":true,\"render_loras\":true,\"instrumental\":true,"
             "\"instrumental_adapter\":" + json_bool(!configuration_.instrumental_loras.empty()) + ","
             "\"continuation_adapter\":" + json_bool(!configuration_.continuation_loras.empty()) + ","
             "\"instrumental_best_effort\":" + json_bool(configuration_.instrumental_loras.empty()) + ","
@@ -956,13 +988,21 @@ private:
         for (const auto & [name, path] : list_adapters(configuration_.adapters_dir)) {
             if (index) body.push_back(',');
             body += "{\"index\":" + std::to_string(index++) + ",\"name\":" + json::quote(name) +
-                ",\"path\":" + json_path(path) + "}";
+                ",\"path\":" + json_path(path);
+            auto metadata = path; metadata.replace_extension(".training.json");
+            if (fs::exists(metadata)) {
+                try { body += ",\"training\":" + json::stringify(json::parse(yue2::server::training::read(metadata))); }
+                catch (const std::exception &) { /* An incomplete sidecar does not hide legacy adapters. */ }
+            }
+            body += "}";
         }
         body += "]}";
         return yue2::server::json_response(std::move(body));
     }
 
     HttpResponse submit(const HttpRequest & request, JobKind kind) {
+        std::lock_guard<std::mutex> admission(admission_mutex_);
+        if (training_.active()) return failure(409, "training owns the device; stop it or wait for completion");
         if (header(request, "content-type").rfind("application/json", 0) != 0) {
             return failure(415, "send application/json");
         }
@@ -1207,6 +1247,29 @@ private:
         job.audio_format = format != "auto" ? format
             : job.inbound_format.empty() ? "wav" : job.inbound_format;
         job.loras = parse_loras(root);
+        job.render_loras = parse_loras(root, "render_loras");
+        // A registered style carries a required frozen companion. Resolve it
+        // from the catalog even when styles live in a separate adapter folder;
+        // it belongs before the style and also supplies common-only planning.
+        for (const auto &style : job.render_loras) {
+            fs::path sidecar(style.path); sidecar.replace_extension(".training.json");
+            if (!fs::exists(sidecar)) continue;
+            const auto metadata=json::parse(yue2::server::training::read(sidecar));
+            if (json::string(metadata,"format")!="yue2-trained-style-v1") continue;
+            if (!song.lyrics.empty()) throw std::invalid_argument("this trained style requires an instrumental request");
+            if (!json::boolean(root,"use_instrumental_adapter",true))
+                throw std::invalid_argument("this trained style requires its frozen instrumental companion");
+            const auto path=yue2::server::training::catalog_companion(metadata,configuration_.models_dir,configuration_.adapters_dir);
+            if (job.loras.empty()) job.loras.push_back({path.string(),1});
+            else if (!fs::equivalent(job.loras.front().path,path) || job.loras.front().strength!=1)
+                throw std::invalid_argument("trained style requires its companion as the first fixed adapter");
+            song.instrumental=true; song.symbolic_mode=yue2::SymbolicMode::full;
+            job.instrumental_adapter=true;
+            if (job.kind==JobKind::cover) job.transcription.melody_only=false;
+        }
+        if (job.kind == JobKind::continue_audio && !job.render_loras.empty()) {
+            throw std::invalid_argument("style render_loras require score continuation, not real-audio continuation");
+        }
         if (job.kind == JobKind::continue_audio) {
             if (!json::boolean(root, "use_continuation_adapter", true)) {
                 throw std::invalid_argument(
@@ -1242,17 +1305,20 @@ private:
                 const auto duplicate = std::find_if(
                     job.loras.begin(), job.loras.end(),
                     [&configured](const yue2::LoraAdapterSpec & existing) {
-                        return existing.path == configured.path;
+                        return fs::equivalent(existing.path, configured.path);
                     });
+                if (job.instrumental_adapter && duplicate != job.loras.end() && duplicate->strength != configured.strength)
+                    throw std::invalid_argument("configured instrumental strength differs from the trained style's required companion");
                 if (duplicate == job.loras.end()) job.loras.push_back(std::move(configured));
             }
             job.instrumental_adapter = true;
         }
     }
 
-    std::vector<yue2::LoraAdapterSpec> parse_loras(const json::Value & root) {
-        const auto * value = root.find("loras");
-        if (!value || value->type == json::Type::null) return configuration_.loras;
+    std::vector<yue2::LoraAdapterSpec> parse_loras(const json::Value & root, const char * key = "loras") {
+        const auto * value = root.find(key);
+        if (!value || value->type == json::Type::null)
+            return std::string(key) == "loras" ? configuration_.loras : std::vector<yue2::LoraAdapterSpec>{};
         if (value->type != json::Type::array) throw std::invalid_argument("loras must be an array");
         std::vector<yue2::LoraAdapterSpec> output;
         for (const auto & item : value->array) {
@@ -1334,6 +1400,7 @@ private:
                     ",\"encoding\":" + json::quote(job.encoding) +
                     ",\"instrumental_adapter\":" + json_bool(job.instrumental_adapter) +
                     ",\"continuation_adapter\":" + json_bool(job.continuation_adapter) +
+                    ",\"render_loras\":[]" +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) + "}";
                 append_midi_json(body, job);
             } else {
@@ -1357,6 +1424,9 @@ private:
                     ",\"encoding\":" + json::quote(job.encoding) +
                     ",\"instrumental_adapter\":" + json_bool(job.instrumental_adapter) +
                     ",\"continuation_adapter\":" + json_bool(job.continuation_adapter) +
+                    ",\"render_loras\":" + loras_json(job.render_loras) +
+                    ",\"temperature\":" + real(job.run.generation.semantic.temperature) +
+                    ",\"ode_steps\":" + std::to_string(job.run.flow.ode_steps) +
                     ",\"abc_truncated\":" + json_bool(job.abc_truncated) +
                     ",\"semantic_truncated\":" + json_bool(job.semantic_truncated) + "}";
                 append_midi_json(body, job);
@@ -1678,7 +1748,7 @@ private:
         const int base = job.kind == JobKind::cover ? 15 :
             (job.kind == JobKind::continue_audio ? 25 : 0);
         update(job, "generating", "load", base, 0, 0);
-        load_generator(job.loras, job.encoding);
+        load_generator(job.loras, job.encoding, job.render_loras);
 
         yue2::GenerationControl control;
         control.should_cancel = [&job]() { return job.cancel.load(); };
@@ -1736,7 +1806,7 @@ private:
 
     void plan(Job & job) {
         update(job, "planning", "load", 0, 0, 0);
-        load_generator(job.loras, job.encoding);
+        load_generator(job.loras, job.encoding, job.render_loras);
 
         yue2::GenerationControl control;
         control.should_cancel = [&job]() { return job.cancel.load(); };
@@ -1766,8 +1836,15 @@ private:
 
     void load_generator(
         const std::vector<yue2::LoraAdapterSpec> & loras,
-        const std::string & encoding) {
+        const std::string & encoding,
+        const std::vector<yue2::LoraAdapterSpec> & render_loras = {}) {
+        const auto same_render = render_loras.size() == generator_render_loras_.size() &&
+            std::equal(render_loras.begin(), render_loras.end(), generator_render_loras_.begin(),
+                [](const yue2::LoraAdapterSpec & a, const yue2::LoraAdapterSpec & b) {
+                    return a.path == b.path && a.strength == b.strength;
+                });
         const auto same = generator_ && loras.size() == generator_loras_.size() &&
+            same_render &&
             encoding == generator_encoding_ &&
             std::equal(loras.begin(), loras.end(), generator_loras_.begin(),
                 [](const yue2::LoraAdapterSpec & a, const yue2::LoraAdapterSpec & b) {
@@ -1782,10 +1859,12 @@ private:
         options.autoregressive.device = configuration_.device;
         options.autoregressive.threads = configuration_.threads;
         options.autoregressive.lora_adapters = loras;
+        options.render_lora_adapters = render_loras;
         options.vae.decode_core_frames = configuration_.vae_tile_frames;
         generator_ = std::make_unique<yue2::GenerationPipeline>(
             paths.model.string(), paths.vae.string(), paths.tokenizer.string(), options);
         generator_loras_ = loras;
+        generator_render_loras_ = render_loras;
         generator_encoding_ = encoding;
         generator_loaded_.store(true);
     }
@@ -1839,6 +1918,8 @@ private:
     }
 
     Configuration configuration_;
+    yue2::server::training::Manager training_;
+    std::mutex admission_mutex_;
 
     std::mutex jobs_mutex_;
     std::condition_variable jobs_ready_;
@@ -1853,6 +1934,7 @@ private:
     std::unique_ptr<yue2::Transcriber> transcriber_;
     std::unique_ptr<yue2::GenerationPipeline> generator_;
     std::vector<yue2::LoraAdapterSpec> generator_loras_;
+    std::vector<yue2::LoraAdapterSpec> generator_render_loras_;
     std::string generator_encoding_;
     std::atomic<bool> transcriber_loaded_{false};
     std::atomic<bool> generator_loaded_{false};

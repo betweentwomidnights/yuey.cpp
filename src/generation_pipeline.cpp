@@ -147,10 +147,16 @@ public:
 
     // The generator, reloaded if a previous frugal call freed it. Adapters
     // are part of the stored options, so a reload binds the same ones.
-    AutoregressiveModel & ar() {
+    AutoregressiveModel & ar(bool render = false) {
+        render = render && !options.render_lora_adapters.empty();
+        if (autoregressive && render != rendering_adapters_loaded) autoregressive.reset();
         if (!autoregressive) {
+            auto runtime = options.autoregressive;
+            if (render) runtime.lora_adapters.insert(runtime.lora_adapters.end(),
+                options.render_lora_adapters.begin(), options.render_lora_adapters.end());
             autoregressive = std::make_unique<AutoregressiveModel>(
-                model_path, options.autoregressive);
+                model_path, runtime);
+            rendering_adapters_loaded = render;
         }
         return *autoregressive;
     }
@@ -519,7 +525,7 @@ public:
         AutoregressiveResult semantic;
         if (guidance == 1.0F) {
             StageTimer semantic_timer("semantic");
-            semantic = ar().generate(
+            semantic = ar(true).generate(
                 positive, semantic_sampling,
                 AutoregressivePhase::semantic, effective.seed,
                 ar_control(control, GenerationStage::semantic));
@@ -544,7 +550,7 @@ public:
                 result.semantic_budget = semantic_sampling.max_tokens;
             }
             StageTimer semantic_timer("semantic");
-            semantic = ar().generate_cfg(
+            semantic = ar(true).generate_cfg(
                 positive, negative, semantic_sampling,
                 AutoregressivePhase::semantic, guidance, effective.seed,
                 ar_control(control, GenerationStage::semantic));
@@ -576,7 +582,7 @@ public:
         }
         {
             StageTimer flow_timer("flow");
-            result.latents = ar().synthesize_latents(
+            result.latents = ar(true).synthesize_latents(
                 generation_prefix, result.semantic_codec_ids, effective.seed, run_options.flow,
                 ar_control(control, GenerationStage::flow));
         }
@@ -601,6 +607,7 @@ public:
     TextTokenizer tokenizer;
     std::string model_path;
     std::unique_ptr<AutoregressiveModel> autoregressive;
+    bool rendering_adapters_loaded = false;
     std::string vae_path;
     VaeRuntimeOptions vae_options;
     std::unique_ptr<VaeDecoder> vae;

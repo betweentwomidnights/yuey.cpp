@@ -51,6 +51,7 @@ void usage(const char * argv0) {
         << "  --bpm N --key KEY     Build a trusted planning prefix (for example --key \"C# minor\")\n"
         << "  --meter N/D           Planning meter when --bpm/--key are used (default 4/4)\n"
         << "  --score-output PATH   Write the used or generated ABC score\n"
+        << "  --semantic-output PATH  Write raw int32 codec IDs for matched A/B checks\n"
         << "  --seed N              Sampling and flow-noise seed (default 831001)\n"
         << "  --guidance N          Classifier-free guidance scale\n"
         << "  --abc-min-tokens N    ABC minimum before stop (default 32)\n"
@@ -453,6 +454,15 @@ int main(int argc, char ** argv) {
             return 0;
         }
         const auto result = pipeline.generate(request, run);
+        const auto semantic_output=value_after(argc,argv,"--semantic-output",false);
+        if (!semantic_output.empty()) {
+            const auto parent=std::filesystem::path(semantic_output).parent_path();
+            if (!parent.empty()) std::filesystem::create_directories(parent);
+            std::ofstream ids(semantic_output,std::ios::binary);
+            if (!ids.write(reinterpret_cast<const char *>(result.semantic_codec_ids.data()),
+                static_cast<std::streamsize>(result.semantic_codec_ids.size()*sizeof(std::int32_t))))
+                throw std::runtime_error("could not write semantic IDs");
+        }
         yue2::audio::write_wav_float(
             output, result.audio.interleaved_samples,
             result.audio.sample_rate, result.audio.channels);

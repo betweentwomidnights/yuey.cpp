@@ -1,0 +1,282 @@
+# Training development history
+
+This page condenses the dated reports written while the two-stage trainer was
+developed (2026-10-22 to 2026-10-28). It records what was tried, what was
+measured and what each result decided. For current behavior, see
+[training](training.md), [AR training](ar-training.md) and
+[NAR training](nar-training.md).
+
+All measurements are from one Windows machine: RTX 5070 Laptop GPU (8 GB),
+64 GB of host RAM and 24 logical CPUs, with `GGML_CUDA_TF32=0`. Listening
+results are the user's own judgments on the cases presented. None of them is a
+broad-seed or long-form pass. Raw commands, hashes, audio and per-run JSON
+records stay in the local, git-ignored `outputs/` folder named for each
+experiment.
+
+## Feasibility investigation (2026-10-22)
+
+- **Decision:** build a NAR-only acoustic LoRA trainer first. The AR expert,
+  MERT, semantic head and VAE stay frozen.
+- **Why:** YuE2's acoustic expert reads the AR expert's keys and values, so
+  training it is acoustic-expert training rather than a standalone DiT. No
+  public turnkey native LoRA trainer existed.
+- **GGML fix:** the gradient probe exposed incorrect CONCAT gradients in a NAR
+  attention block. The fix became
+  [ggml PR #18](https://github.com/betweentwomidnights/ggml/pull/18).
+
+## NAR pilot listening review (2026-10-24)
+
+- **Setup:** a blind A/B of the four-track step-48 NAR adapter against fixed
+  v9.
+- **Result:** the adapter won six short clips clearly. The other two were near
+  ties leaning toward the adapter, and the long clips were close.
+- **Read as:** a fidelity gain, chiefly less high-frequency degradation. It is
+  not evidence of style transfer.
+
+## Expanded NAR pilot (2026-10-24)
+
+- **Run:** 192 updates over 12 training tracks. Sampling visited 46 of 48
+  windows, covering 471 s of distinct target audio.
+- **Losses:** training and validation loss both fell.
+- **Listening:** outputs stayed musically very similar; the main change was
+  less high-frequency degradation.
+- **Clarified objective:** the user then defined the real goal. That is a
+  learned dataset style that carries over to new scores, unrelated source audio
+  and standard generation, with no dataset references at inference. See the
+  [style-transfer objective](yue2-style-transfer-objective.md).
+
+## GGML 0.27 migration (2026-10-24)
+
+The trainer moved from GGML `c7491b1` (0.17 plus the CONCAT fix) to
+`b77ae790` (0.27,
+[ggml PR #19](https://github.com/betweentwomidnights/ggml/pull/19)). The new
+version reproduced the old one exactly:
+
+- CONCAT backward passes on CPU and CUDA.
+- On CUDA, these are byte-identical across revisions:
+  - known-token predictions and gradients;
+  - AdamW updates, including optimizer and RNG state;
+  - four-update stochastic runs;
+  - resumes, which also match uninterrupted runs.
+- Actual ABC remixes are byte-identical.
+
+## AI Toolkit and sv-billie reviews (2026-10-25)
+
+- **AI Toolkit (read-only review of ostris/ai-toolkit `73ebae1`):** our pilot
+  recipe differed materially from AI Toolkit's. Raising the rank or copying its
+  950 updates would not be enough on its own. The higher priorities are label
+  validation and wider data and context coverage.
+- **sv-billie artist adapter (Hub revision `94fe9fb`):** it adapts both the AR
+  and NAR experts. That supports a restrained AR adaptation paired with a
+  matched acoustic adaptation.
+- **Product policy:** the user accepted learned trigger words and descriptive
+  style prompts as valid conditioning. Neutral captions are kept only as a
+  diagnostic.
+
+## NAR-only style gate failed (2026-10-25)
+
+- **Test:** existing NAR adapters on fresh content with neutral captions:
+  - a user source recording;
+  - two independently authored scores;
+  - standard generation.
+- **Verdict:** the user reported A, B and C as essentially identical, and none
+  matched the Koan style.
+- **Loading checked:** all 196 projections were bound and every B factor was
+  nonzero. Training and inference apply the same branch.
+- **Decision:** stop scaling a recipe whose falling reconstruction loss does
+  not become style. Train the semantic AR expert.
+
+## First Koan AR pilot and score audit (2026-10-25)
+
+- **Pilot:** two tracks of real Koan audio.
+- **Result:** step 32 picked up the Koan palette and kept the supplied chords,
+  with some degradation. By step 128 much of the melody was lost.
+- **Audit:** existing windows carried very sparse note supervision; some
+  training windows had no notes at all. This is a plausible contributor to
+  content drift, not a proven sole cause.
+- **Decision:** keep step 32 as the reference, and select later windows for
+  note coverage.
+
+## Prompted rank-32 Koan AR/NAR (2026-10-25)
+
+- **Data:** 18 windows of 256 frames from 12 tracks (184 s), plus six held-out
+  tracks. Training windows needed at least 8 notes, 3 pitches and 25% note
+  coverage.
+- **AR:** selected step 150. Held-out semantic CE fell 1.47%, while neutral
+  retention rose slightly.
+- **NAR:** selected step 400. Held-out flow MSE fell 21.1%.
+- **Listening:** AR rank-32 step 150 balanced palette and melody better than
+  rank-8 step 32. After broader listening, AR150 with NAR400 had the highest
+  quality.
+
+## Toolkit follow-up and AR200 (2026-10-25)
+
+- **Kept:** the v9 semantic head (preferred over v4 in matched passages) and
+  uniform noise sampling (preferred in a blind audition).
+- **AR200:** a scored-only expansion with 32 windows of 20.48 s and per-track
+  captions. It selected step 200 by held-out CE.
+- **Against AR150:** on identical examples, AR200 had 0.98% lower held-out CE
+  and slightly lower retention CE.
+- **Listening:** AR200 picks up the triplets and sounds great.
+
+## AR200 NAR calibration (2026-10-26)
+
+- **Setup:** NAR400 was calibrated against frozen AR200 conditioning.
+- **Result:** real held-out flow MSE fell 19.0%, while neutral retention rose
+  2.1%.
+- **Listening:** the calibrated NAR400 was rated better than native NAR. This
+  set the pattern: freeze the chosen AR first, then calibrate NAR against it.
+
+## DoRA comparisons (2026-10-26)
+
+| Comparison | Losses | Listening |
+| --- | --- | --- |
+| NAR DoRA vs NAR LoRA, 400 updates, same AR150 | Tied (1.07932 vs 1.07936) | About the same at 100 and 400 updates |
+| AR DoRA vs AR LoRA, original AR150 recipe | Both select step 150; CE tied | "AR DoRA is better" |
+| NAR LoRA400 calibrated against AR DoRA150 | Held-out MSE fell | Calibrated pair added to the web UI |
+
+- **Implementation:** DoRA adds output magnitudes and uses SA3-style full
+  normalization gradients. Optimizer state carries a strict guard on the
+  adapter family.
+- **Exports:** generation GGUFs include `.dora_magnitude` and
+  `.dora_scale`.
+- **Bug fixed:** cache preparation for BF16 DoRA hit CUDA VMM allocation
+  errors on 8 GB, so it ran on CPU.
+
+## Full-corpus Koan training (2026-10-26 to 27)
+
+- **Data audit:** the earlier adapters had trained on only 3 to 11 minutes of
+  unique audio.
+- **Full corpus:** 42 recordings (87.5 min), with 36 for training and 6
+  recordings held out. That gave 157 training and 38 validation windows of 30
+  s, covering 98.6% of the source audio. Scores were re-engraved from absolute
+  note times on a 12-tick grid, and a native MIDI audit of 14,248 notes
+  matched.
+- **Recipe:** rank 32, LR 2e-5, KL 0.2 and 800 updates with recording-balanced
+  sampling. Both LoRA and DoRA select step 500, after which validation CE
+  rises.
+- **Listening:** DoRA500 was preferred, and its NAR LoRA400 calibration beat
+  native NAR.
+- **Memory profile** (30 s windows, rank 32):
+
+  | Family | Peak dedicated | Seconds per update |
+  | --- | ---: | ---: |
+  | LoRA | 6,900 MiB | 3.4 |
+  | DoRA | 7,728 MiB | 3.85 |
+
+  60 s windows spilled into shared memory and slowed to 42–100 s per update,
+  so 30 s became the default.
+
+## Windows GPU-residency slowdown (2026-10-27)
+
+- **Symptom:** in the `kev-cuda-ooops` UI run, updates took 86 s while
+  another process (ace-server) held GPU memory.
+- **Unloading was not enough:** the same trainer process stayed slow after the
+  other process freed its memory.
+- **Fresh process:** at the same shape it ran at 3.6 s per update.
+- **Diagnosis:** WDDM residency, with about 96 MiB moved from dedicated to
+  shared memory.
+- **Guidance:** after freeing GPU memory, resume the run rather than
+  continuing the slow process. Cooperative stop and resume preserve the
+  optimizer and sampler state.
+
+## Native VAE encoder (2026-10-27)
+
+- **Change:** VAE targets now use the C++ `VaeEncoder` and the
+  `yue2-vae-encode` batch tool, which removes PyTorch from the production
+  trainer.
+- **Accuracy against the F32 reference** (relative latent L2):
+
+  | Backend | Error |
+  | --- | ---: |
+  | CUDA | 6.95e-6 |
+  | Vulkan | 7.52e-6 |
+  | Full native reader and resampler path | 7.03e-6 |
+
+- **Tiles:** 128 latent frames each, with 16 frames of context on both sides.
+
+## Conditioning-cache optimization (2026-10-27)
+
+- **Problem:** NAR conditioning caches loaded inference components they never
+  used.
+- **Fix:** an AR-only CUDA path for the worst-case 1,882-token example.
+
+  | Measure | Before | After |
+  | --- | ---: | ---: |
+  | Time | 6.3 s | 2.6 s |
+  | Dedicated GPU memory | 7,738 MiB | 4,318 MiB |
+
+- **Cache format:** compact F16 caches halve disk use (412 → 206 MiB per
+  window). F32 upcasts are lossless.
+- **Same day:** the first web workflow shipped.
+
+## Recipes 2 and 3: preflight and fingerprints (2026-10-27)
+
+On the 166-window laptop corpus (26 GiB of conditioning), startup scanned every
+cache twice and ran 498 evaluation forward passes before the first update.
+
+- **Recipe 2:**
+  - preflight reads headers only (0.09 s);
+  - fitting does one full scan;
+  - new runs evaluate the held-out split by default.
+- **Recipe 3:**
+  - fingerprints the encoded cache bytes (`bytes-v2`, FNV-1a 64-bit) instead
+    of decoded floats, so the full audit fell from 183 s to 57 s;
+  - SHA-256 still covers every byte in the coordinator, with no trust based
+    only on timestamps;
+  - older runs keep their recipe and fingerprint.
+
+## Host-overhead reduction (2026-10-28)
+
+These changes removed host work around each update with no change to numerics.
+CPU and CUDA adapters, optimizer state and resumes are byte-identical before
+and after.
+
+| Item | Before | After |
+| --- | ---: | ---: |
+| NAR seconds per update (median) | 2.12 | 1.67 |
+| AR seconds per update (median) | 3.66 | 3.35 |
+| NAR inputs: F16 K/V uploaded without host upcast | 0.184 s | 0.052 s |
+| NAR cache load for a new window: prefetch | 0.34 s | 0.01 s |
+| AdamW and finite/norm scans: threaded | 0.27 s | 0.08 s |
+| `bytes-v2` audit, 166 caches, warm | 34.5 s | 6.4 s |
+| Coordinator SHA-256, same caches, warm | 13.3 s | 2.7 s |
+
+## Recipe 4: streamed AR teacher cache (2026-10-28)
+
+- **Problem:** the AR fitter held every window's teacher distribution in RAM,
+  98 MB per 30 s window and 14.4 GiB for the full Koan corpus. It also
+  recomputed them on every resume.
+- **Change:** recipe 4 prepares the teachers once into immutable GGUF files
+  indexed by SHA-256, then streams them during fitting.
+- **Peak host memory:**
+
+  | Measure | Before | After |
+  | --- | ---: | ---: |
+  | Working set | 15.53 GiB | 3.09 GiB |
+  | Private bytes | 22.50 GiB | 8.19 GiB |
+
+- **Resumes** skip teacher preparation.
+- **Parity:** optimizer tensors, adapters, sampler state and losses are
+  bit-identical to the in-memory path on CPU and CUDA.
+- **Compatibility:** recipes 1 to 3 keep the in-memory path.
+
+## Disk retention (2026-10-28)
+
+- **Problem:** a 38-recording run with 30 s windows peaked at about 50 GB of
+  disk. That was the NAR conditioning (26.1 GiB), the AR teachers (12.6 GiB)
+  and every checkpoint (about 9.5 GB), all kept until manually deleted.
+- **Change, with numerics unchanged:**
+  - fits keep only step zero, the heldout-best and the latest resumable
+    checkpoint;
+  - the teacher cache is released after AR selection, before NAR
+    conditioning;
+  - publishing releases caches, optimizer states, other checkpoints, probe
+    diagnostics and audio slices, unless `keep_caches` is set;
+  - training refuses to start when the estimated peak would not fit.
+- **Found during verification:** on Windows, a live `GGUFReader`
+  memory-maps its file and blocks deletion, so state files are now read
+  through a scoped helper.
+- **Not yet done** (these trade training time or VRAM for disk): an
+  on-the-fly teacher, a rolling conditioning cache with a disk budget, and
+  in-process conditioning on GPUs large enough to hold both experts.

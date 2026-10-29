@@ -350,6 +350,11 @@ $coreDir = Stage "core" @(
     "yue2-server.exe",
     "yue2-generate.exe",
     "yue2-transcribe.exe",
+    "yue2-ar-train.exe",
+    "yue2-train.exe",
+    "yue2-score.exe",
+    "yue2-semantic-tokenize.exe",
+    "yue2-vae-encode.exe",
     "yue2.dll",
     "ggml.dll",
     "ggml-base.dll",
@@ -409,6 +414,17 @@ foreach ($part in $coreDir, $cudaDir, $vulkanDir, $cudartDir) {
 # the zip is all anyone needs.
 Copy-Item (Join-Path $root "ci\standalone-README.txt") (Join-Path $standaloneDir "README.txt")
 Copy-Item (Join-Path $root "models.cmd") $standaloneDir
+# Training is an optional Python preprocessing add-on. The native UI remains
+# embedded; setup_training.py resolves an explicit local runtime configuration.
+$trainingTools = Join-Path $standaloneDir "tools"
+New-Item -ItemType Directory -Force $trainingTools | Out-Null
+foreach ($file in @("setup_training.py", "requirements-training.txt", "training_workflow.py",
+    "publish_training_adapter.py", "prepare_ar_dataset.py", "prepare_nar_targets.py",
+    "prepare_nar_dataset.py", "ar_dataset.py",
+    "train_ar_run.py", "train_nar_run.py", "training_provenance.py")) {
+    Copy-Item (Join-Path $root "tools\$file") $trainingTools
+}
+Copy-Item (Join-Path $root "docs\training.md") (Join-Path $standaloneDir "TRAINING.md")
 
 # --- zip and checksum -------------------------------------------------------
 
