@@ -1,6 +1,7 @@
 #include "training/fitting.h"
 
 #include "training/dataset.h"
+#include "training/fitting_detail.h"
 #include "training/gguf_file.h"
 #include "training/preparation.h"
 #include "training/preparation_detail.h"
@@ -25,188 +26,7 @@
 namespace yue2::training {
 namespace fs = std::filesystem;
 using namespace detail;
-namespace {
-
-using Clock = std::chrono::steady_clock;
-
-double seconds_since(Clock::time_point start) { return std::chrono::duration<double>(Clock::now() - start).count(); }
-
-// str() of a JSON value as Python formats a command-line argument.
-std::string py_str(const json::Value & value) {
-    switch (value.type) {
-        case json::Type::number:
-            return json::is_integer(value) ? value.text : json::python_repr(std::strtod(value.text.c_str(), nullptr));
-        case json::Type::boolean: return value.boolean ? "True" : "False";
-        case json::Type::string: return value.text;
-        case json::Type::null: return "None";
-        default: return json::stringify(value);
-    }
-}
-
-std::string py_str(long long value) { return std::to_string(value); }
-
-std::vector<json::Value> eligible(const json::Value & data) {
-    std::vector<json::Value> rows;
-    for (const auto & row : member(data, "rows").array) if (truthy(get(row, "eligible", B(true)))) rows.push_back(row);
-    return rows;
-}
-
-std::vector<json::Value> with_split(const std::vector<json::Value> & rows, const char * split) {
-    std::vector<json::Value> output;
-    for (const auto & row : rows) if (text(row, "split") == split) output.push_back(row);
-    return output;
-}
-
-// The lines a growing log has completed since the last read.
-class LogLines {
-public:
-    explicit LogLines(fs::path log) : log_(std::move(log)) {}
-    std::vector<std::string> read() {
-        std::ifstream stream(log_, std::ios::binary);
-        stream.seekg(static_cast<std::streamoff>(offset_));
-        std::string text{std::istreambuf_iterator<char>(stream), {}};
-        offset_ += text.size();
-        // Universal newlines, like Python's text mode.
-        std::string normalized = pending_;
-        for (std::size_t i = 0; i < text.size(); ++i) {
-            if (text[i] == '\r') {
-                if (i + 1 < text.size() && text[i + 1] == '\n') continue;
-                normalized.push_back('\n');
-            } else {
-                normalized.push_back(text[i]);
-            }
-        }
-        std::vector<std::string> lines;
-        std::size_t start = 0;
-        for (std::size_t at; (at = normalized.find('\n', start)) != std::string::npos; start = at + 1) {
-            lines.push_back(normalized.substr(start, at - start));
-        }
-        pending_ = normalized.substr(start);
-        return lines;
-    }
-
-private:
-    fs::path log_;
-    std::size_t offset_ = 0;
-    std::string pending_;
-};
-
-std::string trim(const std::string & text) { return strip(text); }
-
-// train_ar_run.NativeProgress: startup separately from optimizer updates.
-class ArProgress {
-public:
-    ArProgress(const fs::path & log, long long resumed, long long eval_every, std::optional<long long> target)
-        : lines_(log), eval_every_(eval_every), target_(target) {
-        values_ = make({{"activity", S("Loading native trainer")}, {"step", I(resumed)}});
-    }
-    json::Value & values() { return values_; }
-    json::Value read() {
-        static const std::regex teacher(R"(prepare_teacher=(\d+)/(\d+))"), cached(R"(teacher_cache=(\d+)/(\d+))");
-        for (const auto & line : lines_.read()) {
-            const auto before = values_.object["activity"].text;
-            const auto stripped = trim(line);
-            std::smatch match;
-            if (std::regex_match(stripped, match, teacher) || std::regex_match(stripped, match, cached)) {
-                const bool preparing = stripped.rfind("prepare_teacher=", 0) == 0;
-                values_.object["activity"] = S(preparing ? "Preparing frozen teacher distributions" : "Validating frozen teacher cache");
-                values_.object["teacher_current"] = I(std::stoll(match[1]));
-                values_.object["teacher_total"] = I(std::stoll(match[2]));
-            } else if (line.rfind("initial_loss=", 0) == 0) {
-                values_.object["activity"] = S("Evaluating training and validation windows");
-            } else if (line.rfind("step=", 0) == 0) {
-                const auto first = line.substr(0, line.find_first_of(" \t"));
-                const long long step = std::stoll(first.substr(first.find('=') + 1));
-                const char * activity = target_ && step == *target_ ? "Final evaluation and checkpoint save"
-                                        : step % eval_every_ == 0 ? "Evaluating checkpoint" : "Training";
-                values_.object["step"] = I(step);
-                values_.object["activity"] = S(activity);
-            }
-            if (values_.object["activity"].text != before) since_ = Clock::now();
-        }
-        auto result = values_;
-        auto lowered = result.object["activity"].text;
-        std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (lowered.find("evaluat") != std::string::npos) result.object["activity_elapsed_seconds"] = F(seconds_since(since_));
-        return result;
-    }
-
-private:
-    LogLines lines_;
-    long long eval_every_;
-    std::optional<long long> target_;
-    json::Value values_;
-    Clock::time_point since_ = Clock::now();
-};
-
-// train_nar_run.NativeNarProgress.
-class NarProgress {
-public:
-    NarProgress(const fs::path & log, long long target, long long resumed, std::string phase)
-        : lines_(log), target_(target), phase_(std::move(phase)) {
-        values_ = make({{"activity", S("Validating cached training data")}, {"step", I(resumed)}});
-    }
-    json::Value & values() { return values_; }
-    bool events() const { return events_; }
-    void activity(const std::string & value) {
-        if (value != values_.object["activity"].text) {
-            since_ = Clock::now();
-            for (const char * key : {"phase_current", "phase_total", "phase_unit"}) values_.object.erase(key);
-        }
-        values_.object["activity"] = S(value);
-    }
-    json::Value read() {
-        for (const auto & line : lines_.read()) {
-            if (line.rfind("TRAIN_EVENT ", 0) == 0) {
-                const auto event = json::parse(line.substr(12));
-                const auto stage = text(event, "stage");
-                events_ = true;
-                std::string label;
-                if (stage == "cache-validation") label = "Validating cached training data";
-                else if (stage == "model-loading") label = "Loading native NAR model";
-                else if (stage == "evaluation") {
-                    const auto step = integer(member(event, "step"));
-                    values_.object["step"] = member(event, "step");
-                    label = !step ? "Initial evaluation" : step >= target_ ? "Final evaluation" : "Evaluating checkpoint";
-                } else if (stage == "checkpoint-save") {
-                    values_.object["step"] = member(event, "step");
-                    label = "Saving checkpoint";
-                } else {
-                    continue;
-                }
-                activity(label);
-                if (stage == "cache-validation" || stage == "evaluation") {
-                    values_.object["phase_current"] = member(event, "current");
-                    values_.object["phase_total"] = member(event, "total");
-                    values_.object["phase_unit"] = S(stage == "cache-validation" ? "files" : "windows");
-                }
-            } else if (line.rfind("[yue2:train]", 0) == 0 && !events_) {
-                activity(phase_ != "fit" ? "Native preflight"
-                         : truthy(values_.object["step"]) ? "Loading native optimizer state" : "Initial evaluation");
-            } else if (!line.empty() && line[0] == '{') {
-                json::Value record;
-                try { record = json::parse(line); } catch (const std::exception &) { continue; }
-                if (record.find("loss") && record.find("step")) {
-                    values_.object["step"] = member(record, "step");
-                    activity("Training");
-                    if (const auto * value = record.find("seconds")) values_.object["last_update_seconds"] = *value;
-                    if (const auto * value = record.find("cache_load_seconds")) values_.object["last_cache_load_seconds"] = *value;
-                }
-            }
-        }
-        auto result = values_;
-        result.object["activity_elapsed_seconds"] = F(seconds_since(since_));
-        return result;
-    }
-
-private:
-    LogLines lines_;
-    long long target_;
-    std::string phase_;
-    json::Value values_;
-    bool events_ = false;
-    Clock::time_point since_ = Clock::now();
-};
+namespace fitting_detail {
 
 // Peak GPU memory over a run; advisory, so a host without nvidia-smi reports 0.
 class GpuPeak {
@@ -467,6 +287,15 @@ json::Value last_record(const fs::path & history) {
 // Teacher cache (recipe 4+): frozen KL teacher distributions on disk.
 const char * const teacher_format = "yue2-ar-teacher-v1";
 
+json::Value teacher_identity(const json::Value & run_identity, const std::string & device, long long ar_slots, const json::Value & frames,
+                             const std::string & precision) {
+    if (precision != "f32") throw std::invalid_argument("Unsupported AR teacher cache precision");
+    return make({{"format", S(teacher_format)}, {"precision", S(precision)}, {"base_sha256", member(run_identity, "base_sha256")},
+        {"companion_sha256", member(run_identity, "companion_sha256")}, {"dataset_sha256", member(run_identity, "dataset_sha256")},
+        {"runtime", member(run_identity, "runtime")}, {"device", S(device)}, {"ar_slots", I(ar_slots)}, {"frames", frames},
+        {"predict_end", B(false)}});
+}
+
 void verify_teacher_cache(const fs::path & folder, const std::string & identity_sha256, const std::vector<json::Value> & train_rows) {
     const auto index = read_json(folder / "index.json");
     if (get(index, "format", json::Value{}).text != std::string(teacher_format) + "-index" || !truthy(get(index, "completed", B(false))) ||
@@ -618,7 +447,9 @@ void check_examples(const std::vector<json::Value> & rows, const char * message,
     }
 }
 
-} // namespace
+} // namespace fitting_detail
+
+using namespace fitting_detail;
 
 long long state_step(const fs::path & state) {
     const GgufFile file(state);
@@ -679,11 +510,7 @@ void fit_ar(const FitOptions & o) {
     json::Value resolved_teacher;
     if (fitting && truthy(get(training, "teacher_cache", json::Value{})) && kl) {
         teacher = out / "teacher";
-        if (text(training, "teacher_cache") != "f32") throw std::invalid_argument("Unsupported AR teacher cache precision");
-        resolved_teacher = make({{"format", S(teacher_format)}, {"precision", S("f32")}, {"base_sha256", member(identity, "base_sha256")},
-            {"companion_sha256", member(identity, "companion_sha256")}, {"dataset_sha256", member(identity, "dataset_sha256")},
-            {"runtime", member(identity, "runtime")}, {"device", S(device)}, {"ar_slots", I(prefix_slots)}, {"frames", member(data, "frames")},
-            {"predict_end", B(false)}});
+        resolved_teacher = teacher_identity(identity, device, prefix_slots, member(data, "frames"), text(training, "teacher_cache"));
     }
     fs::path native;
     const auto stop_file = out / "stop.request";
@@ -804,7 +631,7 @@ void fit_ar(const FitOptions & o) {
     std::cout << "END " << o.family << " " << o.phase << " " << json::stringify(record) << std::endl;
 }
 
-namespace {
+namespace fitting_detail {
 
 // train_nar_run.preflight_sample(): read GGUF headers only, then probe one real
 // sample at the corpus maximum.
@@ -836,7 +663,7 @@ void remove_pair(std::vector<std::string> & command, const char * flag) {
     if (found != command.end()) command.erase(found, found + 2);
 }
 
-} // namespace
+} // namespace fitting_detail
 
 void fit_nar(const FitOptions & o) {
     const auto config = load_job(o.config, "yue2-nar-training-v1", "Unsupported NAR job");

@@ -1,7 +1,7 @@
 // Dataset planning for AR training: caption metadata, window placement and
-// re-engraving transcribed events as ABC. Ported from tools/ar_dataset.py,
-// which stays the reference until the native workflow replaces it; results
-// must equal it exactly (tests/test_native_training_workflow.py).
+// re-engraving transcribed events as ABC. Ported from the Python ar_dataset.py
+// and checked equal to it before it was removed (docs/training-history.md);
+// its rules are kept so runs it prepared resume unchanged.
 #pragma once
 
 #include "server/json.h"

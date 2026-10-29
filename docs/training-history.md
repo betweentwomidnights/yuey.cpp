@@ -440,3 +440,23 @@ and after.
     workflow resumed both, keeping the recorded digests, and published both.
   - **Server:** a run created, trained and published through `yue2-server`'s
     training API with a native config; the style appeared in `/loras`.
+
+## Native workflow, stage 6: Python removed (2026-10-28)
+
+- **Change:** the Python training scripts are gone: `training_workflow.py`,
+  `setup_training.py`, `requirements-training.txt`, `ar_dataset.py`,
+  `training_provenance.py`, the three preparation scripts, the two fit
+  coordinators and `publish_training_adapter.py`. So are the parity harnesses
+  that compared against them (stages 1 to 5 above record their results) and
+  the CLI's `parity` command.
+  - The Python tests of their behaviour are now `yue2-training-native-test`:
+    progress reading, evaluation history, pruning (including a file Windows
+    holds open), selection, the teacher cache (with the test binary standing
+    in for the AR trainer), target matching, cache checks, preflight, rolling
+    regeneration (standing in for the NAR trainer), cache release, the disk
+    check, run ownership, progress-file watching, settings and inventory. With
+    the built tools it also checks the score MIDI roundtrip, the NAR trainer's
+    progress events and, given a VAE model, target resume.
+  - `verify_training_storage.py` drives `yue2-train-run`;
+    `yue2_training_audit.py` and `benchmark_nar_cache.py` carry the few helpers
+    they used.

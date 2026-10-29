@@ -290,6 +290,17 @@ long long conditioning_bytes(const std::vector<json::Value> & eligible, const st
     return all;
 }
 
+double remaining_disk_bytes(const std::vector<json::Value> & eligible, const json::Value & options, bool ar_done,
+                            long long teacher_present, bool conditioning_complete, long long conditioning_present) {
+    const double teacher = ar_done ? 0
+        : std::max(0.0, std::strtod(ar_resource_estimate(eligible, options, "cuda").object.at("estimated_teacher_disk_gib").text.c_str(), nullptr) * gib -
+                            static_cast<double>(teacher_present));
+    const auto storage = text_of(options, "conditioning_storage", "cache");
+    const double conditioning = conditioning_complete && storage == "cache" ? 0
+        : static_cast<double>(std::max(0LL, conditioning_bytes(eligible, storage, text_of(options, "evaluation_scope", "full")) - conditioning_present));
+    return std::max(teacher, conditioning) + checkpoint_allowance(options, ar_done ? 1 : 2);
+}
+
 ExpertBytes expert_bytes(const fs::path & base) {
     gguf_init_params params{true, nullptr};
     auto * context = gguf_init_from_file(utf8(base).c_str(), params);

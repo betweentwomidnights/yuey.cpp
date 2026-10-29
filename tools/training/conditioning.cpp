@@ -1,7 +1,8 @@
-// VAE targets and frozen-AR conditioning: prepare_nar_targets.py and
-// prepare_nar_dataset.py, product path only.
+// VAE targets and frozen-AR conditioning, ported from the Python
+// prepare_nar_targets.py and prepare_nar_dataset.py (product path only).
 #include "training/preparation.h"
 
+#include "training/conditioning_detail.h"
 #include "training/gguf_file.h"
 #include "training/preparation_detail.h"
 #include "training/process.h"
@@ -26,7 +27,7 @@
 namespace yue2::training {
 namespace fs = std::filesystem;
 using namespace detail;
-namespace {
+namespace conditioning_detail {
 
 std::string with_frames(const std::string & sha, long long start, long long frames) {
     char buffer[32];
@@ -158,7 +159,31 @@ void run_batch(const std::vector<std::string> & command, const fs::path & cwd, c
 
 std::string count_text(long long value) { return std::to_string(value); }
 
-} // namespace
+std::vector<std::pair<json::Value, json::Value>> match_targets(const std::vector<json::Value> & rows, const std::vector<json::Value> & targets) {
+    const auto core = [](const json::Value & row) {
+        return text(row, "source_sha256") + "/" + std::to_string(integer(member(row, "start_frame"))) + "/" +
+               std::to_string(integer(member(row, "frames")));
+    };
+    std::map<std::string, json::Value> by_key;
+    for (const auto & row : targets) {
+        if (!by_key.emplace(core(row), row).second) throw std::invalid_argument("Duplicate VAE target core");
+    }
+    std::vector<std::pair<json::Value, json::Value>> pairs;
+    for (const auto & row : rows) {
+        const auto found = by_key.find(core(row));
+        if (found == by_key.end() || text(found->second, "split") != text(row, "split")) {
+            throw std::invalid_argument("VAE target missing or split differs");
+        }
+        pairs.emplace_back(row, found->second);
+        by_key.erase(found);
+    }
+    if (!by_key.empty()) throw std::invalid_argument("Unexpected VAE target cores");
+    return pairs;
+}
+
+} // namespace conditioning_detail
+
+using namespace conditioning_detail;
 
 void prepare_targets(const TargetOptions & o) {
     if (o.threads < 1 || o.core_frames < 1 || o.halo_frames < 0) throw std::invalid_argument("Invalid VAE preparation profile");
@@ -309,25 +334,8 @@ void prepare_conditioning(const ConditioningOptions & o) {
     std::vector<json::Value> rows;
     for (const auto & row : member(data, "rows").array) if (real_and_eligible(row)) rows.push_back(row);
     if (rows.empty()) throw std::invalid_argument("Dataset has no eligible real examples");
-    // match_targets(): a one-to-one join; never a nearby offset or another split.
-    const auto core = [](const json::Value & row) {
-        return text(row, "source_sha256") + "/" + std::to_string(integer(member(row, "start_frame"))) + "/" +
-               std::to_string(integer(member(row, "frames")));
-    };
-    std::map<std::string, json::Value> by_key;
-    for (const auto & row : member(targets, "rows").array) {
-        if (!by_key.emplace(core(row), row).second) throw std::invalid_argument("Duplicate VAE target core");
-    }
-    std::vector<std::pair<json::Value, json::Value>> pairs;
-    for (const auto & row : rows) {
-        const auto found = by_key.find(core(row));
-        if (found == by_key.end() || text(found->second, "split") != text(row, "split")) {
-            throw std::invalid_argument("VAE target missing or split differs");
-        }
-        pairs.emplace_back(row, found->second);
-        by_key.erase(found);
-    }
-    if (!by_key.empty()) throw std::invalid_argument("Unexpected VAE target cores");
+    // A one-to-one join; never a nearby offset or another split.
+    const auto pairs = match_targets(rows, member(targets, "rows").array);
     fs::create_directories(o.out);
     const auto & models = member(config, "models");
     const auto base = from_utf8(resolved_path(from_utf8(text(models, "base"))));

@@ -1,5 +1,6 @@
-// Native training workflow pieces that need no models. Equality with the
-// Python reference is checked by tests/test_native_training_workflow.py.
+// Native training workflow pieces that need no models: hashing, Python-style
+// JSON, captions, windows, scores, settings and audio headers. Behaviour of the
+// fits and the workflow is in training_native_test.cpp.
 #include "server/flac.h"
 #include "training/dataset.h"
 #include "training/files.h"

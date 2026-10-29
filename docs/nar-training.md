@@ -48,7 +48,8 @@ resource evidence and tests. The listener selected full-data AR DoRA500 and
 prefers its expanded NAR LoRA400 calibration. All 197 CPU conditioning caches,
 resource/gradient checks, the 400-update fit and fixed-token auditions completed.
 
-`tools/train_nar_run.py` consumes a `yue2-nar-training-v1` job JSON and records
+`tools/train_nar_run.py` (since replaced by `yue2-train-run fit-nar`; see
+[native workflow](training.md#native-workflow)) consumes a `yue2-nar-training-v1` job JSON and records
 immutable model/cache/runtime identities, named run status, checkpoint metrics
 and recording-balanced heldout selection. It supports explicit resumed segments
 and retains child ownership through advisory progress-file failures. The current

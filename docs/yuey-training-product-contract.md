@@ -71,8 +71,9 @@ job should supply its trained caption pool automatically.
 
 `tools/prepare_ar_dataset.py` consumes a versioned job JSON, creates independent
 semantic caches and scored examples, verifies identities, and emits structured
-preparation progress. It is presently a local Python/NumPy/SoundFile orchestrator
-around native model tools; production dependency/packaging choices remain open.
+preparation progress. It was a local Python/NumPy/SoundFile orchestrator around
+native model tools; `yue2-train-run` has since replaced it and the other
+training scripts (see [native workflow](training.md#native-workflow)).
 ML training itself remains native. `yue2-score` validates and normalizes ABC and
 exports MIDI without loading models, supporting independent pitch/timing checks.
 
@@ -89,8 +90,8 @@ reservation described above. A user-facing training companion/API, durable run
 registry, crash recovery and automatic catalog/prompt publication are still
 future work. They are not claimed implemented by the research scripts.
 
-NAR now has the corresponding prepared-manifest and named-run helpers:
-`prepare_nar_dataset.py` binds exact prefixes/codes/VAE targets to one frozen AR
+NAR now has the corresponding prepared-manifest and named-run helpers (now
+`yue2-train-run prepare-conditioning` and `fit-nar`): `prepare_nar_dataset.py` binds exact prefixes/codes/VAE targets to one frozen AR
 checkpoint, and `train_nar_run.py` records identities, heldout selection and
 explicit resumed segments. On-demand cache loading bounds host memory; native
 grouped sampling and stop files preserve optimizer/data-order state. These local

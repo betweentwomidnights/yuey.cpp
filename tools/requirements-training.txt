@@ -1,5 +1,0 @@
-# Native GGML performs training; these packages provide dataset orchestration
-# and provenance. All model computation uses native GGML. Use 64-bit Python.
-numpy>=1.26
-soundfile>=0.12
-gguf>=0.17

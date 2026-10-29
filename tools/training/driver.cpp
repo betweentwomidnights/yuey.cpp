@@ -31,27 +31,6 @@ double now() { return std::chrono::duration<double>(std::chrono::system_clock::n
 
 std::string suffix(const char * name) { return executable(name); }
 
-// Never touch the device before the server commits its ownership record.
-void wait_for_owner(const fs::path & run) {
-    const auto pid = static_cast<long long>(
-#ifdef _WIN32
-        _getpid()
-#else
-        getpid()
-#endif
-    );
-    const auto identity = own_process_identity();
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    for (;;) {
-        try {
-            const auto owner = read_json(run / "owner.json");
-            if (integer(member(owner, "pid")) == pid && text(owner, "identity") == identity) return;
-        } catch (const std::exception &) {}
-        if (std::chrono::steady_clock::now() >= deadline) throw std::runtime_error("Training worker ownership was not committed");
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
-}
-
 long long folder_bytes(const fs::path & folder) {
     long long total = 0;
     if (!fs::exists(folder)) return 0;
@@ -117,20 +96,9 @@ public:
     void command(const std::vector<std::string> & arguments, const std::string & stage, const std::optional<fs::path> & progress = std::nullopt) {
         check_stop();
         update({{"status", S("running")}, {"stage", S(stage)}, {"progress", json::object()}});
-        const auto signature = [&]() -> std::optional<std::pair<long long, long long>> {
-            std::error_code error;
-            if (!progress || !fs::exists(*progress, error)) return std::nullopt;
-            const auto time = fs::last_write_time(*progress, error).time_since_epoch().count();
-            const auto size = static_cast<long long>(fs::file_size(*progress, error));
-            if (error) return std::nullopt;
-            return std::make_pair(static_cast<long long>(time), size);
-        };
-        const auto previous = signature();
-        // A resumed helper may hash models before replacing its old status;
-        // do not show the previous segment's stopped or completed snapshot.
+        const ProgressWatch watch(progress);
         const auto read_progress = [&]() {
-            if (signature() == previous) return;
-            try { update({{"progress", read_json(*progress)}}); } catch (const std::exception &) {}
+            if (const auto value = watch.read()) update({{"progress", *value}});
         };
         int number = 1;
         while (fs::exists(run_ / (stage + "-" + std::to_string(number) + ".log"))) ++number;
@@ -246,13 +214,8 @@ public:
         const auto data = read_json(from_utf8(text(config(), "training_dataset")));
         const auto eligible = eligible_rows(data);
         const bool ar_done = fs::exists(ar_folder / "selection.json");
-        const double teacher = ar_done ? 0 : std::max(0.0, number(member(ar_resource_estimate(eligible, options_, "cuda"), "estimated_teacher_disk_gib")) * gib -
-                                                               static_cast<double>(folder_bytes(ar_folder / "teacher")));
         const bool complete = fs::exists(nar_data / "dataset.json") && truthy(get(read_json(nar_data / "dataset.json"), "completed", B(false)));
-        const auto storage = get(options_, "conditioning_storage", S("cache")).text;
-        const double conditioning = complete && storage == "cache" ? 0
-            : static_cast<double>(std::max(0LL, conditioning_bytes(eligible, storage, get(options_, "evaluation_scope", S("full")).text) - folder_bytes(nar_data)));
-        const double needed = std::max(teacher, conditioning) + checkpoint_allowance(options_, ar_done ? 1 : 2);
+        const double needed = remaining_disk_bytes(eligible, options_, ar_done, folder_bytes(ar_folder / "teacher"), complete, folder_bytes(nar_data));
         const auto free = static_cast<double>(fs::space(run_).available);
         if (free < needed) {
             char message[160];
@@ -361,6 +324,42 @@ private:
 };
 
 } // namespace
+
+void wait_for_owner(const fs::path & run, double timeout_seconds) {
+    const auto pid = static_cast<long long>(
+#ifdef _WIN32
+        _getpid()
+#else
+        getpid()
+#endif
+    );
+    const auto identity = own_process_identity();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(timeout_seconds);
+    for (;;) {
+        try {
+            const auto owner = read_json(run / "owner.json");
+            if (integer(member(owner, "pid")) == pid && text(owner, "identity") == identity) return;
+        } catch (const std::exception &) {}
+        if (std::chrono::steady_clock::now() >= deadline) throw std::runtime_error("Training worker ownership was not committed");
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+}
+
+ProgressWatch::ProgressWatch(std::optional<fs::path> path) : path_(std::move(path)), initial_(signature()) {}
+
+std::optional<std::pair<long long, long long>> ProgressWatch::signature() const {
+    std::error_code error;
+    if (!path_ || !fs::exists(*path_, error)) return std::nullopt;
+    const auto time = fs::last_write_time(*path_, error).time_since_epoch().count();
+    const auto size = static_cast<long long>(fs::file_size(*path_, error));
+    if (error) return std::nullopt;
+    return std::make_pair(static_cast<long long>(time), size);
+}
+
+std::optional<json::Value> ProgressWatch::read() const {
+    if (signature() == initial_) return std::nullopt;
+    try { return read_json(*path_); } catch (const std::exception &) { return std::nullopt; }
+}
 
 void write_training_runtime(const fs::path & bin, const fs::path & models_dir, const fs::path & run_root, const fs::path & out) {
 #if !defined(_WIN32) && !defined(__linux__)

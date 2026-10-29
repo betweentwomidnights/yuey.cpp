@@ -1,7 +1,6 @@
 // The durable two-expert workflow's run settings, dataset inventory and
-// resource review. Ported from tools/training_workflow.py, which stays the
-// reference until the native workflow replaces it; results must equal it
-// (tests/test_native_training_workflow.py).
+// resource review. Ported from the Python training_workflow.py and checked
+// equal to it before it was removed (docs/training-history.md).
 #pragma once
 
 #include "server/json.h"
@@ -30,6 +29,13 @@ json::Value ar_resource_estimate(const std::vector<json::Value> & eligible, cons
 double checkpoint_allowance(const json::Value & options, int experts = 2);
 long long conditioning_bytes(const std::vector<json::Value> & eligible, const std::string & storage,
                              const std::string & evaluation_scope);
+
+// Workflow.check_disk(): the disk a run still needs before training, given
+// what it already holds: the teacher cache until AR selection, then the larger
+// of the remaining teacher and conditioning bytes, plus checkpoints for the
+// experts still to fit.
+double remaining_disk_bytes(const std::vector<json::Value> & eligible, const json::Value & options, bool ar_done,
+                            long long teacher_present, bool conditioning_complete, long long conditioning_present);
 
 // Base weights the NAR fitter and the conditioning-only AR model load.
 struct ExpertBytes { std::uint64_t nar = 0, ar = 0; };

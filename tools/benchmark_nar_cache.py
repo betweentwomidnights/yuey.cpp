@@ -12,8 +12,26 @@ import subprocess
 import time
 import gguf
 import numpy as np
-from prepare_ar_dataset import save
-from prepare_nar_dataset import match_targets
+
+
+def save(path, value):
+    path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + '.partial')
+    temporary.write_text(json.dumps(value, indent=2) + '\n', encoding='utf-8'); temporary.replace(path)
+
+
+def match_targets(rows, targets):
+    """Each example's target: same recording, start and length, same split."""
+    key = lambda row: (row['source_sha256'], row['start_frame'], row['frames'])
+    by_key = {key(row): row for row in targets}
+    if len(by_key) != len(targets): raise ValueError('Duplicate VAE target core')
+    pairs = []
+    for row in rows:
+        target = by_key.pop(key(row), None)
+        if target is None or target['split'] != row['split']: raise ValueError('VAE target missing or split differs')
+        pairs.append((row, target))
+    if by_key: raise ValueError('Unexpected VAE target cores')
+    return pairs
 
 
 def tensors(path):
