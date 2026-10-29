@@ -1,5 +1,56 @@
 # changelog
 
+## v0.3.0
+
+**train your own style.** `/training` in the web UI takes a folder of
+recordings with TXT captions (style, tempo and key), reviews the dataset, fits
+the AR style adapter, freezes its heldout-best checkpoint, prepares matched
+conditioning and calibrates the NAR adapter. publishing puts the pair in the
+models folder as one style with a caption pool, and it shows up in `/loras`
+for inference. runs are named and durable: they survive server restarts, stop
+after the current update and resume where they stopped. see
+[docs/training.md](docs/training.md).
+
+**training is native.** `yue2-train-run` runs every stage, and `yue2-server`
+launches it for each run, so training needs no Python and no PyTorch:
+`yue2-train-run setup --bin BIN --models-dir MODELS --out training-runtime.json`
+writes the config `--training-config` reads. it replaced the Python workflow
+one stage at a time, each checked equal to the Python before the Python was
+removed, so runs the Python started still resume. `yue2-train-run
+capabilities` reports the recipes, request settings and storage modes an
+installation supports.
+
+**it trains on the Q4_K_M base.** an installation with only the inference
+model can train; `setup` uses BF16 when it's installed and Q4_K_M otherwise.
+on an 8 GB RTX 5070 Laptop at 30-second windows and rank 32, Q4_K_M trains at
+BF16's speed with 2.7 GiB less VRAM for AR and 1.8 GiB less for NAR. its
+gradients match a dequantized reference (cosine 0.9999997). both bases carry
+the same checkpoint fingerprint, so a style trained on either loads on either.
+the base itself differs, so a style trained on Q4_K_M can sound different from
+one trained on BF16.
+
+**storage modes trade disk for time or VRAM.** recipe 5, the default, adds
+`teacher_storage` (`cache`, `online`) and `conditioning_storage` (`cache`,
+`rolling`, `resident`) to a run request; every mode gives the same results as
+the cached default. dataset review estimates each mode's disk and VRAM, and
+finished fits prune their checkpoints and release their caches after
+publishing (`keep_caches` keeps them).
+
+**the semantic tokenizer reads FLAC.** `yue2-semantic-tokenize` read WAV only,
+so a FLAC dataset failed at its first semantic cache. a WAV decodes exactly as
+before.
+
+**ggml moves from `4ad3b30b` to `b77ae790`,** the shared fork on upstream GGML
+0.27. it keeps the training kernels, backward ops and quantized `OUT_PROD`
+(restored on Vulkan, which the merge had dropped) and carries the Metal Q4_K
+scale precision fix. training results were byte-identical across the move.
+
+**packages.** the Windows core zip carries `yue2-train-run` and the native
+trainers beside the server, so a supervisor gets training with the runtime it
+already installs; the standalone zip no longer ships Python scripts. local
+training ownership runs on Windows and Linux; the macOS package has no
+training.
+
 ## v0.2.4
 
 **the Visual C++ runtime comes with the package.** the core zip now carries
