@@ -1,13 +1,13 @@
 // Dataset preparation for a named run: semantic caches and scored AR
 // examples, VAE targets, and frozen-AR conditioning for NAR fitting. Ported
-// from tools/prepare_ar_dataset.py, prepare_nar_targets.py and
-// prepare_nar_dataset.py, which stay the reference until the native workflow
-// replaces them. Every file written equals the Python's byte for byte, except
-// logs, timings and the source.wav header (its samples are equal).
+// from the Python prepare_ar_dataset.py, prepare_nar_targets.py and
+// prepare_nar_dataset.py. Every file written was checked byte-equal to theirs
+// before they were removed, except logs, timings and the source.wav header
+// (its samples are equal); see docs/training-history.md.
 //
-// Only the product path is ported: inference_urls, reused semantic or
+// Only the product path was ported: inference_urls, reused semantic or
 // transcription manifests, generated targets and auxiliary replay datasets
-// are research options that stay in the Python and are rejected here.
+// were research options, and are rejected here.
 #pragma once
 
 #include "server/json.h"
@@ -20,8 +20,9 @@
 namespace yue2::training {
 
 // The engraving and conditioning rules this port equals: SHA-256 of the
-// reference scripts as committed (LF line endings). Preparation identities
-// record them where the Python recorded its own source digest.
+// Python scripts it was checked against, as last committed (LF line endings).
+// Preparation identities record them where the Python recorded its own
+// source digest.
 extern const char * const normalizer_sha256;      // tools/ar_dataset.py
 extern const char * const conditioning_sha256;    // tools/prepare_nar_dataset.py
 // A run the Python started on a Windows checkout recorded the CRLF digests;

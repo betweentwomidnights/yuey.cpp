@@ -1,9 +1,8 @@
 // Named native AR and NAR fits: probe, fit (in resumable segments), post-probe
-// and heldout checkpoint selection. Ported from tools/train_ar_run.py and
-// train_nar_run.py, which stay the reference until the native workflow
-// replaces them. Selection, prompts, identities, the teacher index and every
-// checkpoint equal the Python's; progress and run records differ only in
-// timings and process IDs.
+// and heldout checkpoint selection. Ported from the Python train_ar_run.py and
+// train_nar_run.py: selection, prompts, identities, the teacher index and
+// every checkpoint were checked equal to theirs before they were removed
+// (docs/training-history.md).
 #pragma once
 
 #include <filesystem>

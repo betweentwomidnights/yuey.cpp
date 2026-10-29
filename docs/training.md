@@ -7,9 +7,8 @@ the pair into one style entry with a caption pool. Planning remains base/common.
 
 This is an instrumental training workflow, and it is entirely native: GGML does
 all model computation, and `yue2-train-run` coordinates manifests, provenance
-and processes. Training needs no Python. The Python scripts under `tools/` are
-the reference the native workflow was checked against, and the optional
-PyTorch encoder remains a developer-only numerical oracle.
+and processes. Training needs no Python. The optional PyTorch encoder remains
+a developer-only numerical oracle.
 
 ## Setup
 
@@ -254,8 +253,7 @@ yue2-train-run capabilities --runtime training-runtime.json
 ```
 
 This prints the recipes, the accepted request settings, each storage mode's
-trade-off, and whether the native tools support it. It needs no Python, and
-matches `python tools/training_workflow.py --capabilities`. To check that the modes
+trade-off, and whether the native tools support it. To check that the modes
 match the cached default on a machine, run:
 
 ```bash
@@ -267,115 +265,50 @@ real dataset with `--window-seconds 30 --rank 32` for representative timings.
 
 ## Native workflow
 
-`yue2-train-run` replaced the Python orchestration one stage at a time, so
-that a supervisor such as gary4local can train without Python. Each stage was
-checked equal to the Python it replaces; the server now launches
-`yue2-train-run workflow` for every run.
+`yue2-train-run` replaced the Python training orchestration one stage at a
+time, so that a supervisor such as gary4local can train without Python. Each
+stage was checked equal to the Python it replaced before the Python was
+removed; [training history](training-history.md) records how. Training
+against the Q4_K_M base gary4local installs is still to come.
 
-| Stage | Replaces | Status |
-| --- | --- | --- |
-| 1. Settings, inventory, review | `settings()`, `inventory()`, the review estimates and `capabilities()` in `training_workflow.py`; `ar_dataset.py`; `training_provenance.py` | native, equal to Python |
-| 2. Preparation | `prepare_ar_dataset.py`, `prepare_nar_targets.py`, `prepare_nar_dataset.py` | native, equal to Python |
-| 3. Fitting | `train_ar_run.py`, `train_nar_run.py` | native, equal to Python |
-| 4. Publication | `publish_training_adapter.py`; `Workflow.release_caches()` | native, equal to Python |
-| 5. Switch-over | `Workflow` and `main()` in `training_workflow.py`; `setup_training.py`; the server launches `yue2-train-run` | native |
-| 6. Removal | the shipped Python training scripts | |
-| 7. Quantized base | training against the Q4_K_M base gary4local installs | |
+The server runs `yue2-train-run workflow --run RUN --action ACTION` for every
+run. Each stage of a run is another `yue2-train-run` command, run as a child
+with its own log, and can be run by hand:
 
-Stage 1's commands, each printing JSON:
+| Stage | Command |
+| --- | --- |
+| Settings, inventory, review | `settings --request FILE`, `inventory --dataset DIR --window-seconds N --seed N`, `review --run RUN`, `capabilities [--runtime FILE]` |
+| Preparation | `prepare-semantic` and `prepare-scores --config RUN/ar-job.json`; `prepare-targets --dataset RUN/data/dataset.json --vae VAE --binary yue2-vae-encode --out RUN/vae-targets`; `prepare-conditioning --config RUN/ar-job.json --targets RUN/vae-targets/index.json --ar-adapter AR --binary yue2-train --out RUN/nar-conditioning [--storage rolling\|resident]` |
+| Fitting | `fit-ar --config RUN/ar-job.json --family lora\|dora --phase probe\|fit\|post-probe\|select`; `fit-nar --config RUN/nar-job.json --phase ...`, each with `[--segment native-N] [--prune-checkpoints] [--resume STATE]` |
+| Publication | `publish --run RUN`, `release-caches --run RUN` |
+| Helpers | `score --events FILE --seconds S --bpm B --key K`, `identity --executable FILE`, `sha256 FILE...`, `materialize ...`, `setup ...` |
 
-```bash
-yue2-train-run settings --request request.json
-yue2-train-run inventory --dataset DATASET --window-seconds 30 --seed 831001
-yue2-train-run review --run RUN
-yue2-train-run score --events events.json --seconds 30 --bpm 88 --key Bb
-yue2-train-run identity --executable yue2-train.exe
-```
+Runs the Python workflow started keep working. The native workflow writes
+every file a run's identities hash exactly as the Python wrote it: JSON in
+Python's key order, number formatting and escaping, with Windows line endings
+on Windows. On a Windows checkout the Python recorded the CRLF digest of its
+own scripts in preparation identities, where the native side records the
+committed (LF) digest of the same scripts; resuming such a run keeps whichever
+the run recorded. `source.wav` excerpts are the one file written differently:
+the header differs from libsndfile's, and the samples, and so every
+transcription, are the same.
 
-`tests/test_native_training_workflow.py` compares them with the Python on
-fuzzed captions, requests, transcriptions and datasets, and with
-`YUE2_TRAINING_PARITY_ROOT=outputs` on every earlier run, dataset and
-transcription under that folder. Values must be equal with the same JSON types,
-and rejections must give the same message.
+A few rules follow Python's on purpose, so those runs resume unchanged:
+rounding is half to even, captions match with Unicode word boundaries and
+whitespace, and Windows sorts a dataset folder case-insensitively. Two are
+narrower: caption digits and case folding are ASCII-only, and an audio file
+gets the WAV and FLAC checks the native encoders apply. Research options the
+Python carried (`inference_urls`, reused semantic or transcription manifests,
+generated targets, auxiliary replay datasets) are refused.
 
-A few rules follow Python's on purpose, so results stay equal: rounding is
-half to even, captions match with Unicode word boundaries and whitespace, and
-Windows sorts a dataset folder case-insensitively. Two are narrower than
-Python's: caption digits and case folding are ASCII-only, and an audio file is
-read with the WAV and FLAC checks the native encoders apply.
-
-Stage 2's commands take the Python scripts' arguments and write the same files:
-
-```bash
-yue2-train-run prepare-semantic --config RUN/ar-job.json
-yue2-train-run prepare-scores --config RUN/ar-job.json
-yue2-train-run prepare-targets --dataset RUN/data/dataset.json --vae VAE --binary yue2-vae-encode --out RUN/vae-targets
-yue2-train-run prepare-conditioning --config RUN/ar-job.json --targets RUN/vae-targets/index.json \
-    --ar-adapter AR.gguf --binary yue2-train --out RUN/nar-conditioning [--storage rolling]
-yue2-train-run materialize --manifest DATASET --rows ROWS --binary yue2-train --base BASE --common COMPANION --adapter AR.gguf
-```
-
-Preparation identities hash the manifests they depend on, so a run can only
-move between the two implementations if both write those manifests byte for
-byte. They do: JSON keeps Python's key order, number formatting and escaping,
-and Windows line endings, and `latent_rms` uses numpy's pairwise summation.
-`source.wav` is the exception. Its header differs from libsndfile's, but its
-samples, and so every transcription, are the same.
-
-The Python recorded a digest of its own script (`ar_dataset.py`,
-`prepare_nar_dataset.py`) in each identity, and that digest follows the
-checkout's line endings. The native side records the committed (LF) digests of
-the scripts it equals. A run the Python prepared on a Windows checkout names
-the CRLF digest of the same scripts instead. Resuming such a run, the native
-side keeps the digest the run recorded when it is either of the two, so the
-run's files stay what the Python would have written.
-
-To check it on a machine with the training models:
-
-```bash
-python tools/check_native_preparation.py --runtime training-runtime.json --train-run yue2-train-run \
-    --dataset RECORDINGS --ar-adapter AR.gguf --out outputs/native-prepare
-```
-
-Each implementation prepares the same clips in the same run folder: review,
-conditioning with cache and rolling storage, and a rolling regeneration. Then
-every file is compared.
-
-Only the product path is ported. `inference_urls`, reused semantic or
-transcription manifests, generated targets and auxiliary replay datasets are
-research options; the native commands refuse them and the Python keeps them.
-
-Stage 3's commands run the fits the workflow drives, with the scripts' arguments:
-
-```bash
-yue2-train-run fit-ar --config RUN/ar-job.json --family lora --phase probe
-yue2-train-run fit-ar --config RUN/ar-job.json --family lora --phase fit --segment native-1 --prune-checkpoints
-yue2-train-run fit-nar --config RUN/nar-job.json --phase fit --segment native-1 --prune-checkpoints [--resume STATE]
-```
-
-They build the native trainers' command lines and run identities as the
-Python did, prepare and verify the AR teacher cache, run a rolling NAR fit in
-segments with each segment's windows regenerated just before use, prune
-checkpoints, and select the heldout-best checkpoint. Progress still comes from
-the trainers' logs, read as the Python read them.
-`tools/check_native_fitting.py` prepares and trains the same clips with each
-implementation and compares every file. It covers two runs: LoRA with cached
-teachers and conditioning, and DoRA with an online teacher and rolling
-conditioning.
-
-Stage 4 publishes a reviewed run and releases its training caches:
-
-```bash
-yue2-train-run publish --run RUN
-yue2-train-run release-caches --run RUN
-```
-
-`publish` writes the selected AR and NAR adapters as one GGUF in the models
-folder, laid out exactly as gguf-py's writer laid it out, and the sidecar with
-the caption pool. `tools/check_native_publication.py` publishes and releases
-the runs `check_native_fitting.py` left, both ways, and compares the bytes. It
-needs no GPU. The state update around them (`status`, `export`,
-`caches_released`) belongs to the workflow, which moves in stage 5.
+Tests: `yue2-training-workflow-test` covers hashing, Python-style JSON,
+captions, windows, scores, settings and audio headers;
+`yue2-training-native-test` covers progress reading, evaluation history,
+pruning, selection, the teacher cache, target matching, cache checks, rolling
+regeneration, cache release, the disk check, run ownership and inventory.
+Given the built `yue2-score`, `yue2-train` and `yue2-vae-encode`, it also checks
+the score MIDI roundtrip and the trainer's progress events, and with
+`YUE2_VAE_ENCODER_TEST_MODEL` (and `_DEVICE`) the VAE target resume.
 
 ## HTTP surface
 

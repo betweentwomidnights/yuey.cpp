@@ -1,8 +1,8 @@
 // Publishing a reviewed run as one style: the selected AR and NAR adapters in
 // one GGUF beside a sidecar with its caption pool. Ported from
-// tools/publish_training_adapter.py and Workflow.release_caches() in
-// training_workflow.py, which stay the reference until the native workflow
-// replaces them; the published GGUF and sidecar equal the Python's byte for byte.
+// the Python publish_training_adapter.py and Workflow.release_caches(); the
+// published GGUF and sidecar were checked byte-equal to theirs before they
+// were removed (docs/training-history.md).
 #pragma once
 
 #include "server/json.h"

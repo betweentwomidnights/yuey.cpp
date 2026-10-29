@@ -149,7 +149,7 @@ void execute(const std::vector<std::string> & command, const fs::path & log, con
 
 void reject_research_option(const json::Value & object, const char * key) {
     if (const auto * value = object.find(key); value && truthy(*value)) {
-        throw StageError(std::string(key) + " is a research option; use the Python preparation for it");
+        throw StageError(std::string(key) + " is a research option that yue2-train-run does not support");
     }
 }
 

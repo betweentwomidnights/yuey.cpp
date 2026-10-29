@@ -117,8 +117,8 @@ if(YUE2_BUILD_SHARED)
 endif()
 
 if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
-    # The native training workflow (yue2-train-run), ported from the Python
-    # orchestration in tools/training_workflow.py.
+    # The native training workflow (yue2-train-run), which replaced the Python
+    # training orchestration.
     add_library(yue2-training-support STATIC
         tools/training/conditioning.cpp
         tools/training/dataset.cpp
@@ -315,6 +315,19 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-quantize-test PRIVATE yue2)
     yue2_enable_test_assertions(yue2-quantize-test)
     add_test(NAME yue2-quantize-test COMMAND yue2-quantize-test)
+
+    add_executable(yue2-training-native-test tests/training_native_test.cpp)
+    target_link_libraries(yue2-training-native-test PRIVATE yue2-training-support)
+    yue2_enable_test_assertions(yue2-training-native-test)
+    # With the tools built, also check the score MIDI roundtrip and yue2-train's
+    # progress events; YUE2_VAE_ENCODER_TEST_MODEL adds the VAE integration.
+    set(YUE2_TRAINING_NATIVE_TEST_TOOLS)
+    foreach(tool yue2-score yue2-train yue2-vae-encode)
+        if(TARGET ${tool})
+            list(APPEND YUE2_TRAINING_NATIVE_TEST_TOOLS $<TARGET_FILE:${tool}>)
+        endif()
+    endforeach()
+    add_test(NAME yue2-training-native-test COMMAND yue2-training-native-test ${YUE2_TRAINING_NATIVE_TEST_TOOLS})
 
     add_executable(yue2-training-workflow-test tests/training_workflow_test.cpp)
     target_link_libraries(yue2-training-workflow-test PRIVATE yue2-training-support)

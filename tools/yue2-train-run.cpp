@@ -1,6 +1,7 @@
-// yue2-train-run: the native training workflow. It replaces the Python
-// orchestration in tools/training_workflow.py stage by stage: run settings,
-// dataset inventory and review, capabilities, and dataset preparation.
+// yue2-train-run: the native training workflow yue2-server runs for each
+// training run: run settings, dataset inventory and review, capabilities,
+// preparation, fitting and publication. It replaced the Python orchestration
+// stage by stage (docs/training-history.md).
 // Query commands print JSON on stdout; preparation prints progress lines.
 // Errors go to stderr with exit code 1.
 #include "training/dataset.h"
@@ -69,8 +70,6 @@ constexpr const char * usage = R"(usage: yue2-train-run COMMAND [options]
                                   named native fits with heldout checkpoint selection
   publish --run DIR               the reviewed AR/NAR pair as one style GGUF and sidecar
   release-caches --run DIR        delete what only further training needs
-  parity --cases FILE             evaluate a batch of cases, for the Python
-                                  parity check (tests/test_native_training_workflow.py)
 )";
 
 std::string read(const fs::path & path) {
@@ -136,88 +135,10 @@ long long integer(const std::string & text) {
     return value;
 }
 
-double as_double(const json::Value & object, const char * key) {
-    const auto * value = object.find(key);
-    if (!value || value->type != json::Type::number) throw std::invalid_argument(std::string("case needs ") + key);
-    return std::strtod(value->text.c_str(), nullptr);
-}
-
-const json::Value & member(const json::Value & object, const char * key) {
-    const auto * value = object.find(key);
-    if (!value) throw std::invalid_argument(std::string("case needs ") + key);
-    return *value;
-}
-
-std::vector<json::Value> rows(const json::Value & object) {
-    const auto & value = member(object, "eligible");
-    if (value.type != json::Type::array) throw std::invalid_argument("eligible must be an array");
-    return value.array;
-}
-
 json::Value engraved(const training::EngravedScore & score) {
     auto output = json::object();
     output.object["abc"] = json::from_string(score.abc);
     output.object["stats"] = score.stats;
-    return output;
-}
-
-json::Value evaluate(const json::Value & item) {
-    const auto fn = json::string(item, "fn");
-    if (fn == "repr") return json::from_string(json::python_repr(as_double(item, "value")));
-    if (fn == "caption") {
-        const auto meta = training::caption_metadata(json::string(item, "text"));
-        auto output = json::object();
-        output.object["bpm"] = json::from_double(meta.bpm);
-        output.object["key"] = json::from_string(meta.key);
-        output.object["style"] = json::from_string(meta.style);
-        return output;
-    }
-    if (fn == "strip") return json::from_string(training::strip(json::string(item, "text")));
-    if (fn == "windows") {
-        auto output = json::array();
-        for (const auto start : training::window_starts(static_cast<long long>(as_double(item, "total")),
-                                                        static_cast<long long>(as_double(item, "frames")), as_double(item, "bpm"))) {
-            output.array.push_back(json::from_integer(start));
-        }
-        return output;
-    }
-    if (fn == "chord") return json::from_string(training::chord_name(json::string(item, "text")));
-    if (fn == "pitch") return json::from_string(training::abc_pitch(static_cast<int>(as_double(item, "pitch"))));
-    if (fn == "settings") return training::settings(member(item, "request"));
-    if (fn == "score") {
-        return engraved(training::score_from_events(member(item, "events"), member(item, "seconds"), as_double(item, "bpm"),
-                                                    json::string(item, "key")));
-    }
-    if (fn == "estimate") {
-        return training::ar_resource_estimate(rows(item), member(item, "options"), json::string(item, "device"),
-                                              static_cast<std::uint64_t>(as_double(item, "model_bytes")));
-    }
-    if (fn == "conditioning") {
-        return json::from_integer(training::conditioning_bytes(rows(item), json::string(item, "storage"), json::string(item, "scope")));
-    }
-    if (fn == "allowance") {
-        return json::from_double(training::checkpoint_allowance(member(item, "options"), static_cast<int>(as_double(item, "experts"))));
-    }
-    if (fn == "storage") {
-        training::ExpertBytes experts{static_cast<std::uint64_t>(as_double(item, "nar")), static_cast<std::uint64_t>(as_double(item, "ar"))};
-        return training::storage_options(rows(item), member(item, "options"), experts);
-    }
-    throw std::invalid_argument("unknown case: " + fn);
-}
-
-json::Value parity(const fs::path & path) {
-    const auto cases = json::parse(read(path));
-    if (cases.type != json::Type::array) throw std::invalid_argument("cases must be an array");
-    auto output = json::array();
-    for (const auto & item : cases.array) {
-        auto result = json::object();
-        try {
-            result.object["ok"] = evaluate(item);
-        } catch (const std::exception & error) {
-            result.object["error"] = json::from_string(error.what());
-        }
-        output.array.push_back(std::move(result));
-    }
     return output;
 }
 
@@ -250,7 +171,6 @@ json::Value run(const std::string & command, const Arguments & args) {
         for (std::size_t i = 0; i < paths.size(); ++i) output.object[args.positional[i]] = json::from_string(digests[i]);
         return output;
     }
-    if (command == "parity") return parity(fs::u8path(args.required("cases")));
     const auto option = [&](const char * key, const std::string & fallback) {
         const auto found = args.options.find(key);
         return found == args.options.end() ? fallback : found->second;

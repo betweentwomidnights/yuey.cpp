@@ -85,7 +85,7 @@ def evaluations(folder):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--runtime', type=Path, required=True, help='training-runtime.json from setup_training.py')
+    parser.add_argument('--runtime', type=Path, required=True, help='training-runtime.json from yue2-train-run setup')
     parser.add_argument('--out', type=Path, required=True, help='New folder for runs and results')
     parser.add_argument('--dataset', type=Path, help='WAV/FLAC recordings with TXT captions (default: synthetic)')
     parser.add_argument('--modes', default='online,rolling,resident')
@@ -105,6 +105,7 @@ def main():
     runtime = json.loads(args.runtime.read_text())
     suffix = '.exe' if os.name == 'nt' else ''
     binary = Path(runtime['bin'])
+    train_run = binary / ('yue2-train-run' + suffix)
     args.out.mkdir(parents=True)
     dataset = args.dataset or args.out / 'dataset'
     if not args.dataset: synthesize(dataset)
@@ -183,7 +184,7 @@ def main():
     for mode in modes:
         folder = args.out / mode; folder.mkdir()
         started = time.monotonic()
-        subprocess.run([sys.executable, str(REPO / 'tools/prepare_nar_dataset.py'), '--config', str(run / 'ar-job.json'),
+        subprocess.run([str(train_run), 'prepare-conditioning', '--config', str(run / 'ar-job.json'),
                         '--targets', str(run / 'vae-targets/index.json'), '--ar-adapter', ar,
                         '--binary', str(binary / ('yue2-train' + suffix)), '--out', str(folder / 'nar-conditioning'),
                         '--conditioning-device', runtime.get('device', 'cuda'), '--conditioning-batch', '0',
@@ -195,7 +196,7 @@ def main():
         (folder / 'nar-job.json').write_text(json.dumps(mode_job))
         preparation = round(time.monotonic() - started, 1)
         for phase in ['probe', 'fit']:
-            subprocess.run([sys.executable, str(REPO / 'tools/train_nar_run.py'), '--config', str(folder / 'nar-job.json'),
+            subprocess.run([str(train_run), 'fit-nar', '--config', str(folder / 'nar-job.json'),
                             '--phase', phase, *(['--segment', 'native-1'] if phase == 'fit' else [])], cwd=REPO, check=True)
         final = latest_state(folder / 'nar-run')
         adapter = final.with_name(final.name.replace('.state', ''))

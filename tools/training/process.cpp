@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -21,6 +22,9 @@
 #include <poll.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 namespace yue2::training {
@@ -411,7 +415,17 @@ int run_streaming(const std::filesystem::path & program, const std::vector<std::
 
 void set_environment(const char * name, const char * value) { setenv(name, value, 1); }
 
-std::filesystem::path current_executable() { return std::filesystem::read_symlink("/proc/self/exe"); }
+std::filesystem::path current_executable() {
+#ifdef __APPLE__
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string path(size, '\0');
+    if (_NSGetExecutablePath(path.data(), &size) != 0) throw std::runtime_error("Cannot find this executable");
+    return std::filesystem::canonical(path.c_str());
+#else
+    return std::filesystem::read_symlink("/proc/self/exe");
+#endif
+}
 
 std::string own_process_identity() {
     std::ifstream in("/proc/self/stat");
