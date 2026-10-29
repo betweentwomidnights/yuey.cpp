@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
                                                 "--retention-prefix",  "--retention-tokens"};
         const std::set<std::string> flags{"--predict-end", "--probe-only", "--instrumental",
                                           "--shuffle-samples", "--dora", "--group-samples",
-                                          "--prepare-teacher-only", "--teacher-online"};
+                                          "--prepare-teacher-only", "--teacher-online", "--dequantize-base"};
         const std::set<std::string> values{"--model",
                                            "--prefix",
                                            "--tokens",
@@ -301,6 +301,7 @@ int main(int argc, char **argv) {
         if (teacher_online && (teacher_cached || options.kl_weight <= 0))
             throw std::runtime_error("--teacher-online needs a positive KL weight and no teacher cache");
         options.online_teacher = teacher_online;
+        options.dequantize_base = args.count("--dequantize-base") != 0;
         yue2::detail::ArTeacherProvenance provenance;
         std::vector<std::string> teacher_paths;
         if (teacher_cached) {

@@ -245,7 +245,7 @@ public:
 
 private:
     friend GgufModel load_gguf_selected(const char *, const char *, int,
-        const std::function<bool(const std::string &)> &);
+        const std::function<bool(const std::string &)> &, bool);
     friend GgufModel load_gguf_raw_selected(const char *, const char *, int,
         const std::function<bool(const std::string &)> &);
     friend GgufModel load_gguf(const char *, const char *, int);
@@ -284,11 +284,18 @@ private:
     std::map<std::string, ggml_tensor *> tensors_;
 };
 
-// Training loads only the frozen NAR expert. BF16 sources are represented in
-// F16 for the existing frozen-weight backward kernels; quantized sources are
-// rejected until their training gradients have an independent validation.
+// Training loads only the frozen expert it fits. BF16 sources are represented
+// in F16 for the existing frozen-weight backward kernels. A k-quant source
+// (Q4_K, Q5_K, Q6_K, Q8_0: what a Q4_K_M or Q8_0 base holds) stays quantized,
+// and training reads it as F32 through get_rows, which dequantizes on every
+// backend (LoraStack::f32_weight). dequantize stores those as F16 instead: the
+// reference the quantized path was validated against.
+inline bool training_quantized_type(ggml_type type) {
+    return type == GGML_TYPE_Q4_K || type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q6_K || type == GGML_TYPE_Q8_0;
+}
+
 inline GgufModel load_gguf_selected(const char * path, const char * device, int threads,
-    const std::function<bool(const std::string &)> & select) {
+    const std::function<bool(const std::string &)> & select, bool dequantize = false) {
     GgufModel model;
     model.backend_ = make_backend(device, threads);
     model.owns_backend_ = true;
@@ -305,10 +312,11 @@ inline GgufModel load_gguf_selected(const char * path, const char * device, int 
     for (auto * tensor = ggml_get_first_tensor(source); tensor; tensor = ggml_get_next_tensor(source, tensor)) {
         const std::string name = ggml_get_name(tensor);
         if (!select(name)) continue;
-        if (tensor->type!=GGML_TYPE_F32 && tensor->type!=GGML_TYPE_F16 && tensor->type!=GGML_TYPE_BF16)
-            throw gguf_error("training requires unquantized F16/BF16/F32 weights: "+name);
-        auto * copy = ggml_new_tensor(model.context_, tensor->type==GGML_TYPE_BF16 ? GGML_TYPE_F16 : tensor->type,
-                                     GGML_MAX_DIMS, tensor->ne);
+        const bool quantized = training_quantized_type(tensor->type);
+        if (tensor->type!=GGML_TYPE_F32 && tensor->type!=GGML_TYPE_F16 && tensor->type!=GGML_TYPE_BF16 && !quantized)
+            throw gguf_error("training requires F16/BF16/F32 or Q4_K/Q5_K/Q6_K/Q8_0 weights: "+name);
+        const auto stored = tensor->type==GGML_TYPE_BF16 || (quantized && dequantize) ? GGML_TYPE_F16 : tensor->type;
+        auto * copy = ggml_new_tensor(model.context_, stored, GGML_MAX_DIMS, tensor->ne);
         ggml_set_name(copy, name.c_str());
         model.tensors_[name] = copy;
         reads.push_back({tensor,copy,gguf_find_tensor(model.gguf_,name.c_str())});
@@ -325,10 +333,14 @@ inline GgufModel load_gguf_selected(const char * path, const char * device, int 
         if (offset>length || size>length-offset || !file_seek(file.get(),offset)) throw gguf_error("truncated training weights");
         bytes.resize(size);
         if (std::fread(bytes.data(),1,size,file.get())!=size) throw gguf_error("short training weight read");
-        if (read.from->type==GGML_TYPE_BF16) {
+        if (read.from->type!=read.to->type) {
+            // BF16, or a k-quant loaded dequantized: unpack with the type's own
+            // reference routine, then store as F16.
             const auto count = ggml_nelements(read.from);
             floats.resize(count); halves.resize(count);
-            ggml_bf16_to_fp32_row(reinterpret_cast<const ggml_bf16_t *>(bytes.data()),floats.data(),count);
+            if (read.from->type==GGML_TYPE_BF16)
+                ggml_bf16_to_fp32_row(reinterpret_cast<const ggml_bf16_t *>(bytes.data()),floats.data(),count);
+            else ggml_get_type_traits(read.from->type)->to_float(bytes.data(),floats.data(),count);
             ggml_fp32_to_fp16_row(floats.data(),halves.data(),count);
             ggml_backend_tensor_set(read.to,halves.data(),0,halves.size()*sizeof(halves[0]));
         } else ggml_backend_tensor_set(read.to,bytes.data(),0,size);

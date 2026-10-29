@@ -101,6 +101,7 @@ def main():
     if not set(requested) <= {'online', 'rolling', 'resident'}: parser.error('modes are online, rolling and/or resident')
     teacher_modes = [m for m in requested if m == 'online']; modes = [m for m in requested if m != 'online']
     if args.out.exists(): parser.error('Output exists; choose a new folder')
+    args.out = args.out.resolve()
     os.environ['GGML_CUDA_TF32'] = '0'
     runtime = json.loads(args.runtime.read_text())
     suffix = '.exe' if os.name == 'nt' else ''

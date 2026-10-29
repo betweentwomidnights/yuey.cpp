@@ -200,19 +200,48 @@ LoraStack::LoraStack(GgufModel & base, const std::vector<LoraAdapterSpec> & spec
     }
 }
 
+ggml_tensor * LoraStack::f32_weight(ggml_context * context, ggml_tensor * weight, int64_t first, int64_t count) const {
+    if (count < 0) count = weight->ne[1] - first;
+    if (first < 0 || first + count > weight->ne[1] || weight->ne[2] != 1 || weight->ne[3] != 1) {
+        throw lora_error("frozen weight row range out of bounds");
+    }
+    if (!ggml_is_quantized(weight->type)) {
+        auto * rows = first == 0 && count == weight->ne[1] ? weight
+            : ggml_view_2d(context, weight, weight->ne[0], count, weight->nb[1], first * weight->nb[1]);
+        return rows->type == GGML_TYPE_F32 ? rows : ggml_cast(context, rows, GGML_TYPE_F32);
+    }
+    // ggml_cast has no k-quant source on CUDA; get_rows dequantizes every one.
+    auto & slot = row_ids_[{first, count}];
+    if (!slot) {
+        if (!backend_) throw lora_error("dequantizing a frozen weight needs a backend-bound stack");
+        auto ids = std::make_unique<RowIds>();
+        ids->context.reset(ggml_init({ggml_tensor_overhead(), nullptr, true}));
+        if (!ids->context) throw lora_error("row index context allocation failed");
+        ids->ids = ggml_new_tensor_1d(ids->context.get(), GGML_TYPE_I32, count);
+        ids->buffer.reset(ggml_backend_alloc_ctx_tensors(ids->context.get(), backend_));
+        if (!ids->buffer) throw lora_error("row index allocation failed");
+        std::vector<int32_t> values(static_cast<std::size_t>(count));
+        for (int64_t i = 0; i < count; ++i) values[static_cast<std::size_t>(i)] = static_cast<int32_t>(first + i);
+        ggml_backend_tensor_set(ids->ids, values.data(), 0, values.size() * sizeof(int32_t));
+        slot = std::move(ids);
+    }
+    return ggml_get_rows(context, weight, slot->ids);
+}
+
 ggml_tensor * LoraStack::linear(
     ggml_context * context,
     ggml_tensor * weight,
     ggml_tensor * input,
     bool f32_weights) const {
     // Training may need F32 projection arithmetic while frozen weights stay
-    // in F16 storage. Cast within the current checkpointed block's workspace;
-    // keep original pointers for adapter binding lookup. Inference is unchanged.
+    // in F16 or quantized storage. Convert within the current checkpointed
+    // block's workspace; keep original pointers for adapter binding lookup.
+    // Inference is unchanged.
     auto compute_weight = [&](ggml_tensor * tensor) {
         return f32_weights && tensor->type != GGML_TYPE_F32
             ? ggml_cast(context, tensor, GGML_TYPE_F32) : tensor;
     };
-    auto * output = ggml_mul_mat(context, compute_weight(weight), input);
+    auto * output = ggml_mul_mat(context, f32_weights ? f32_weight(context, weight) : weight, input);
     const auto replacement = replacements_.find(weight);
     if (replacement != replacements_.end()) {
         for (const auto & item : replacement->second) {
@@ -221,7 +250,7 @@ ggml_tensor * LoraStack::linear(
             output = ggml_add(
                 context, output,
                 ggml_scale(context, ggml_sub(context, replaced,
-                                               ggml_mul_mat(context, compute_weight(weight), input)),
+                                               ggml_mul_mat(context, f32_weights ? f32_weight(context, weight) : weight, input)),
                            item.strength));
         }
     }
@@ -295,13 +324,13 @@ std::string LoraStack::reference_signature() const {
 
 std::vector<float> LoraStack::row_norm_squared(ggml_tensor *weight) const {
     if(has_non_additive_targets()) throw lora_error("DoRA reference supports ordinary additive frozen LoRAs only");
-    if(weight->type!=GGML_TYPE_F16 && weight->type!=GGML_TYPE_F32)
-        throw lora_error("DoRA training base must be unquantized");
+    if(weight->type!=GGML_TYPE_F16 && weight->type!=GGML_TYPE_F32 && !ggml_is_quantized(weight->type))
+        throw lora_error("DoRA training base must be F16, F32 or quantized");
     auto *ctx=ggml_init({1024*ggml_tensor_overhead()+ggml_graph_overhead_custom(1024,false),nullptr,true});
     if(!ctx) throw lora_error("DoRA norm context allocation failed");
     std::unique_ptr<ggml_context,decltype(&ggml_free)> guard(ctx,ggml_free);
     auto cast=[&](ggml_tensor *t) { return t->type==GGML_TYPE_F32?t:ggml_cast(ctx,t,GGML_TYPE_F32); };
-    auto *effective=cast(weight);
+    auto *effective=f32_weight(ctx,weight);
     const auto found=bindings_.find(weight);
     if(found!=bindings_.end()) for(const auto &factor:found->second) {
         if(factor.scale==0) continue;

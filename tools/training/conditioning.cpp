@@ -425,9 +425,10 @@ void prepare_conditioning(const ConditioningOptions & o) {
         }
         const auto plan = o.out / "pending.json";
         save(plan, pending);
-        const auto command = batch_command(python_path(binary), python_path(plan), python_path(base), python_path(common), python_path(adapter),
+        // The native tool runs from the workspace, so every path it reads is absolute.
+        const auto command = batch_command(python_path(binary), resolved_path(plan), python_path(base), python_path(common), python_path(adapter),
             o.device, count_text(o.threads), o.kv_type, count_text(o.batch),
-            o.stop_file ? std::optional<std::string>(python_path(*o.stop_file)) : std::nullopt);
+            o.stop_file ? std::optional<std::string>(resolved_path(*o.stop_file)) : std::nullopt);
         const auto start = std::chrono::steady_clock::now();
         long long completed = static_cast<long long>(entries.size() - pending.array.size());
         const auto committed = [&](const json::Value & event) {

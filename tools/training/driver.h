@@ -40,8 +40,11 @@ private:
 
 // setup_training.py without Python: the training runtime a server is started
 // with (--training-config), naming the native tools' folder, the run root, the
-// models folder and each required model, found by file name under it.
+// models folder and each required model, found by file name under it. The base
+// is the BF16 or the Q4_K_M generation model (base_encoding bf16, q4_k_m, or
+// auto: BF16 when installed, else Q4_K_M).
 void write_training_runtime(const std::filesystem::path & bin, const std::filesystem::path & models_dir,
-                            const std::filesystem::path & run_root, const std::filesystem::path & out);
+                            const std::filesystem::path & run_root, const std::filesystem::path & out,
+                            const std::string & base_encoding = "auto");
 
 } // namespace yue2::training

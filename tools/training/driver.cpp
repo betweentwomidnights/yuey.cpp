@@ -361,7 +361,11 @@ std::optional<json::Value> ProgressWatch::read() const {
     try { return read_json(*path_); } catch (const std::exception &) { return std::nullopt; }
 }
 
-void write_training_runtime(const fs::path & bin, const fs::path & models_dir, const fs::path & run_root, const fs::path & out) {
+void write_training_runtime(const fs::path & bin, const fs::path & models_dir, const fs::path & run_root, const fs::path & out,
+                            const std::string & base_encoding) {
+    if (base_encoding != "auto" && base_encoding != "bf16" && base_encoding != "q4_k_m") {
+        throw std::invalid_argument("base encoding must be auto, bf16 or q4_k_m");
+    }
 #if !defined(_WIN32) && !defined(__linux__)
     throw std::invalid_argument("Local training ownership currently supports Windows and Linux");
 #endif
@@ -369,6 +373,15 @@ void write_training_runtime(const fs::path & bin, const fs::path & models_dir, c
     for (const char * tool : {"yue2-train-run", "yue2-ar-train", "yue2-train", "yue2-score", "yue2-transcribe", "yue2-semantic-tokenize", "yue2-vae-encode"}) {
         if (!fs::is_regular_file(bin / suffix(tool))) throw std::invalid_argument(std::string("Missing native tool: ") + tool);
     }
+    const auto installed = [&](const char * name) {
+        std::size_t count = 0;
+        if (fs::is_directory(models_dir)) {
+            for (const auto & entry : fs::recursive_directory_iterator(models_dir)) count += entry.path().filename().u8string() == name;
+        }
+        return count;
+    };
+    const char * base = base_encoding == "q4_k_m" || (base_encoding == "auto" && !installed("yue2-3.6B-v1.0-BF16.gguf"))
+        ? "yue2-3.6B-v1.0-Q4_K_M.gguf" : "yue2-3.6B-v1.0-BF16.gguf";
     const auto model = [&](const char * name) {
         std::vector<fs::path> found;
         if (fs::is_directory(models_dir)) {
@@ -381,7 +394,7 @@ void write_training_runtime(const fs::path & bin, const fs::path & models_dir, c
     };
     const auto config = make({{"bin", S(resolved_path(bin))}, {"run_root", S(resolved_path(run_root))}, {"models_dir", S(resolved_path(models_dir))},
         {"device", S("cuda")}, {"threads", I(6)},
-        {"models", make({{"base", model("yue2-3.6B-v1.0-BF16.gguf")}, {"vae", model("yue2-vae-v1.0-F16.gguf")},
+        {"models", make({{"base", model(base)}, {"vae", model("yue2-vae-v1.0-F16.gguf")},
                          {"semantic", model("yue2-semantic-tokenizer-0.7B-v1.0-F16.gguf")}, {"transcriber", model("sheetsage2-mert2-f16.gguf")},
                          {"tokenizer", model("yue2-qwen.tiktoken")}, {"companion", model("yue2-instrumental-cot-full-v1.0-F16-LoRA.gguf")}})}});
     save(out, config);

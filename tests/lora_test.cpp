@@ -185,6 +185,71 @@ void require_close(const std::vector<float> & actual, const std::vector<float> &
     }
 }
 
+// Training on a quantized base reads each frozen k-quant weight as F32 through
+// get_rows. That must be the type's reference dequantization exactly, for the
+// whole tensor and for a row range (the AR semantic head), and the
+// dequantize-on-load reference must hold the same values rounded to F16.
+void check_quantized_training_weights(const std::filesystem::path & folder, const char * device) {
+    const std::int64_t columns = 512, rows = 6;
+    std::mt19937 random(7);
+    std::normal_distribution<float> normal(0.F, .05F);
+    std::vector<float> source(static_cast<std::size_t>(columns * rows));
+    for (auto & value : source) value = normal(random);
+    const auto path = folder / "quantized.gguf";
+    const std::vector<std::pair<const char *, ggml_type>> weights{
+        {"model.layers.0.self_attn.q_proj.weight", GGML_TYPE_Q4_K}, {"model.layers.0.self_attn.v_proj.weight", GGML_TYPE_Q6_K}};
+    {
+        auto * context = ggml_init({4 * 1024 * 1024, nullptr, false});
+        auto * file = gguf_init_empty();
+        gguf_set_val_str(file, "general.architecture", "yue2");
+        for (const auto & [name, type] : weights) {
+            auto * tensor = ggml_new_tensor_2d(context, type, columns, rows);
+            ggml_set_name(tensor, name);
+            ggml_quantize_chunk(type, source.data(), tensor->data, 0, rows, columns, nullptr);
+            gguf_add_tensor(file, tensor);
+        }
+        assert(gguf_write_to_file(file, path.string().c_str(), false));
+        gguf_free(file);
+        ggml_free(context);
+    }
+    const auto all = [](const std::string &) { return true; };
+    auto quantized = yue2::detail::load_gguf_selected(path.string().c_str(), device, 1, all);
+    auto dequantized = yue2::detail::load_gguf_selected(path.string().c_str(), device, 1, all, true);
+    yue2::detail::LoraStack quantized_stack(quantized, {}), dequantized_stack(dequantized, {});
+    for (const auto & [name, type] : weights) {
+        auto * weight = quantized.get(name);
+        assert(weight->type == type && dequantized.get(name)->type == GGML_TYPE_F16);
+        std::vector<std::uint8_t> packed(ggml_nbytes(weight));
+        ggml_backend_tensor_get(weight, packed.data(), 0, packed.size());
+        std::vector<float> reference(source.size());
+        ggml_get_type_traits(type)->to_float(packed.data(), reference.data(), static_cast<int64_t>(reference.size()));
+        for (const auto & [first, count] : std::vector<std::pair<std::int64_t, std::int64_t>>{{0, rows}, {2, 3}}) {
+            const auto read = [&](yue2::detail::GgufModel & model, const yue2::detail::LoraStack & stack) {
+                auto * context = ggml_init({1024 * 1024, nullptr, true});
+                auto * output = stack.f32_weight(context, model.get(name), first, count);
+                assert(output->type == GGML_TYPE_F32 && output->ne[0] == columns && output->ne[1] == count);
+                auto * graph = ggml_new_graph(context);
+                ggml_build_forward_expand(graph, ggml_cont(context, output));
+                auto * allocator = ggml_gallocr_new(ggml_backend_get_default_buffer_type(model.backend()));
+                assert(ggml_gallocr_alloc_graph(allocator, graph));
+                assert(ggml_backend_graph_compute(model.backend(), graph) == GGML_STATUS_SUCCESS);
+                std::vector<float> values(static_cast<std::size_t>(columns * count));
+                ggml_backend_tensor_get(ggml_graph_node(graph, -1), values.data(), 0, values.size() * sizeof(float));
+                ggml_gallocr_free(allocator);
+                ggml_free(context);
+                return values;
+            };
+            const auto exact = read(quantized, quantized_stack);
+            const auto rounded = read(dequantized, dequantized_stack);
+            for (std::size_t i = 0; i < exact.size(); ++i) {
+                const auto expected = reference[static_cast<std::size_t>(first * columns) + i];
+                assert(exact[i] == expected);
+                assert(rounded[i] == ggml_fp16_to_fp32(ggml_fp32_to_fp16(expected)));
+            }
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char ** argv) {
@@ -222,6 +287,8 @@ int main(int argc, char ** argv) {
         catch(const std::runtime_error &){bad=true;}
         assert(bad);
     }
+
+    check_quantized_training_weights(temporary.path, device);
 
     yue2::detail::LoraStack disabled(
         base, {{adapter_path.string(), 0.0F}});

@@ -17,8 +17,11 @@ struct NarTrainingOptions {
     // Frozen AR adapters used to prepare conditioning; never loaded into NAR.
     std::vector<LoraAdapterSpec> conditioning_adapters;
     bool f32_projections = false;
+    // Load a quantized base's projections as F16 instead of dequantizing them
+    // in each graph: the reference quantized training was validated against.
+    bool dequantize_base = false;
     // Experimental output-row DoRA, full norm gradients. Requires F32
-    // projections and an unquantized base, with no fixed NAR adapters.
+    // projections, with no fixed NAR adapters.
     bool dora = false;
     // Persistent AR K/V inputs are F16 and widened to F32 inside the graph,
     // which is exact. Every sample must then carry half_keys/half_values.

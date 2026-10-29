@@ -464,9 +464,11 @@ void fit_ar(const FitOptions & o) {
     if (o.phase != "probe" && o.phase != "fit" && o.phase != "post-probe" && o.phase != "select") throw std::invalid_argument("Unknown phase");
     check_segment(o.segment);
     const auto root = from_utf8(text(config, "workspace"));
-    const auto out = from_utf8(text(config, "output")) / o.family;
+    // The trainers run from the workspace (the native tools' folder), so every
+    // path handed to them is absolute.
+    const auto out = from_utf8(resolved_path(from_utf8(text(config, "output")))) / o.family;
     if (!fs::exists(out)) fs::create_directory(out);
-    const auto dataset = from_utf8(text(config, "training_dataset"));
+    const auto dataset = from_utf8(resolved_path(from_utf8(text(config, "training_dataset"))));
     const auto data = read_json(dataset);
     if (!truthy(member(data, "completed"))) throw std::invalid_argument("Dataset is not ready");
     const auto rows = eligible(data);
@@ -526,7 +528,7 @@ void fit_ar(const FitOptions & o) {
         if (o.resume) {
             resumed_step = state_step(*o.resume);
             cmd.push_back("--resume");
-            cmd.push_back(python_path(*o.resume));
+            cmd.push_back(resolved_path(*o.resume));
         }
         if (resumed_step >= target_steps) throw std::invalid_argument("Target budget already reached");
         cmd.push_back("--steps");
@@ -669,9 +671,10 @@ void fit_nar(const FitOptions & o) {
     const auto config = load_job(o.config, "yue2-nar-training-v1", "Unsupported NAR job");
     if (o.phase != "probe" && o.phase != "fit" && o.phase != "post-probe" && o.phase != "select") throw std::invalid_argument("Unknown phase");
     check_segment(o.segment);
-    const auto out = from_utf8(text(config, "output"));
+    // The trainer runs from the workspace, so every path handed to it is absolute.
+    const auto out = from_utf8(resolved_path(from_utf8(text(config, "output"))));
     fs::create_directories(out);
-    const auto manifest = from_utf8(text(config, "training_dataset"));
+    const auto manifest = from_utf8(resolved_path(from_utf8(text(config, "training_dataset"))));
     const auto data = read_json(manifest);
     if (text(data, "format") != "yue2-nar-prepared-dataset-v1" || !truthy(member(data, "completed"))) {
         throw std::invalid_argument("NAR data is incomplete");
@@ -754,7 +757,7 @@ void fit_nar(const FitOptions & o) {
         if (o.resume) {
             resumed = state_step(*o.resume);
             command.push_back("--resume");
-            command.push_back(python_path(*o.resume));
+            command.push_back(resolved_path(*o.resume));
         }
         if (resumed >= target) throw std::invalid_argument("Target budget already reached");
         for (const auto & value : {std::string("--out"), python_path(native), std::string("--steps"), py_str(target - resumed),

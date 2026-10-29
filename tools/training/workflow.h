@@ -54,6 +54,9 @@ json::Value review(const std::filesystem::path & run);
 // training runtime, also whether its native tools support each mode.
 json::Value capabilities(const std::optional<std::filesystem::path> & runtime);
 
+// The encoding of a base's projections: bf16, f16, f32, q4_k_m, q5_k_m or q8_0.
+std::string base_encoding(const std::filesystem::path & base);
+
 // SHA-256 of an executable and every shared library beside it, plus the
 // precision environment: an unchanged executable can load a new GGML.
 json::Value runtime_identity(const std::filesystem::path & executable);

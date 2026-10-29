@@ -444,6 +444,24 @@ json::Value review(const fs::path & run) {
     return output;
 }
 
+std::string base_encoding(const fs::path & base) {
+    gguf_init_params params{true, nullptr};
+    auto * context = gguf_init_from_file(utf8(base).c_str(), params);
+    if (!context) return "unreadable";
+    const auto id = gguf_find_tensor(context, "model.layers.0.self_attn.q_proj.weight");
+    const auto type = id < 0 ? GGML_TYPE_COUNT : gguf_get_tensor_type(context, id);
+    gguf_free(context);
+    switch (type) {
+        case GGML_TYPE_BF16: return "bf16";
+        case GGML_TYPE_F16: return "f16";
+        case GGML_TYPE_F32: return "f32";
+        case GGML_TYPE_Q4_K: return "q4_k_m";
+        case GGML_TYPE_Q5_K: return "q5_k_m";
+        case GGML_TYPE_Q8_0: return "q8_0";
+        default: return "unsupported";
+    }
+}
+
 json::Value capabilities(const std::optional<fs::path> & runtime) {
     std::optional<json::Value> native;
     if (runtime) {
@@ -491,6 +509,15 @@ json::Value capabilities(const std::optional<fs::path> & runtime) {
     output.object["request_settings"] = settings_list;
     output.object["storage"] = storage;
     output.object["native"] = native ? *native : json::Value{};
+    // Bases a run can train against; setup picks BF16 when installed, else Q4_K_M.
+    output.object["base_encodings"] = json::array();
+    for (const char * encoding : {"bf16", "q4_k_m"}) output.object["base_encodings"].array.push_back(json::from_string(encoding));
+    if (runtime) {
+        const auto config = read_json(*runtime);
+        const auto * models = config.find("models");
+        const auto base = models ? text_of(*models, "base") : "";
+        output.object["base"] = base.empty() ? json::Value{} : json::from_string(base_encoding(fs::u8path(base)));
+    }
     return output;
 }
 
