@@ -64,6 +64,66 @@ def verify_cache(cache, key, row, target, base, common, adapter, kv_type):
         if not np.isfinite(values).all():raise ValueError('Nonfinite conditioning')
 
 
+def batch_command(binary, plan, base, common, adapter, device, threads, kv_type, batch, stop_file=None):
+    command=list(map(str,[binary,'--prepare-batch',plan,'--conditioning-only','--model',base,
+        '--conditioning-lora',common,'--conditioning-lora',adapter,'--device',device,
+        '--threads',threads,'--cache-kv-type',kv_type,'--conditioning-batch',batch]))
+    if stop_file:command+=['--stop-file',str(stop_file)]
+    return command
+
+
+def run_batch(command, workspace, log_path, on_event):
+    """Run native batch preparation, handing each completed cache to on_event."""
+    with log_path.open('a',encoding='utf-8') as log:
+        process=subprocess.Popen(command,cwd=workspace,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
+        try:
+            for line in process.stdout:
+                log.write(line);log.flush()
+                if line.startswith('CACHE_EVENT '):
+                    on_event(json.loads(line[len('CACHE_EVENT '):]))
+                    print(line.rstrip(),flush=True)
+        except BaseException:
+            # Drain the pipe before waiting: an unwatched child can block
+            # on stdout and never reach its next stop-file check.
+            for line in process.stdout:log.write(line)
+            raise
+        finally:process.wait()
+    if process.returncode:raise RuntimeError(log_path.read_text()[-4000:])
+
+
+def native_facts(event):
+    """The recorded cache facts a rolling NAR fit binds its identity to."""
+    return dict(cache_bytes=event['bytes'],cache_fnv=event['fnv'],cache_tokens=event['tokens'],
+                cache_frames=event['frames'],cache_half=event['half'])
+
+
+def materialize(manifest, rows, binary, base, common, adapter, stop_file=None):
+    """Regenerate absent rolling caches. Each must be byte-identical to the one
+    recorded by the preparation pass; any difference fails the run."""
+    identity=json.loads(Path(manifest).read_text())['identity']
+    # A segment may draw the same window more than once; generate it once.
+    pending=list({str(Path(r['cache']).resolve()):r for r in rows if not Path(r['cache']).exists()}.values())
+    if not pending:return 0
+    # The native tool runs from its own folder, so every path it reads is absolute.
+    out=Path(manifest).resolve().parent;plan=out/'materialize.json'
+    absolute=lambda path:str(Path(path).resolve())
+    save(plan,[dict(prefix=absolute(r['prefix']),tokens=absolute(r['codes']),latents=absolute(r['means']),
+                    **{'cache-out':absolute(r['cache']),'cache-identity':r['cache_identity']}) for r in pending])
+    by_path={str(Path(r['cache']).resolve()):r for r in pending}
+    def check(event):
+        row=by_path[str(Path(event['path']).resolve())]
+        if native_facts(event)!={k:row[k] for k in native_facts(event)} or digest(Path(row['cache']))!=row['cache_sha256']:
+            Path(row['cache']).unlink(missing_ok=True)
+            raise ValueError('Regenerated NAR cache differs from its recorded bytes: '+row['cache'])
+    binary=Path(binary).resolve()
+    run_batch(batch_command(binary,plan,*map(absolute,[base,common,adapter]),identity['device'],identity['threads'],
+                            identity['kv_type'],identity['prefill_batch'],stop_file and absolute(stop_file)),
+              binary.parent,out/'materialize.log',check)
+    missing=[r['cache'] for r in pending if not Path(r['cache']).exists()]
+    if missing and not (stop_file and Path(stop_file).exists()):raise ValueError('Native preparation did not regenerate '+missing[0])
+    return len(pending)-len(missing)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True, help='Completed AR job JSON')
@@ -76,6 +136,9 @@ def main():
     parser.add_argument('--cache-kv-type', choices=['f16','f32'], default='f16')
     parser.add_argument('--conditioning-batch', type=int, default=0)
     parser.add_argument('--stop-file', type=Path)
+    parser.add_argument('--storage', choices=['cache','rolling','resident'], default='cache',
+                        help='cache keeps every K/V file; rolling records each one, then deletes it '
+                             'for later byte-identical regeneration; resident writes none')
     parser.add_argument('--auxiliary-dataset', type=Path,
                         help='Explicit generated replay/retention examples, with source provenance')
     parser.add_argument('--auxiliary-targets', type=Path,
@@ -129,6 +192,8 @@ def main():
                     prefix_policy='Exact AR training prefix and semantic IDs',
                     replay_policy='Real targets plus explicitly sourced generated replay/retention' if auxiliary_identity else 'Real targets only',
                     auxiliary=auxiliary_identity)
+    if args.storage!='cache':identity['storage']=args.storage
+    if args.storage!='cache' and args.cache_kv_type!='f16':raise ValueError('Rolling and resident conditioning use F16 K/V')
     job_path = args.out/'identity.json'
     if job_path.exists() and json.loads(job_path.read_text()) != identity:
         raise ValueError('NAR cache identity changed; use another output directory')
@@ -148,6 +213,11 @@ def main():
                         means_sha256=target['means_sha256'],frames=row['frames'])
         key = hashlib.sha256(json.dumps(expected,sort_keys=True).encode()).hexdigest()
         entries.append((row,target,cache,metadata,expected,key))
+        if args.storage=='resident':continue
+        if args.storage=='rolling' and not cache.exists() and metadata.exists():
+            previous=json.loads(metadata.read_text())
+            if previous.get('identity')!=expected or 'native' not in previous:raise ValueError('Rolling NAR cache record changed')
+            continue
         if not cache.exists():
             pending.append(dict(prefix=row['prefix'],tokens=row['codes'],latents=target['means'],
                                 **{'cache-out':str(cache.resolve()),'cache-identity':key}))
@@ -171,35 +241,40 @@ def main():
     if pending:
         if args.conditioning_device=='cuda':wait_for_inference(config.get('inference_urls',[]))
         plan=args.out/'pending.json';save(plan,pending)
-        command=list(map(str,[binary,'--prepare-batch',plan,'--conditioning-only','--model',base,
-            '--conditioning-lora',common,'--conditioning-lora',adapter,'--device',args.conditioning_device,
-            '--threads',args.threads,'--cache-kv-type',args.cache_kv_type,'--conditioning-batch',args.conditioning_batch]))
-        if args.stop_file:command+=['--stop-file',str(args.stop_file)]
+        command=batch_command(binary,plan,base,common,adapter,args.conditioning_device,args.threads,
+                              args.cache_kv_type,args.conditioning_batch,args.stop_file)
         start=time.monotonic();completed=len(entries)-len(pending)
-        with (args.out/'prepare.log').open('a',encoding='utf-8') as log:
-            process=subprocess.Popen(command,cwd=config['workspace'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
-            try:
-                for line in process.stdout:
-                    log.write(line);log.flush()
-                    if line.startswith('CACHE_EVENT '):
-                        event=json.loads(line[len('CACHE_EVENT '):])
-                        item=pending[event['index']]
-                        entry=next(e for e in entries if e[2].resolve()==Path(item['cache-out']).resolve())
-                        row,target,cache,metadata,expected,key=entry
-                        verify_cache(cache,key,row,target,base,common,adapter,args.cache_kv_type)
-                        save(metadata,dict(identity=expected,cache_sha256=digest(cache)))
-                        completed+=1
-                        save(args.out/'progress.json',dict(status='running',stage='frozen-ar-conditioning',current=completed,total=len(entries)))
-                        print(line.rstrip(),flush=True)
-            except BaseException:
-                # Drain the pipe before waiting: an unwatched child can block
-                # on stdout and never reach its next stop-file check.
-                for line in process.stdout:log.write(line)
-                raise
-            finally:process.wait()
-        save(args.out/'command.json',dict(command=command,returncode=process.returncode,seconds=time.monotonic()-start))
-        if process.returncode:raise RuntimeError((args.out/'prepare.log').read_text()[-4000:])
+        def committed(event):
+            nonlocal completed
+            item=pending[event['index']]
+            entry=next(e for e in entries if e[2].resolve()==Path(item['cache-out']).resolve())
+            row,target,cache,metadata,expected,key=entry
+            verify_cache(cache,key,row,target,base,common,adapter,args.cache_kv_type)
+            record=dict(identity=expected,cache_sha256=digest(cache))
+            if args.storage=='rolling':
+                # Keep only what proves a later regeneration is byte-identical.
+                record['native']=native_facts(event);save(metadata,record);cache.unlink()
+            else:save(metadata,record)
+            completed+=1
+            save(args.out/'progress.json',dict(status='running',stage='frozen-ar-conditioning',current=completed,total=len(entries)))
+        try:run_batch(command,config['workspace'],args.out/'prepare.log',committed)
+        finally:save(args.out/'command.json',dict(command=command,seconds=time.monotonic()-start))
     for row,target,cache,metadata,expected,key in entries:
+        if args.storage=='resident':
+            # No cache file exists; the path only names the window for the fitter.
+            prepared.append(dict(row,cache=str(cache.resolve()),means=target['means'],means_sha256=target['means_sha256']))
+            continue
+        if args.storage=='rolling':
+            if not metadata.exists():
+                if args.stop_file and args.stop_file.exists():
+                    save(args.out/'progress.json',dict(status='stopped',stage='frozen-ar-conditioning',current=len(prepared),total=len(entries)))
+                    return
+                raise ValueError('Native preparation did not record all caches')
+            record=json.loads(metadata.read_text())
+            if record.get('identity')!=expected or 'native' not in record:raise ValueError('Rolling NAR cache record changed')
+            prepared.append(dict(row,cache=str(cache.resolve()),cache_sha256=record['cache_sha256'],cache_identity=key,
+                                 means=target['means'],means_sha256=target['means_sha256'],**record['native']))
+            continue
         if not cache.exists():
             if args.stop_file and args.stop_file.exists():
                 save(args.out/'progress.json',dict(status='stopped',stage='frozen-ar-conditioning',current=len(prepared),total=len(entries)))
@@ -217,7 +292,7 @@ def main():
                                digest(args.auxiliary_targets)!=auxiliary_identity['targets_sha256']):
         raise ValueError('Auxiliary manifest changed during preparation')
     for row in prepared:
-        for key in ['cache','prefix','codes','means']:
+        for key in ['cache','prefix','codes','means'] if args.storage=='cache' else ['prefix','codes','means']:
             if digest(Path(row[key])) != row[key+'_sha256']:
                 raise ValueError('Input or cache changed during preparation')
     save(args.out/'dataset.json',dict(format='yue2-nar-prepared-dataset-v1',completed=True,

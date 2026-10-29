@@ -9,7 +9,7 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0,str(Path(__file__).parents[1]/'tools'))
-from training_workflow import settings,inventory,wait_for_owner,process_identity,Workflow,ar_resource_estimate
+from training_workflow import settings,inventory,wait_for_owner,process_identity,Workflow,ar_resource_estimate,capabilities
 
 
 class WorkflowTest(unittest.TestCase):
@@ -24,7 +24,34 @@ class WorkflowTest(unittest.TestCase):
         self.assertNotIn('teacher_cache',settings(dict(id='version-three',recipe_version=3)))
         four=settings(dict(id='version-four',recipe_version=4))
         self.assertEqual((four['teacher_cache'],four['cache_fingerprint'],four['evaluation_scope']),('f32','bytes-v2','heldout'))
-        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=5))
+        with self.assertRaisesRegex(ValueError,'recipe version'):settings(dict(id='new-run',recipe_version=6))
+
+    def test_recipe_five_storage_defaults_reproduce_recipe_four(self):
+        four=settings(dict(id='run',recipe_version=4));five=settings(dict(id='run',recipe_version=5))
+        self.assertEqual(five.pop('conditioning_storage'),'cache')
+        self.assertEqual(five,four)
+        online=settings(dict(id='v5',recipe_version=5,teacher_storage='online'))
+        self.assertNotIn('teacher_cache',online);self.assertTrue(online['teacher_online'])
+        for mode in ['rolling','resident']:
+            self.assertEqual(settings(dict(id='v5',recipe_version=5,conditioning_storage=mode))['conditioning_storage'],mode)
+        with self.assertRaisesRegex(ValueError,'teacher_storage'):settings(dict(id='v5',recipe_version=5,teacher_storage='f16'))
+        with self.assertRaisesRegex(ValueError,'conditioning_storage'):settings(dict(id='v5',recipe_version=5,conditioning_storage='zip'))
+        with self.assertRaisesRegex(ValueError,'recipe version 5'):settings(dict(id='v4',recipe_version=4,teacher_storage='online'))
+        rows=[dict(split='train',frames=750,prefix_tokens=1000)]*157
+        cached=ar_resource_estimate(rows,five|dict(conditioning_storage='cache'),'cuda')
+        streamed=ar_resource_estimate(rows,online,'cuda')
+        self.assertEqual(streamed['estimated_teacher_disk_gib'],0)
+        self.assertEqual(streamed['estimated_ar_host_ram_gib'],cached['estimated_ar_host_ram_gib'])
+
+    def test_capabilities_list_exactly_the_server_request_settings(self):
+        import re
+        server=(Path(__file__).parents[1]/'tools/server/training.h').read_text()
+        allowed=set(re.findall(r'key!="([a-z_]+)"',server))
+        caps=capabilities()
+        self.assertEqual(set(caps['request_settings']),allowed)
+        self.assertEqual(caps['default_recipe'],int(re.search(r'recipe_version"\]=json::parse\("(\d+)"\)',server)[1]))
+        self.assertEqual(set(caps['storage']['conditioning_storage']),{'cache','rolling','resident'})
+        self.assertIsNone(caps['native'])
 
     def test_teacher_estimates_match_measured_koan_corpus(self):
         # 157 training and 38 validation 30-second windows, measured in
@@ -89,7 +116,7 @@ class WorkflowTest(unittest.TestCase):
             owner.write_text(json.dumps(dict(pid=os.getpid(),identity='stale')))
             with self.assertRaisesRegex(RuntimeError,'not committed'):wait_for_owner(root,.01)
     def test_rejects_unsafe_budgets_and_nonfinite_hyperparameters(self):
-        for field,value in [('ar_steps',0),('nar_steps',-1),('rank',2.5),('seed',True),
+        for field,value in [('ar_steps',0),('nar_steps',-1),('rank',2.5),('rank',1),('seed',True),
                             ('kl_weight',float('nan')),('ar_lr',float('inf')),('window_seconds',61),
                             ('family','other'),('trigger','two words')]:
             with self.subTest(field=field,value=value),self.assertRaises(ValueError):

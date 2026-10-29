@@ -6,8 +6,9 @@ measured and what each result decided. For current behavior, see
 [training](training.md), [AR training](ar-training.md) and
 [NAR training](nar-training.md).
 
-All measurements are from one Windows machine: RTX 5070 Laptop GPU (8 GB),
-64 GB of host RAM and 24 logical CPUs, with `GGML_CUDA_TF32=0`. Listening
+Unless an entry names the DGX Spark, measurements are from one Windows
+machine: RTX 5070 Laptop GPU (8 GB), 64 GB of host RAM and 24 logical CPUs,
+with `GGML_CUDA_TF32=0`. Listening
 results are the user's own judgments on the cases presented. None of them is a
 broad-seed or long-form pass. Raw commands, hashes, audio and per-run JSON
 records stay in the local, git-ignored `outputs/` folder named for each
@@ -277,6 +278,59 @@ and after.
 - **Found during verification:** on Windows, a live `GGUFReader`
   memory-maps its file and blocks deletion, so state files are now read
   through a scoped helper.
-- **Not yet done** (these trade training time or VRAM for disk): an
-  on-the-fly teacher, a rolling conditioning cache with a disk budget, and
-  in-process conditioning on GPUs large enough to hold both experts.
+- **Followed by** recipe 5 storage modes (below), which trade training time
+  or VRAM for the remaining caches.
+
+## Recipe 5: storage modes (2026-10-28)
+
+- **Problem:** even with retention, a full-corpus run needs the larger of
+  26.1 GiB of NAR conditioning and 12.6 GiB of AR teachers. Other trainers
+  used by downstream apps need far less disk.
+- **Change:** per-run `teacher_storage` (`cache`, `online`) and
+  `conditioning_storage` (`cache`, `rolling`, `resident`), with a capability
+  probe for downstream apps. See [storage modes](training.md#storage-modes).
+  - The online teacher runs the common model in the AR fitter. With zero B
+    factors the adapted block adds exactly zero, so it equals the cached
+    teacher.
+  - Rolling preparation records each cache's size, FNV-1a hash and header,
+    then deletes it. The fit regenerates only the windows the native sampler
+    will draw in the next segment.
+  - Resident conditioning computes the frozen AR K/V inside the NAR fitter.
+- **Parity:**
+  - At smoke scale, every mode is bit-identical to cached. That covers:
+    - the online teacher on CPU and CUDA, LoRA and DoRA, including resume;
+    - rolling (six segments) and resident on CUDA;
+    - the full server workflow through publish.
+  - On 8 real recordings with 30 s windows at rank 32, rolling gave an
+    identical history and final state. Resident matched every loss up to
+    update 36, when it was stopped. A 10-update online AR fit equalled the
+    cached fit.
+  - One earlier online measurement differed by about 1e-5 from step 1; it did
+    not reproduce.
+  - On the DGX Spark (GB10, aarch64, CUDA 13), ctest, the unit tests and the
+    CUDA online-teacher parity tests pass. Every mode was identical to cached,
+    both on the synthetic set and on 8 real recordings with 30 s windows at
+    rank 32.
+- **Found during verification:**
+  - A rolling segment that drew the same window twice regenerated it twice and
+    failed with "cache output exists". Regeneration now deduplicates by path.
+  - Resident conditioning initially differed by 1e-5. Preparation computes
+    without flash attention, and the resident model now does the same.
+  - Resident conditioning on 8 GB with 30 s windows spills: about 188 s per
+    NAR update against 1.48 s cached.
+    - The fitter holds the NAR expert (2.7 GiB) and the AR expert (3.3 GiB),
+      which don't overlap, plus both workspaces and the K/V.
+    - Four-second windows fit (0.47 s against 0.28 s).
+  - With a relative `--out`, rolling regeneration failed on the Spark: the
+    native tool runs from its own folder and could not find the plan.
+    Regeneration now passes only absolute paths.
+- **Costs on the Spark** (30 s windows, rank 32, per update against cached):
+  - online teacher: 3.86 s against 2.85 s;
+  - rolling: 1.21 s, the same as cached, plus regeneration (fit 215 s against
+    86 s);
+  - resident: 1.91 s against 1.21 s, but it skips the 50 s conditioning
+    preparation, so total NAR time roughly matches cached.
+- **Verification tool:** `tools/verify_training_storage.py` repeats a cached
+  server run in every mode and compares the results.
+- **Not yet done:** a rolling disk measurement on a dataset large enough to
+  show the saving.

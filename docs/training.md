@@ -127,8 +127,9 @@ DoRA500/NAR400. They do not force step 500 for a new dataset. **The initial UI
 workflow does not generate the neutral replay/retention examples used in that
 research run**; generalization and musical defaults still need broader listening
 validation before release. The underlying research CLI continues to support
-explicit auxiliary examples. Rank/family, learning rates, budgets, seed, KL and
-evaluation cadence are advanced controls. NAR uses LoRA; planning training and
+explicit auxiliary examples. Rank (2 to 128; rank 1 is not a useful adapter
+and GGML's CUDA OUT_PROD rejects it), family, learning rates, budgets, seed, KL
+and evaluation cadence are advanced controls. NAR uses LoRA; planning training and
 score dropout are not product controls.
 
 60-second windows are experimental: full AR training spilled into WDDM shared
@@ -190,6 +191,75 @@ checkpoints, probe diagnostics and audio slices, keeping the selected adapters,
 manifests, metrics and logs. A released run cannot train again; start a new
 run. Set `"keep_caches": true` when creating a run to keep everything for later
 recalibration.
+
+## Storage modes
+
+Recipe 5 (the default for new runs) can trade training time or VRAM for the
+two caches. Every mode is bit-identical to the cached default: optimizer
+state, adapters, sampler state, losses and evaluations are equal, and each run
+records its mode in its identity. Choose per run when creating it:
+
+| Request key | Value | Disk | Cost |
+| --- | --- | --- | --- |
+| `teacher_storage` | `cache` (default) | AR teachers, 12.6 GiB on the full corpus, until AR selection | Fastest AR updates; teacher preparation once (47 s on 8 recordings) |
+| | `online` | None | One extra common-model forward per AR update |
+| `conditioning_storage` | `cache` (default) | All NAR conditioning, 26.1 GiB on the full corpus, until publish | Fastest NAR updates |
+| | `rolling` | One segment's windows plus the heldout set | Regenerates each window before use, about 1.2 s each |
+| | `resident` | None | The NAR fitter also holds the frozen AR expert and computes its K/V |
+
+Rolling fits run in segments of 25 updates, ending on evaluation boundaries.
+Before each segment the native sampler reports exactly which windows it will
+draw; those are regenerated, checked against the size, FNV-1a hash, header and
+SHA-256 recorded during preparation, and every other cache is deleted. With
+full-scope evaluation every window is needed at every evaluation, so rolling
+saves nothing; with heldout scope (the default) the saving grows with the
+dataset. A small dataset whose windows nearly all fall in one segment saves
+little.
+
+The experts' weights don't overlap. The NAR fitter loads only the NAR expert,
+2.7 GiB in BF16, and resident conditioning adds the AR expert without its LM
+head, 3.3 GiB. On top of that come both workspaces and the window's K/V.
+Dataset review reports `model_vram_gib` (weights only) per mode under
+`storage_options`. With 30-second windows this exceeds an 8 GB RTX 5070
+Laptop: memory spills into shared system memory and each NAR update takes
+about 190 s instead of 1.5 s. Four-second windows still fit (0.47 s against
+0.28 s cached).
+
+Measured with 8 recordings (a different set on each machine), 30-second
+windows, rank 32, 30 AR and 50 NAR updates; every mode identical to cached.
+The Spark figures come from one `tools/verify_training_storage.py` run:
+
+| Mode | DGX Spark (GB10, unified memory) | RTX 5070 Laptop (8 GB) |
+| --- | --- | --- |
+| AR `cache` | 2.85 s per update | 3.6 s |
+| AR `online` | 3.86 s per update (+35%) | 2.9–4.9 s, in separate sessions |
+| NAR `cache` | 1.21 s per update; 86 s fit; 6.8 GiB conditioning | 1.48 s; 99 s; 4.8 GiB |
+| NAR `rolling` | 1.21 s per update; 215 s fit with regeneration | 1.62 s; 159 s |
+| NAR `resident` | 1.91 s per update; 135 s fit; 3.5 s preparation | 188 s per update (spilled); stopped at update 36 |
+
+Preparing conditioning generates every window once in both `cache` and
+`rolling` modes, which took 50 s on the Spark. Resident skips that step, so its
+total NAR time (139 s) roughly matches cached (136 s) with no conditioning disk,
+on a GPU that holds both experts. The resident fit raised the Spark's used
+memory by about 7.9 GiB. Memory-mapped weights count as page cache there, so
+that figure understates the footprint.
+
+Downstream trainers can query what an installation supports:
+
+```bash
+python tools/training_workflow.py --capabilities --runtime training-runtime.json
+```
+
+This prints the recipes, the accepted request settings, each storage mode's
+trade-off, and whether the native tools support it. To check that the modes
+match the cached default on a machine, run:
+
+```bash
+python tools/verify_training_storage.py --runtime training-runtime.json --out outputs/storage-verify
+```
+
+Without `--dataset` it trains on two short synthetic piano recordings. Pass a
+real dataset with `--window-seconds 30 --rank 32` for representative timings.
 
 ## HTTP surface
 

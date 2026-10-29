@@ -294,6 +294,8 @@ def main():
          '--identity',run_hash]
     if args.family=='dora':cmd+=['--dora']
     if args.phase=='fit' and 'evaluation_scope' in training:cmd+=['--eval-scope',training['evaluation_scope']]
+    # Recipe v5 online teachers: one common-model forward per update, no cache.
+    if args.phase=='fit' and training.get('teacher')=='online' and training['kl_weight']>0:cmd+=['--teacher-online']
     resumed_step=0
     # Recipe v4+: stream frozen teacher distributions from a SHA-256-indexed
     # disk cache instead of preparing all of them in fitter RAM each start.

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).parents[1]/'tools'))
 from train_ar_run import prune_checkpoints,select_checkpoints
-from training_workflow import Workflow,checkpoint_allowance,settings
+from training_workflow import Workflow,checkpoint_allowance,conditioning_bytes,settings
 
 
 def metric(step,value):
@@ -106,6 +106,18 @@ class CacheReleaseTest(unittest.TestCase):
         (run/'request.json').write_text(json.dumps(dict(id='fixture',family='lora',rank=4,**request)))
         return run
 
+    def test_conditioning_disk_by_storage_mode(self):
+        # Shaped like the 38-recording laptop corpus: 138 training, 28 heldout windows.
+        rows=[dict(split='train',frames=750,prefix_tokens=1131)]*138+[dict(split='validation',frames=750,prefix_tokens=1131)]*28
+        cache,rolling=(conditioning_bytes(rows,mode,'heldout')/2**30 for mode in ['cache','rolling'])
+        self.assertAlmostEqual(cache,33.4,delta=.05)  # every prefix at the maximum
+        self.assertAlmostEqual(rolling,(25+28)*conditioning_bytes(rows[:1])/2**30,delta=1e-6)
+        self.assertLess(rolling,cache/3)
+        self.assertEqual(conditioning_bytes(rows,'resident'),0)
+        # Full-scope evaluation needs every window, so rolling saves nothing.
+        self.assertEqual(conditioning_bytes(rows,'rolling','full'),conditioning_bytes(rows))
+        self.assertEqual(conditioning_bytes(rows[:3],'rolling','heldout'),conditioning_bytes(rows[:3]))
+
     def test_keep_caches_is_a_validated_boolean_defaulting_to_release(self):
         self.assertFalse(settings(dict(id='run'))['keep_caches'])
         self.assertTrue(settings(dict(id='run',keep_caches=True))['keep_caches'])
@@ -160,6 +172,49 @@ class CacheReleaseTest(unittest.TestCase):
             nar.mkdir();(nar/'dataset.json').write_text(json.dumps(dict(completed=True)))
             Usage.free=checkpoint_allowance(workflow.options,1)
             with patch('training_workflow.shutil.disk_usage',return_value=Usage):workflow.check_disk(ar,nar)
+
+    def test_rolling_regenerates_a_redrawn_window_once(self):
+        import hashlib
+        import prepare_nar_dataset
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);manifest=root/'dataset.json'
+            manifest.write_text(json.dumps(dict(identity=dict(device='cuda',threads=6,kv_type='f16',prefill_batch=0))))
+            facts=dict(cache_bytes='5',cache_fnv='0',cache_tokens='1',cache_frames='1',cache_half=True)
+            row=dict(prefix='p',codes='c',means='m',cache=str(root/'a/sample.gguf'),cache_identity='i',
+                     cache_sha256=hashlib.sha256(b'cache').hexdigest(),**facts)
+            def batch(command,workspace,log,on_event):
+                plan=json.loads((root/'materialize.json').read_text())
+                self.assertEqual(len(plan),1)
+                path=Path(plan[0]['cache-out']);path.parent.mkdir(exist_ok=True);path.write_bytes(b'cache')
+                on_event(dict(path=str(path),bytes='5',fnv='0',tokens='1',frames='1',half=True))
+            # The sampler drew the same window twice in one segment.
+            with patch('prepare_nar_dataset.run_batch',batch):
+                self.assertEqual(prepare_nar_dataset.materialize(manifest,[row,dict(row)],'yue2-train','b','c','a'),1)
+
+    def test_rolling_regeneration_passes_absolute_paths(self):
+        import os
+        import prepare_nar_dataset
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();previous=os.getcwd();os.chdir(root)
+            try:
+                Path('run').mkdir();Path('run/dataset.json').write_text(json.dumps(dict(
+                    identity=dict(device='cuda',threads=6,kv_type='f16',prefill_batch=0))))
+                row=dict(prefix='data/p',codes='data/c',means='data/m',cache='run/a/sample.gguf',cache_identity='i')
+                seen={}
+                def batch(command,workspace,log,on_event):seen.update(command=command,workspace=workspace)
+                # The native tool runs from its own folder, so relative --out paths
+                # must not reach it.
+                with patch('prepare_nar_dataset.run_batch',batch):
+                    with self.assertRaisesRegex(ValueError,'did not regenerate'):
+                        prepare_nar_dataset.materialize('run/dataset.json',[row],'bin/yue2-train','b.gguf','c.gguf','a.gguf','run/stop.request')
+                command=seen['command'];plan=Path(command[command.index('--prepare-batch')+1])
+                self.assertTrue(plan.is_absolute())
+                for key in ['--model','--stop-file']:self.assertTrue(Path(command[command.index(key)+1]).is_absolute(),key)
+                self.assertTrue(all(Path(v).is_absolute() for v in command[1:] if v.endswith('.gguf')))
+                entry=json.loads(plan.read_text())[0]
+                self.assertTrue(all(Path(entry[k]).is_absolute() for k in ['prefix','tokens','latents','cache-out']))
+                self.assertEqual(Path(seen['workspace']),root/'bin')
+            finally:os.chdir(previous)
 
 
 if __name__=='__main__':unittest.main()

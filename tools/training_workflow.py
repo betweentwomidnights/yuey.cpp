@@ -96,14 +96,15 @@ def settings(request):
     if family not in ['lora','dora']:raise ValueError('AR family must be lora or dora')
     trigger=request.get('trigger',request['id']+'_style')
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',trigger):raise ValueError('Trigger must be one word using letters, numbers, hyphens or underscores')
-    options=dict(window_seconds=number('window_seconds',30,2,60,True),rank=number('rank',32,1,128,True),
+    # Rank 1 is not a useful adapter, and GGML's CUDA OUT_PROD rejects its shape.
+    options=dict(window_seconds=number('window_seconds',30,2,60,True),rank=number('rank',32,2,128,True),
                 ar_steps=number('ar_steps',800,1,10000,True),nar_steps=number('nar_steps',400,1,10000,True),
                 ar_lr=number('ar_lr',2e-5,1e-7,.001),nar_lr=number('nar_lr',3e-5,1e-7,.001),
                 kl_weight=number('kl_weight',.2,0,5),seed=number('seed',831001,0,2**32-1,True),
                 eval_every=number('eval_every',100,1,1000,True),family=family,trigger=trigger,
                 keep_caches=request.get('keep_caches',False))
     version=request.get('recipe_version',1)
-    if type(version)!=int or version not in [1,2,3,4]:raise ValueError('Unsupported training recipe version')
+    if type(version)!=int or version not in [1,2,3,4,5]:raise ValueError('Unsupported training recipe version')
     if version>=2:
         scope=request.get('evaluation_scope','heldout')
         if scope not in ['heldout','full']:raise ValueError('Evaluation scope must be heldout or full')
@@ -111,8 +112,27 @@ def settings(request):
     if version>=3:options['cache_fingerprint']='bytes-v2'
     # v4 streams AR KL teachers from SHA-256-indexed F32 files: fitter host RAM
     # no longer grows with the number of training windows; resume skips them.
-    if version>=4:options['teacher_cache']='f32'
+    if version==4:options['teacher_cache']='f32'
+    # v5 chooses where frozen teachers and NAR conditioning live. The defaults
+    # reproduce v4 exactly; every alternative is bit-identical by construction
+    # and verified against it, so storage trades disk for time or VRAM only.
+    storage={k:request[k] for k in ['teacher_storage','conditioning_storage'] if k in request}
+    if storage and version<5:raise ValueError('Storage modes require recipe version 5')
+    if version>=5:
+        teacher=request.get('teacher_storage','cache')
+        if teacher not in TEACHER_STORAGE:raise ValueError('teacher_storage must be '+' or '.join(TEACHER_STORAGE))
+        conditioning=request.get('conditioning_storage','cache')
+        if conditioning not in CONDITIONING_STORAGE:
+            raise ValueError('conditioning_storage must be '+', '.join(CONDITIONING_STORAGE))
+        if teacher=='cache':options['teacher_cache']='f32'
+        else:options['teacher_online']=True
+        options['conditioning_storage']=conditioning
     return options
+
+
+# Storage choices for recipe 5. `cache` is the fastest and the default.
+TEACHER_STORAGE=['cache','online']
+CONDITIONING_STORAGE=['cache','rolling','resident']
 
 
 # One frozen KL teacher row per target frame: MUSIC_END + 32768 codec classes, F32.
@@ -133,7 +153,9 @@ def ar_resource_estimate(eligible,options,device,model_bytes=0):
     window=max((r['frames'] for r in eligible),default=0)*TEACHER_ROW_BYTES
     teachers=sum(r['frames']*TEACHER_ROW_BYTES for r in train) if options['kl_weight']>0 else 0
     cached='teacher_cache' in options
-    steady=AR_HOST_STEADY_GIB*2**30+AR_STREAMED_WINDOWS*window+(0 if cached else teachers)
+    # Online teachers hold one window's distribution, like the streamed cache.
+    streamed=cached or options.get('teacher_online',False)
+    steady=AR_HOST_STEADY_GIB*2**30+AR_STREAMED_WINDOWS*window+(0 if streamed else teachers)
     ram=max(AR_HOST_LOAD_GIB*2**30,steady)+(model_bytes if device=='cpu' else 0)
     disk=sum(r['frames']*TEACHER_ROW_BYTES+(r['prefix_tokens']+r['frames'])*4+4096 for r in train) if cached and teachers else 0
     return dict(estimated_ar_host_ram_gib=ram/2**30,estimated_teacher_disk_gib=disk/2**30)
@@ -154,8 +176,56 @@ def checkpoint_allowance(options,experts=2):
     return experts*per_expert
 
 
-def conditioning_bytes(eligible):
-    return sum((r['prefix_tokens']+r['frames']+1)*114688+r['frames']*256 for r in eligible)
+def window_bytes(row):
+    return (row['prefix_tokens']+row['frames']+1)*114688+row['frames']*256
+
+
+# Rolling conditioning keeps at most one segment of training windows plus the
+# heldout set (during an evaluating segment) on disk at once.
+ROLLING_WINDOW_UPDATES=25
+
+
+def conditioning_bytes(eligible,storage='cache',evaluation_scope='heldout'):
+    """Peak NAR conditioning disk for one storage mode."""
+    if storage=='resident':return 0
+    if storage=='rolling':
+        largest=max((window_bytes(r) for r in eligible),default=0)
+        evaluated=[r for r in eligible if r['split']!='train'] if evaluation_scope=='heldout' else eligible
+        # Never more than keeping every window.
+        return min(ROLLING_WINDOW_UPDATES*largest+sum(window_bytes(r) for r in evaluated),
+                   sum(window_bytes(r) for r in eligible))
+    return sum(window_bytes(r) for r in eligible)
+
+
+def expert_bytes(base):
+    """Base weights the NAR fitter (NAR expert) and the conditioning-only AR
+    model (AR blocks and embeddings, no LM head) load, by the native selectors."""
+    import gguf
+    nar=ar=0
+    for tensor in gguf.GGUFReader(str(base)).tensors:
+        name=tensor.name
+        if ('.nar_' in name or name=='model.norm.weight' or name=='latent_pos_embed.pe' or
+                name.startswith(('vae2llm.','llm2vae.','time_embedder.'))):nar+=int(tensor.n_bytes)
+        if name in ['model.embed_tokens.weight','model.norm.weight'] or (name.startswith('model.layers.') and '.nar_' not in name):
+            ar+=int(tensor.n_bytes)
+    return dict(nar=nar,ar=ar)
+
+
+def storage_options(eligible,options,experts=None):
+    """Disk each recipe 5 storage choice needs for this dataset, for review.
+
+    model_vram_gib counts base weights the NAR fitter keeps on the device,
+    before workspace, K/V and adapters: resident conditioning adds the frozen
+    AR expert. With 30-second windows that exceeds an 8 GB RTX 5070 Laptop,
+    which spills into shared memory (about 190 s per update instead of 1.5 s)."""
+    experts=experts or dict(nar=0,ar=0)
+    train=[r for r in eligible if r['split']=='train']
+    teacher=sum(r['frames']*TEACHER_ROW_BYTES for r in train) if options['kl_weight']>0 else 0
+    scope=options.get('evaluation_scope','full')
+    return dict(teacher_storage={'cache':dict(disk_gib=teacher/2**30),'online':dict(disk_gib=0)},
+                conditioning_storage={mode:dict(disk_gib=conditioning_bytes(eligible,mode,scope)/2**30,
+                                                model_vram_gib=(experts['nar']+(experts['ar'] if mode=='resident' else 0))/2**30)
+                                      for mode in CONDITIONING_STORAGE})
 
 
 def folder_bytes(folder):
@@ -275,6 +345,7 @@ class Workflow:
                 token_budget=o['ar_steps']*o['window_seconds']*25,seed=o['seed'],checkpoint_every=o['eval_every'],eval_every=o['eval_every']))
         if 'evaluation_scope' in o:cfg['training']['evaluation_scope']=o['evaluation_scope']
         if 'teacher_cache' in o:cfg['training']['teacher_cache']=o['teacher_cache']
+        if o.get('teacher_online'):cfg['training']['teacher']='online'
         path=self.run/'ar-job.json'
         if path.exists() and json.loads(path.read_text())!=cfg:raise ValueError('Resolved dataset/runtime changed; create a new run')
         save(path,cfg);self.update(dataset=rows,status='running')
@@ -287,13 +358,16 @@ class Workflow:
                      'vae-targets-native',self.run/'vae-targets/progress.json')
         data=json.loads(Path(cfg['training_dataset']).read_text())
         eligible=[r for r in data['rows'] if r.get('eligible',True)]
-        estimate=ar_resource_estimate(eligible,o,runtime.get('device','cuda'),
-                                      sum(Path(models[k]).stat().st_size for k in ['base','companion']))
+        weights=sum(Path(models[k]).stat().st_size for k in ['base','companion'])
+        estimate=ar_resource_estimate(eligible,o,runtime.get('device','cuda'),weights)
         # The teacher cache is released before NAR conditioning is written.
-        peak=max(estimate['estimated_teacher_disk_gib']*2**30,conditioning_bytes(eligible))+checkpoint_allowance(o)
+        storage=o.get('conditioning_storage','cache');scope=o.get('evaluation_scope','full')
+        conditioning=conditioning_bytes(eligible,storage,scope)
+        peak=max(estimate['estimated_teacher_disk_gib']*2**30,conditioning)+checkpoint_allowance(o)
         self.update(status='ready',stage='dataset-review',examples=len(eligible),excluded=len(data['rows'])-len(eligible),
                     train_examples=sum(r['split']=='train' for r in eligible),validation_examples=sum(r['split']=='validation' for r in eligible),
-                    estimated_conditioning_gib=conditioning_bytes(eligible)/2**30,estimated_peak_disk_gib=peak/2**30,
+                    estimated_conditioning_gib=conditioning/2**30,estimated_peak_disk_gib=peak/2**30,
+                    storage_options=storage_options(eligible,o,expert_bytes(models['base'])),
                     free_disk_gib=shutil.disk_usage(self.run).free/2**30,**estimate)
 
     def fit(self,expert,config,folder,budget):
@@ -322,7 +396,9 @@ class Workflow:
         ar_done=(ar_folder/'selection.json').exists()
         teacher=0 if ar_done else max(0,ar_resource_estimate(eligible,self.options,'cuda')['estimated_teacher_disk_gib']*2**30-folder_bytes(ar_folder/'teacher'))
         complete=(nar_data/'dataset.json').exists() and json.loads((nar_data/'dataset.json').read_text()).get('completed')
-        conditioning=0 if complete else max(0,conditioning_bytes(eligible)-folder_bytes(nar_data))
+        storage=self.options.get('conditioning_storage','cache')
+        conditioning=0 if complete and storage=='cache' else max(0,conditioning_bytes(
+            eligible,storage,self.options.get('evaluation_scope','full'))-folder_bytes(nar_data))
         needed=max(teacher,conditioning)+checkpoint_allowance(self.options,1 if ar_done else 2)
         free=shutil.disk_usage(self.run).free
         if free<needed:
@@ -348,7 +424,9 @@ class Workflow:
         if not (nar_data/'dataset.json').exists() or not json.loads((nar_data/'dataset.json').read_text()).get('completed'):
             self.command('prepare_nar_dataset.py',['--config',self.run/'ar-job.json','--targets',self.run/'vae-targets/index.json',
                 '--ar-adapter',ar,'--binary',binary,'--out',nar_data,'--conditioning-device',self.runtime.get('device','cuda'),
-                '--conditioning-batch','0','--stop-file',self.run/'stop.request'],'nar-conditioning',nar_data/'progress.json')
+                '--conditioning-batch','0','--stop-file',self.run/'stop.request',
+                *(['--storage',o['conditioning_storage']] if o.get('conditioning_storage','cache')!='cache' else [])],
+                'nar-conditioning',nar_data/'progress.json')
         nar_cfg=dict(format='yue2-nar-training-v1',workspace=str(self.workspace),output=str(self.run/'nar-run'),
             name=self.state['name'],training_dataset=str(nar_data/'dataset.json'),training_binary=str(binary),
             device=self.runtime.get('device','cuda'),threads=self.runtime.get('threads',6),inference_urls=[],
@@ -358,6 +436,10 @@ class Workflow:
         if 'evaluation_scope' in o:
             nar_cfg['training'].update(evaluation_scope=o['evaluation_scope'],probe_scope='first-at-maximum-context')
         if 'cache_fingerprint' in o:nar_cfg['training']['cache_fingerprint']=o['cache_fingerprint']
+        # Recorded only for non-default storage, so recipe 4/5-cache jobs keep their identity.
+        if o.get('conditioning_storage','cache')!='cache':
+            nar_cfg['training']['conditioning_storage']=o['conditioning_storage']
+            if o['conditioning_storage']=='rolling':nar_cfg['training']['rolling_window_updates']=ROLLING_WINDOW_UPDATES
         nar_path=self.run/'nar-job.json'
         if nar_path.exists() and json.loads(nar_path.read_text())!=nar_cfg:raise ValueError('Frozen AR/NAR run changed')
         save(nar_path,nar_cfg)
@@ -384,9 +466,52 @@ class Workflow:
         self.update(caches_released=dict(gib=self.state.get('caches_released',{}).get('gib',0)+released/2**30,at=time.time()))
 
 
+# Request settings yue2-server accepts for a new run (mirrors its allowlist).
+REQUEST_SETTINGS=['id','dataset','name','trigger','window_seconds','ar_steps','nar_steps','rank','family','ar_lr','nar_lr',
+                  'kl_weight','seed','eval_every','evaluation_scope','keep_caches','teacher_storage','conditioning_storage']
+
+
+def capabilities(runtime=None):
+    """What this installation supports, for downstream trainers to query.
+
+    Storage modes never change results: each is bit-identical to `cache`
+    and trades disk for training time or VRAM only."""
+    native={}
+    if runtime:
+        binary=Path(json.loads(Path(runtime).read_text())['bin'])
+        suffix='.exe' if os.name=='nt' else ''
+        def help_text(name):
+            try:return subprocess.run([str(binary/(name+suffix)),'--help'],capture_output=True,text=True,timeout=30).stdout
+            except OSError:return ''
+        ar,nar=help_text('yue2-ar-train'),help_text('yue2-train')
+        native=dict(teacher_online='--teacher-online' in ar,rolling_conditioning='--rolling-caches' in nar,
+                    resident_conditioning='--resident-conditioning' in nar)
+    def supported(key):return native.get(key,True) if native else None
+    return dict(schema_version=1,recipes=[1,2,3,4,5],default_recipe=5,request_settings=REQUEST_SETTINGS,
+        storage=dict(
+            teacher_storage=dict(
+                cache=dict(supported=True,trade_off='Fastest AR updates; about 94 MiB of disk per 30-second training window until AR selection'),
+                online=dict(supported=supported('teacher_online'),trade_off='No teacher disk; one extra common-model forward per AR update')),
+            conditioning_storage=dict(
+                cache=dict(supported=True,trade_off='Fastest NAR updates; about 160 MiB of disk per 30-second window until publish'),
+                rolling=dict(supported=supported('rolling_conditioning'),
+                             trade_off='Disk bounded to one segment plus heldout windows; regenerates each window before use (about 1.2 s each on an RTX 5070 Laptop)'),
+                resident=dict(supported=supported('resident_conditioning'),
+                              trade_off='No conditioning disk; the NAR fitter also holds the frozen AR expert (3.3 GiB BF16 beside '
+                                        'the 2.7 GiB NAR expert) and its prefill. With 30-second windows an 8 GB laptop GPU spills '
+                                        'into shared memory and an update takes about 190 s instead of 1.5 s'))),
+        native=native or None)
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--run',type=Path,required=True)
-    parser.add_argument('--action',choices=['prepare','train','resume','publish'],required=True);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--run',type=Path)
+    parser.add_argument('--action',choices=['prepare','train','resume','publish'])
+    parser.add_argument('--capabilities',action='store_true',help='Print supported recipes and storage modes as JSON')
+    parser.add_argument('--runtime',type=Path,help='With --capabilities: training-runtime.json whose native tools to check')
+    args=parser.parse_args()
+    if args.capabilities:
+        print(json.dumps(capabilities(args.runtime),indent=2));return 0
+    if not args.run or not args.action:parser.error('--run and --action are required')
     os.environ['GGML_CUDA_TF32']='0';workflow=None
     try:
         wait_for_owner(args.run)

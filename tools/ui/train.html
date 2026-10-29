@@ -15,7 +15,7 @@
 <details><summary>Advanced recipe</summary><p>Defaults follow the full-data Koan experiment. 30-second windows fit our 8 GB laptop; 60-second AR training spilled into shared memory and was much slower.</p><div class="grid">
 <div><label for="window_seconds">Window length</label><select id="window_seconds"><option value="30">30 seconds · 8 GB default</option><option value="60">60 seconds · larger GPU / experimental</option></select></div>
 <div><label for="family">AR adapter</label><select id="family"><option value="dora">DoRA</option><option value="lora">LoRA</option></select></div>
-<div><label for="rank">Rank · both experts</label><input id="rank" type="number" value="32" min="1" max="128"></div>
+<div><label for="rank">Rank · both experts</label><input id="rank" type="number" value="32" min="2" max="128"></div>
 <div><label for="seed">Training seed</label><input id="seed" type="number" value="831001" min="0" max="4294967295"></div>
 <div><label for="ar_steps">AR update ceiling</label><input id="ar_steps" type="number" value="800" min="1" max="10000"></div>
 <div><label for="nar_steps">NAR updates · LoRA</label><input id="nar_steps" type="number" value="400" min="1" max="10000"></div>

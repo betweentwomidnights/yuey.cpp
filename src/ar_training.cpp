@@ -386,7 +386,7 @@ class ArTrainer::Impl {
                 throw std::runtime_error("missing adapter gradient");
             ggml_set_output(gradient);
         }
-        if(options.dora) {
+        if(options.dora || options.online_teacher) {
             graph.teacher_ctx=context();ctx=graph.teacher_ctx.get();
             auto *common=block(ctx,boundaries[layer],layer,false);
             graph.teacher_forward=ggml_new_graph_custom(ctx,C,false);
@@ -585,6 +585,16 @@ class ArTrainer::Impl {
             for (auto value : parameters[i].values)
                 if (value != 0)
                     throw std::runtime_error("teacher requires zero learned B factors");
+        distribution(sample);
+    }
+    void common_teacher(ArTrainingSample &sample) {
+        if (!options.online_teacher)
+            throw std::runtime_error("online teacher requires ArTrainingOptions::online_teacher");
+        distribution(sample);
+    }
+    // With zero B factors the adapted block adds exactly zero, so the common
+    // graph reproduces prepare_teacher's distribution bit for bit.
+    void distribution(ArTrainingSample &sample) {
         inputs(sample, false);
         forward(true);
         auto probabilities = get(prediction);
@@ -815,6 +825,7 @@ float ArTrainer::evaluate(const ArTrainingSample &s) {
     return impl_->forward();
 }
 void ArTrainer::prepare_teacher(ArTrainingSample &s) { impl_->prepare_teacher(s); }
+void ArTrainer::teacher(ArTrainingSample &s) { impl_->common_teacher(s); }
 void ArTrainer::validate_teacher(ArTrainingSample &s) { impl_->validate_teacher(s); }
 void ArTrainer::save_adapter(const std::string &path) const { impl_->write(path, false); }
 void ArTrainer::save_state(const std::string &path, const std::string &rng) const {

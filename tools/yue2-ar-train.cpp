@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
                                                 "--retention-prefix",  "--retention-tokens"};
         const std::set<std::string> flags{"--predict-end", "--probe-only", "--instrumental",
                                           "--shuffle-samples", "--dora", "--group-samples",
-                                          "--prepare-teacher-only"};
+                                          "--prepare-teacher-only", "--teacher-online"};
         const std::set<std::string> values{"--model",
                                            "--prefix",
                                            "--tokens",
@@ -142,6 +142,8 @@ int main(int argc, char **argv) {
                              " --teacher-companion-sha256 SHA] streams frozen KL teachers from\n"
                              " DIR/teacher-NNNNN.gguf; add --prepare-teacher-only to write missing\n"
                              " files (no --out) and exit. Host RAM then holds one teacher window.\n"
+                             "[--teacher-online] computes each update's frozen teacher with an extra\n"
+                             " common-model forward instead: no cache, bit-identical distributions.\n"
                              "[--probe-only] [--predict-end (only for genuine complete "
                              "sequences)]\n"
                              "Prefix preparation: --prefix-out NEW.i32 --tokenizer "
@@ -295,6 +297,10 @@ int main(int argc, char **argv) {
             throw std::runtime_error("invalid early stopping configuration");
         const bool teacher_cached = args.count("--teacher-cache") != 0;
         const bool prepare_only = args.count("--prepare-teacher-only") != 0;
+        const bool teacher_online = args.count("--teacher-online") != 0;
+        if (teacher_online && (teacher_cached || options.kl_weight <= 0))
+            throw std::runtime_error("--teacher-online needs a positive KL weight and no teacher cache");
+        options.online_teacher = teacher_online;
         yue2::detail::ArTeacherProvenance provenance;
         std::vector<std::string> teacher_paths;
         if (teacher_cached) {
@@ -371,14 +377,20 @@ int main(int argc, char **argv) {
                     const auto i = index.at(path);
                     yue2::detail::inspect_ar_teacher_cache(path, provenance, windows[i], samples[i]);
                 });
-        } else if (options.kl_weight > 0) {
+        } else if (options.kl_weight > 0 && !teacher_online) {
             const size_t teacher_count=args.count("--probe-only")?1:samples.size();
             for (size_t i = 0; i < teacher_count; ++i) {
                 std::cout << "prepare_teacher=" << i + 1 << '/' << teacher_count << std::endl;
                 trainer.prepare_teacher(samples[i]);
             }
         }
+        yue2::ArTrainingSample online;
         auto teacher_sample = [&](size_t i) -> const yue2::ArTrainingSample & {
+            if (teacher_online) {
+                online = samples[i];
+                trainer.teacher(online);
+                return online;
+            }
             return teachers ? teachers->get(i) : samples[i];
         };
         yue2::detail::TrainingSampler sampler(samples.size(), args.count("--shuffle-samples") != 0,
