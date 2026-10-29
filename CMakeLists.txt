@@ -123,6 +123,7 @@ if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
         tools/training/conditioning.cpp
         tools/training/dataset.cpp
         tools/training/files.cpp
+        tools/training/fitting.cpp
         tools/training/preparation.cpp
         tools/training/process.cpp
         tools/training/sha256.cpp

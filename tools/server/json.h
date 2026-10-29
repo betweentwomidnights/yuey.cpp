@@ -120,7 +120,8 @@ std::string python_repr(double value);
 // A number lexeme with no fraction or exponent, which Python loads as int.
 bool is_integer(const Value & value);
 // Like json.dumps(value, indent=2): non-ASCII is escaped, so a reader that
-// decodes with the locale's encoding still reads what was written.
+// decodes with the locale's encoding still reads what was written, and a
+// number is written as Python writes what it parsed (2E-5 becomes 2e-05).
 std::string pretty(const Value & value);
 // Like json.dumps(value, sort_keys=True): one line, ", " and ": " separators.
 // Training identities hash these bytes.

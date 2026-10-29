@@ -5,6 +5,7 @@
 // Errors go to stderr with exit code 1.
 #include "training/dataset.h"
 #include "training/sha256.h"
+#include "training/fitting.h"
 #include "training/preparation.h"
 #include "training/workflow.h"
 
@@ -55,6 +56,11 @@ constexpr const char * usage = R"(usage: yue2-train-run COMMAND [options]
   materialize --manifest DATASET --rows ROWS --binary YUE2_TRAIN --base BASE --common COMPANION
               --adapter ADAPTER [--stop-file FILE]
                                   regenerate absent rolling caches
+  fit-ar --config AR_JOB --family lora|dora --phase probe|fit|post-probe|select
+         [--resume STATE] [--segment native] [--prune-checkpoints]
+  fit-nar --config NAR_JOB --phase probe|fit|post-probe|select
+          [--resume STATE] [--segment native] [--prune-checkpoints]
+                                  named native fits with heldout checkpoint selection
   parity --cases FILE             evaluate a batch of cases, for the Python
                                   parity check (tests/test_native_training_workflow.py)
 )";
@@ -96,7 +102,9 @@ Arguments arguments(const std::vector<std::string> & argv) {
     Arguments output;
     for (std::size_t i = 2; i < argv.size(); ++i) {
         const std::string value = argv[i];
-        if (value.rfind("--", 0) == 0) {
+        if (value == "--prune-checkpoints") {
+            output.options[value.substr(2)] = "1";
+        } else if (value.rfind("--", 0) == 0) {
             if (i + 1 >= argv.size()) throw std::invalid_argument(value + " needs a value");
             output.options[value.substr(2)] = argv[++i];
         } else {
@@ -273,6 +281,18 @@ json::Value run(const std::string & command, const Arguments & args) {
         o.storage = option("storage", "cache");
         o.stop_file = stop_file();
         training::prepare_conditioning(o);
+        return {};
+    }
+    if (command == "fit-ar" || command == "fit-nar") {
+        training::FitOptions o;
+        o.config = fs::u8path(args.required("config"));
+        o.phase = args.required("phase");
+        if (command == "fit-ar") o.family = args.required("family");
+        if (args.options.count("resume")) o.resume = fs::u8path(args.options.at("resume"));
+        o.segment = option("segment", "native");
+        o.prune_checkpoints = args.options.count("prune-checkpoints") > 0;
+        if (command == "fit-ar") training::fit_ar(o);
+        else training::fit_nar(o);
         return {};
     }
     if (command == "materialize") {

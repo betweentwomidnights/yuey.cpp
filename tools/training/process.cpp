@@ -1,5 +1,6 @@
 #include "training/process.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <exception>
@@ -12,6 +13,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <psapi.h>
 #else
 #include <csignal>
 #include <fcntl.h>
@@ -135,7 +137,7 @@ int exit_code(HANDLE process) {
 } // namespace
 
 std::optional<std::string> capture_output(const std::filesystem::path & program, const std::vector<std::string> & arguments,
-                                          int timeout_seconds) {
+                                          int timeout_seconds, int * exit_code_out) {
     SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
     HANDLE read_end = nullptr, write_end = nullptr;
     if (!CreatePipe(&read_end, &write_end, &inherit, 0)) return std::nullopt;
@@ -153,7 +155,8 @@ std::optional<std::string> capture_output(const std::filesystem::path & program,
     });
     const bool finished = WaitForSingleObject(process, static_cast<DWORD>(timeout_seconds) * 1000) == WAIT_OBJECT_0;
     if (!finished) TerminateProcess(process, 1);
-    exit_code(process);
+    const int code = exit_code(process);
+    if (exit_code_out) *exit_code_out = code;
     reader.join();
     CloseHandle(read_end);
     if (!finished) return std::nullopt;
@@ -197,6 +200,70 @@ int run_streaming(const std::filesystem::path & program, const std::vector<std::
 }
 
 void set_environment(const char * name, const char * value) { _putenv_s(name, value); }
+
+std::optional<std::filesystem::path> find_program(const std::string & name) {
+    const char * path = std::getenv("PATH");
+    if (!path) return std::nullopt;
+    std::string entries = path;
+    for (std::size_t start = 0; start <= entries.size();) {
+        const auto end = std::min(entries.find(';', start), entries.size());
+        const auto folder = entries.substr(start, end - start);
+        if (!folder.empty()) {
+            const auto candidate = std::filesystem::u8path(folder) / (name + ".exe");
+            std::error_code error;
+            if (std::filesystem::is_regular_file(candidate, error)) return candidate;
+        }
+        start = end + 1;
+    }
+    return std::nullopt;
+}
+
+Child::Child(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+             const std::filesystem::path & cwd, const std::filesystem::path & log) {
+    { open_log(log, false); }
+    SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+    HANDLE file = CreateFileW(log.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &inherit,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot open log " + log.u8string());
+    HANDLE process = spawn(program, arguments, cwd, file, file);
+    CloseHandle(file);
+    if (!process) throw std::runtime_error("Cannot start " + program.u8string());
+    handle_ = process;
+    pid_ = static_cast<long>(GetProcessId(process));
+}
+
+Child::~Child() {
+    if (handle_) {
+        if (!code_) WaitForSingleObject(handle_, INFINITE);
+        CloseHandle(handle_);
+    }
+}
+
+bool Child::running() {
+    if (code_) return false;
+    if (WaitForSingleObject(handle_, 0) != WAIT_OBJECT_0) return true;
+    DWORD code = 1;
+    GetExitCodeProcess(handle_, &code);
+    code_ = static_cast<int>(code);
+    return false;
+}
+
+int Child::wait() {
+    if (!code_) {
+        WaitForSingleObject(handle_, INFINITE);
+        running();
+    }
+    return *code_;
+}
+
+void Child::terminate() { if (!code_) TerminateProcess(handle_, 1); }
+
+std::optional<std::pair<double, double>> Child::peak_memory_gib() const {
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    counters.cb = sizeof(counters);
+    if (!GetProcessMemoryInfo(handle_, reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&counters), sizeof(counters))) return std::nullopt;
+    return std::make_pair(counters.PeakWorkingSetSize / 1073741824.0, counters.PeakPagefileUsage / 1073741824.0);
+}
 #else
 namespace {
 
@@ -245,7 +312,7 @@ int wait_exit(pid_t child) {
 } // namespace
 
 std::optional<std::string> capture_output(const std::filesystem::path & program, const std::vector<std::string> & arguments,
-                                          int timeout_seconds) {
+                                          int timeout_seconds, int * exit_code) {
     int pipe_ends[2];
     if (pipe(pipe_ends) != 0) return std::nullopt;
     int status_fd = -1;
@@ -268,7 +335,8 @@ std::optional<std::string> capture_output(const std::filesystem::path & program,
     }
     close(pipe_ends[0]);
     if (timed_out) kill(child, SIGKILL);
-    wait_exit(child);
+    const int code = wait_exit(child);
+    if (exit_code) *exit_code = code;
     if (timed_out) return std::nullopt;
     return output;
 }
@@ -317,6 +385,54 @@ int run_streaming(const std::filesystem::path & program, const std::vector<std::
 }
 
 void set_environment(const char * name, const char * value) { setenv(name, value, 1); }
+
+std::optional<std::filesystem::path> find_program(const std::string & name) {
+    const char * path = std::getenv("PATH");
+    if (!path) return std::nullopt;
+    std::string entries = path;
+    for (std::size_t start = 0; start <= entries.size();) {
+        const auto end = std::min(entries.find(':', start), entries.size());
+        const auto folder = entries.substr(start, end - start);
+        if (!folder.empty()) {
+            const auto candidate = std::filesystem::path(folder) / name;
+            if (access(candidate.c_str(), X_OK) == 0) return candidate;
+        }
+        start = end + 1;
+    }
+    return std::nullopt;
+}
+
+Child::Child(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+             const std::filesystem::path & cwd, const std::filesystem::path & log) {
+    { open_log(log, false); }
+    const int file = open(log.c_str(), O_WRONLY | O_APPEND);
+    if (file < 0) throw std::runtime_error("Cannot open log " + log.u8string());
+    int status_fd = -1;
+    const pid_t child = spawn(program, arguments, cwd, file, file, &status_fd);
+    close(file);
+    if (child < 0) throw std::runtime_error("Cannot start " + program.u8string());
+    pid_ = static_cast<long>(child);
+    if (exec_failed(status_fd)) { code_ = wait_exit(child); throw std::runtime_error("Cannot start " + program.u8string()); }
+}
+
+Child::~Child() { if (!code_ && pid_ > 0) wait(); }
+
+bool Child::running() {
+    if (code_) return false;
+    int status = 0;
+    if (waitpid(static_cast<pid_t>(pid_), &status, WNOHANG) == 0) return true;
+    code_ = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+    return false;
+}
+
+int Child::wait() {
+    if (!code_) code_ = wait_exit(static_cast<pid_t>(pid_));
+    return *code_;
+}
+
+void Child::terminate() { if (!code_) kill(static_cast<pid_t>(pid_), SIGTERM); }
+
+std::optional<std::pair<double, double>> Child::peak_memory_gib() const { return std::nullopt; }
 #endif
 
 } // namespace yue2::training

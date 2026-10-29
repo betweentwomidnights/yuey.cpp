@@ -385,3 +385,23 @@ and after.
   - A rolling regeneration run without `GGML_CUDA_TF32=0` gives different
     bytes and fails its check. `train_nar_run.py` sets it before calling
     `materialize()`; the native `materialize` now sets it itself.
+
+## Native workflow, stage 3: fitting (2026-10-28)
+
+- **Change:** `yue2-train-run fit-ar` and `fit-nar` replace `train_ar_run.py`
+  and `train_nar_run.py`. They build the trainers' command lines and run
+  identities, prepare and verify the AR teacher cache, run rolling NAR fits
+  in regenerated segments, prune checkpoints, and select the heldout-best
+  checkpoint. See [native workflow](training.md#native-workflow).
+  - The JSON writer now writes every number as Python re-serializes it, so a
+    trainer's lexeme copied into `selection.json` matches.
+- **Parity:** `tools/check_native_fitting.py` prepared and trained three real
+  20 s clips (one FLAC) through `Workflow.prepare()` and `Workflow.train()`
+  with each implementation in the same run folder: 6 AR and 8 NAR updates,
+  rank 4, evaluation every 2 updates.
+  - LoRA, cached teachers and conditioning: 225 compared files equal.
+  - DoRA, online teacher, rolling conditioning in 4 segments: 220 equal.
+  - Equal files include every checkpoint and state, pruning's survivors
+    (step 0, best and latest), the teacher index, selections and prompts.
+    Logs, progress and process records, timings and peak readings are not
+    compared.
