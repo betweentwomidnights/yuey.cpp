@@ -701,12 +701,15 @@ void disk_check() {
 
 void ownership_and_progress() {
     Folder folder("owner");
+#if defined(_WIN32) || defined(__linux__)
+    // Run ownership uses Windows creation times or Linux procfs.
     training::save(folder.path() / "owner.json", own_owner());
     training::wait_for_owner(folder.path(), .01);
     auto stale = own_owner();
     stale.object["identity"] = json::from_string("stale");
     training::save(folder.path() / "owner.json", stale);
     assert(contains(rejection([&] { training::wait_for_owner(folder.path(), .01); }), "not committed"));
+#endif
 
     // A resumed stage never shows the previous segment's terminal snapshot,
     // and a stage that finishes between ticks still reports its last progress.
@@ -979,8 +982,10 @@ int main(int argc, char ** argv) {
     status_survives_reader_lock();
 #endif
     settings_and_inventory();
+#if defined(_WIN32) || defined(__linux__)
     // Last: the workflow puts this process in its job object on Windows.
     cache_release();
+#endif
     if (args.size() >= 1 && fs::exists(args[0])) midi_roundtrip(fs::u8path(args[0]));
     if (args.size() >= 2 && fs::exists(args[1])) trainer_progress_events(fs::u8path(args[1]));
     const char * model = std::getenv("YUE2_VAE_ENCODER_TEST_MODEL");
