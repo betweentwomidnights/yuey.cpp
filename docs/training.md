@@ -274,7 +274,7 @@ then the server still launches `training_workflow.py`.
 | 1. Settings, inventory, review | `settings()`, `inventory()`, the review estimates and `capabilities()` in `training_workflow.py`; `ar_dataset.py`; `training_provenance.py` | native, equal to Python |
 | 2. Preparation | `prepare_ar_dataset.py`, `prepare_nar_targets.py`, `prepare_nar_dataset.py` | native, equal to Python |
 | 3. Fitting | `train_ar_run.py`, `train_nar_run.py` | native, equal to Python |
-| 4. Publication | `publish_training_adapter.py` | Python |
+| 4. Publication | `publish_training_adapter.py`; `Workflow.release_caches()` | native, equal to Python |
 | 5. Switch-over | the server launches `yue2-train-run`; no Python in the training runtime | |
 | 6. Removal | the shipped Python training scripts | |
 | 7. Quantized base | training against the Q4_K_M base gary4local installs | |
@@ -357,6 +357,20 @@ the trainers' logs, read as the Python read them.
 implementation and compares every file. It covers two runs: LoRA with cached
 teachers and conditioning, and DoRA with an online teacher and rolling
 conditioning.
+
+Stage 4 publishes a reviewed run and releases its training caches:
+
+```bash
+yue2-train-run publish --run RUN
+yue2-train-run release-caches --run RUN
+```
+
+`publish` writes the selected AR and NAR adapters as one GGUF in the models
+folder, laid out exactly as gguf-py's writer laid it out, and the sidecar with
+the caption pool. `tools/check_native_publication.py` publishes and releases
+the runs `check_native_fitting.py` left, both ways, and compares the bytes. It
+needs no GPU. The state update around them (`status`, `export`,
+`caches_released`) belongs to the workflow, which moves in stage 5.
 
 ## HTTP surface
 

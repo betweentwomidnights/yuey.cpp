@@ -7,6 +7,7 @@
 #include "training/sha256.h"
 #include "training/fitting.h"
 #include "training/preparation.h"
+#include "training/publication.h"
 #include "training/workflow.h"
 
 #include <cstdlib>
@@ -61,6 +62,8 @@ constexpr const char * usage = R"(usage: yue2-train-run COMMAND [options]
   fit-nar --config NAR_JOB --phase probe|fit|post-probe|select
           [--resume STATE] [--segment native] [--prune-checkpoints]
                                   named native fits with heldout checkpoint selection
+  publish --run DIR               the reviewed AR/NAR pair as one style GGUF and sidecar
+  release-caches --run DIR        delete what only further training needs
   parity --cases FILE             evaluate a batch of cases, for the Python
                                   parity check (tests/test_native_training_workflow.py)
 )";
@@ -294,6 +297,12 @@ json::Value run(const std::string & command, const Arguments & args) {
         if (command == "fit-ar") training::fit_ar(o);
         else training::fit_nar(o);
         return {};
+    }
+    if (command == "publish") return training::publish(fs::u8path(args.required("run")));
+    if (command == "release-caches") {
+        auto output = json::object();
+        output.object["released_bytes"] = json::from_integer(training::release_caches(fs::u8path(args.required("run"))));
+        return output;
     }
     if (command == "materialize") {
         const auto rows = json::parse(read(fs::u8path(args.required("rows"))));

@@ -43,6 +43,16 @@ public:
             default: return server::json::Value{};
         }
     }
+    // Metadata keys in file order, and typed access to their values.
+    std::vector<std::string> keys() const {
+        std::vector<std::string> names;
+        for (int64_t i = 0; i < gguf_get_n_kv(file_); ++i) names.emplace_back(gguf_get_key(file_, i));
+        return names;
+    }
+    gguf_type type(const char * name) const { return gguf_get_kv_type(file_, id(name)); }
+    std::string string(const char * name) const { return gguf_get_val_str(file_, id(name)); }
+    std::uint32_t u32(const char * name) const { return gguf_get_val_u32(file_, id(name)); }
+    float f32(const char * name) const { return gguf_get_val_f32(file_, id(name)); }
     std::vector<std::string> tensors() const {
         std::vector<std::string> names;
         for (int64_t i = 0; i < gguf_get_n_tensors(file_); ++i) names.emplace_back(gguf_get_tensor_name(file_, i));
@@ -64,6 +74,11 @@ public:
     }
 
 private:
+    int64_t id(const char * name) const {
+        const auto found = gguf_find_key(file_, name);
+        if (found < 0) throw std::invalid_argument(std::string("Missing GGUF field ") + name + " in " + python_path(path_));
+        return found;
+    }
     std::filesystem::path path_;
     ggml_context * meta_ = nullptr;
     gguf_context * file_ = nullptr;

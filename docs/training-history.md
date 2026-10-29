@@ -405,3 +405,14 @@ and after.
     (step 0, best and latest), the teacher index, selections and prompts.
     Logs, progress and process records, timings and peak readings are not
     compared.
+
+## Native workflow, stage 4: publication (2026-10-28)
+
+- **Change:** `yue2-train-run publish` and `release-caches` replace
+  `publish_training_adapter.py` and `Workflow.release_caches()`. The style
+  GGUF is written directly in gguf-py's layout: metadata in insertion order,
+  then tensor infos, then each tensor padded to 32 bytes.
+- **Parity:** `tools/check_native_publication.py` on both stage 3 runs: the
+  published GGUF (34.9 MB LoRA, 39.5 MB mixed LoRA/DoRA) and its sidecar were
+  byte-equal, republishing returned the same record, and releasing caches
+  left the same files and released the same bytes (0.92 and 0.46 GB).
