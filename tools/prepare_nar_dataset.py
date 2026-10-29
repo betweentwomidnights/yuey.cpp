@@ -104,18 +104,21 @@ def materialize(manifest, rows, binary, base, common, adapter, stop_file=None):
     # A segment may draw the same window more than once; generate it once.
     pending=list({str(Path(r['cache']).resolve()):r for r in rows if not Path(r['cache']).exists()}.values())
     if not pending:return 0
-    out=Path(manifest).parent;plan=out/'materialize.json'
-    save(plan,[dict(prefix=r['prefix'],tokens=r['codes'],latents=r['means'],
-                    **{'cache-out':r['cache'],'cache-identity':r['cache_identity']}) for r in pending])
+    # The native tool runs from its own folder, so every path it reads is absolute.
+    out=Path(manifest).resolve().parent;plan=out/'materialize.json'
+    absolute=lambda path:str(Path(path).resolve())
+    save(plan,[dict(prefix=absolute(r['prefix']),tokens=absolute(r['codes']),latents=absolute(r['means']),
+                    **{'cache-out':absolute(r['cache']),'cache-identity':r['cache_identity']}) for r in pending])
     by_path={str(Path(r['cache']).resolve()):r for r in pending}
     def check(event):
         row=by_path[str(Path(event['path']).resolve())]
         if native_facts(event)!={k:row[k] for k in native_facts(event)} or digest(Path(row['cache']))!=row['cache_sha256']:
             Path(row['cache']).unlink(missing_ok=True)
             raise ValueError('Regenerated NAR cache differs from its recorded bytes: '+row['cache'])
-    run_batch(batch_command(binary,plan,base,common,adapter,identity['device'],identity['threads'],
-                            identity['kv_type'],identity['prefill_batch'],stop_file),
-              Path(binary).parent,out/'materialize.log',check)
+    binary=Path(binary).resolve()
+    run_batch(batch_command(binary,plan,*map(absolute,[base,common,adapter]),identity['device'],identity['threads'],
+                            identity['kv_type'],identity['prefill_batch'],stop_file and absolute(stop_file)),
+              binary.parent,out/'materialize.log',check)
     missing=[r['cache'] for r in pending if not Path(r['cache']).exists()]
     if missing and not (stop_file and Path(stop_file).exists()):raise ValueError('Native preparation did not regenerate '+missing[0])
     return len(pending)-len(missing)

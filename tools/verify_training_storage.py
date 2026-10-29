@@ -210,7 +210,7 @@ def main():
         results[mode]['identical'] = all(results[mode][k] for k in ['state', 'adapter', 'rng', 'history', 'evaluations'])
         print(mode, results[mode], flush=True)
     (args.out / 'results.json').write_text(json.dumps(results, indent=2))
-    checked = [results[m] for m in modes] + [results['ar-online']] * bool(teacher_modes)
+    checked = [results[m] for m in modes] + [results['ar-online'] for _ in teacher_modes]
     return 0 if all(r['identical'] and not r.get('caches_left') for r in checked) else 1
 
 

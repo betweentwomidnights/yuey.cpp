@@ -224,21 +224,24 @@ Laptop: memory spills into shared system memory and each NAR update takes
 about 190 s instead of 1.5 s. Four-second windows still fit (0.47 s against
 0.28 s cached).
 
-Measured on the 8 GB laptop with 8 recordings, 30-second windows, rank 32 and
-50 NAR updates:
+Measured with 8 recordings (a different set on each machine), 30-second
+windows, rank 32, 30 AR and 50 NAR updates; every mode identical to cached.
+The Spark figures come from one `tools/verify_training_storage.py` run:
 
-| Mode | Median NAR update | NAR fit wall time | Result |
-| --- | ---: | ---: | --- |
-| `cache` | 1.48 s | 99 s | Baseline; 4.8 GiB of conditioning |
-| `rolling` | 1.62 s | 159 s, with regeneration | Identical; 2 segments |
-| `resident` | 188 s (spilled) | Stopped at update 36 | Identical up to the stop |
+| Mode | DGX Spark (GB10, unified memory) | RTX 5070 Laptop (8 GB) |
+| --- | --- | --- |
+| AR `cache` | 2.85 s per update | 3.6 s |
+| AR `online` | 3.86 s per update (+35%) | 2.9–4.9 s, in separate sessions |
+| NAR `cache` | 1.21 s per update; 86 s fit; 6.8 GiB conditioning | 1.48 s; 99 s; 4.8 GiB |
+| NAR `rolling` | 1.21 s per update; 215 s fit with regeneration | 1.62 s; 159 s |
+| NAR `resident` | 1.91 s per update; 135 s fit; 3.5 s preparation | 188 s per update (spilled); stopped at update 36 |
 
-In the same session, on the synthetic 4-second set at rank 4, online-teacher
-AR updates took 0.81 s against 0.61 s cached. At 30 s windows they measured
-2.9 s and 4.9 s in two separate sessions against 3.6 s cached, so laptop clocks
-dominate that comparison. `tools/verify_training_storage.py` repeats the full
-AR fit online right after the cached baseline, which gives a same-session
-number.
+Preparing conditioning generates every window once in both `cache` and
+`rolling` modes, which took 50 s on the Spark. Resident skips that step, so its
+total NAR time (139 s) roughly matches cached (136 s) with no conditioning disk,
+on a GPU that holds both experts. The resident fit raised the Spark's used
+memory by about 7.9 GiB. Memory-mapped weights count as page cache there, so
+that figure understates the footprint.
 
 Downstream trainers can query what an installation supports:
 

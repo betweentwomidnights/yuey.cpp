@@ -191,5 +191,30 @@ class CacheReleaseTest(unittest.TestCase):
             with patch('prepare_nar_dataset.run_batch',batch):
                 self.assertEqual(prepare_nar_dataset.materialize(manifest,[row,dict(row)],'yue2-train','b','c','a'),1)
 
+    def test_rolling_regeneration_passes_absolute_paths(self):
+        import os
+        import prepare_nar_dataset
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();previous=os.getcwd();os.chdir(root)
+            try:
+                Path('run').mkdir();Path('run/dataset.json').write_text(json.dumps(dict(
+                    identity=dict(device='cuda',threads=6,kv_type='f16',prefill_batch=0))))
+                row=dict(prefix='data/p',codes='data/c',means='data/m',cache='run/a/sample.gguf',cache_identity='i')
+                seen={}
+                def batch(command,workspace,log,on_event):seen.update(command=command,workspace=workspace)
+                # The native tool runs from its own folder, so relative --out paths
+                # must not reach it.
+                with patch('prepare_nar_dataset.run_batch',batch):
+                    with self.assertRaisesRegex(ValueError,'did not regenerate'):
+                        prepare_nar_dataset.materialize('run/dataset.json',[row],'bin/yue2-train','b.gguf','c.gguf','a.gguf','run/stop.request')
+                command=seen['command'];plan=Path(command[command.index('--prepare-batch')+1])
+                self.assertTrue(plan.is_absolute())
+                for key in ['--model','--stop-file']:self.assertTrue(Path(command[command.index(key)+1]).is_absolute(),key)
+                self.assertTrue(all(Path(v).is_absolute() for v in command[1:] if v.endswith('.gguf')))
+                entry=json.loads(plan.read_text())[0]
+                self.assertTrue(all(Path(entry[k]).is_absolute() for k in ['prefix','tokens','latents','cache-out']))
+                self.assertEqual(Path(seen['workspace']),root/'bin')
+            finally:os.chdir(previous)
+
 
 if __name__=='__main__':unittest.main()
