@@ -247,11 +247,12 @@ that figure understates the footprint.
 Downstream trainers can query what an installation supports:
 
 ```bash
-python tools/training_workflow.py --capabilities --runtime training-runtime.json
+yue2-train-run capabilities --runtime training-runtime.json
 ```
 
 This prints the recipes, the accepted request settings, each storage mode's
-trade-off, and whether the native tools support it. To check that the modes
+trade-off, and whether the native tools support it. It needs no Python, and
+matches `python tools/training_workflow.py --capabilities`. To check that the modes
 match the cached default on a machine, run:
 
 ```bash
@@ -260,6 +261,45 @@ python tools/verify_training_storage.py --runtime training-runtime.json --out ou
 
 Without `--dataset` it trains on two short synthetic piano recordings. Pass a
 real dataset with `--window-seconds 30 --rank 32` for representative timings.
+
+## Native workflow
+
+The Python orchestration is being replaced by `yue2-train-run`, one stage at a
+time, so that a supervisor such as gary4local can train without Python. Each
+stage must equal the Python it replaces before the server switches to it; until
+then the server still launches `training_workflow.py`.
+
+| Stage | Replaces | Status |
+| --- | --- | --- |
+| 1. Settings, inventory, review | `settings()`, `inventory()`, the review estimates and `capabilities()` in `training_workflow.py`; `ar_dataset.py`; `training_provenance.py` | native, equal to Python |
+| 2. Preparation | `prepare_ar_dataset.py`, `prepare_nar_targets.py`, `prepare_nar_dataset.py` | Python |
+| 3. Fitting | `train_ar_run.py`, `train_nar_run.py` | Python |
+| 4. Publication | `publish_training_adapter.py` | Python |
+| 5. Switch-over | the server launches `yue2-train-run`; no Python in the training runtime | |
+| 6. Removal | the shipped Python training scripts | |
+| 7. Quantized base | training against the Q4_K_M base gary4local installs | |
+
+Stage 1's commands, each printing JSON:
+
+```bash
+yue2-train-run settings --request request.json
+yue2-train-run inventory --dataset DATASET --window-seconds 30 --seed 831001
+yue2-train-run review --run RUN
+yue2-train-run score --events events.json --seconds 30 --bpm 88 --key Bb
+yue2-train-run identity --executable yue2-train.exe
+```
+
+`tests/test_native_training_workflow.py` compares them with the Python on
+fuzzed captions, requests, transcriptions and datasets, and with
+`YUE2_TRAINING_PARITY_ROOT=outputs` on every earlier run, dataset and
+transcription under that folder. Values must be equal with the same JSON types,
+and rejections must give the same message.
+
+A few rules follow Python's on purpose, so results stay equal: rounding is
+half to even, captions match with Unicode word boundaries and whitespace, and
+Windows sorts a dataset folder case-insensitively. Two are narrower than
+Python's: caption digits and case folding are ASCII-only, and an audio file is
+read with the WAV and FLAC checks the native encoders apply.
 
 ## HTTP surface
 

@@ -334,3 +334,25 @@ and after.
   server run in every mode and compares the results.
 - **Not yet done:** a rolling disk measurement on a dataset large enough to
   show the saving.
+
+## Native workflow, stage 1 (2026-10-28)
+
+- **Problem:** training needs Python with numpy, soundfile and gguf to
+  orchestrate the native tools. gary4local installs native packages only, so
+  it could not train. See [native workflow](training.md#native-workflow).
+- **Change:** `yue2-train-run`, which will replace the Python stage by stage.
+  Stage 1 ports run settings, dataset inventory, the review estimates,
+  capabilities, provenance hashing and the caption, window and score rules of
+  `ar_dataset.py`. SHA-256 is native; the WAV parser now has a header-only
+  reader the inventory uses. The server still launches the Python.
+- **Parity:** equal to the Python, values and JSON types, on:
+  - fuzzed cases: 6,000 captions, 6,000 run requests, 2,000 window plans,
+    3,000 transcriptions, 1,500 datasets' estimates, every chord and pitch;
+  - a mixed WAV/FLAC dataset (BOM, CRLF and accented names, four sample
+    formats) and every inventory rejection;
+  - every run, dataset and transcription under `outputs/`: 7 runs, 4 datasets
+    and 570 transcriptions.
+- **Found:** 38 of the 536 `normalized.abc` files in `outputs/` differ from
+  today's engraving, and from the Python's equally. They were written on
+  2026-10-26, before chord inversions were engraved; that is the only
+  difference.

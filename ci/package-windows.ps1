@@ -352,6 +352,7 @@ $coreDir = Stage "core" @(
     "yue2-transcribe.exe",
     "yue2-ar-train.exe",
     "yue2-train.exe",
+    "yue2-train-run.exe",
     "yue2-score.exe",
     "yue2-semantic-tokenize.exe",
     "yue2-vae-encode.exe",

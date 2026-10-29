@@ -65,8 +65,19 @@ double bessel_i0(double x) {
 
 } // namespace
 
-static MonoAudio decode_wav_channel(const std::uint8_t * bytes, std::size_t byte_count,
-                                    int selected_channel=-1,std::uint16_t *channel_count=nullptr) {
+namespace {
+
+struct WavLayout {
+    bool ieee = false;
+    std::uint16_t channels = 0;
+    std::uint16_t bits = 0;
+    std::uint32_t rate = 0;
+    const std::uint8_t * payload = nullptr;
+    std::size_t frames = 0;
+};
+
+// The fmt and first data chunk of a RIFF/WAVE, checked the way decoding needs.
+WavLayout wav_layout(const std::uint8_t * bytes, std::size_t byte_count) {
     constexpr const char * label = "memory WAV";
     if (!bytes || byte_count < 12 || std::memcmp(bytes, "RIFF", 4) != 0 ||
         std::memcmp(bytes + 8, "WAVE", 4) != 0) {
@@ -114,12 +125,26 @@ static MonoAudio decode_wav_channel(const std::uint8_t * bytes, std::size_t byte
         throw std::runtime_error(std::string(label) + ": unsupported WAV encoding");
     }
 
-    const std::size_t bytes_per_sample = bits / 8;
-    const std::size_t bytes_per_frame = bytes_per_sample * channels;
+    const std::size_t bytes_per_frame = bits / 8 * channels;
     if (bytes_per_frame == 0 || payload_size % bytes_per_frame != 0) {
         throw std::runtime_error(std::string(label) + ": invalid WAV data length");
     }
-    const std::size_t frames = payload_size / bytes_per_frame;
+    return {ieee, channels, bits, rate, payload, payload_size / bytes_per_frame};
+}
+
+} // namespace
+
+static MonoAudio decode_wav_channel(const std::uint8_t * bytes, std::size_t byte_count,
+                                    int selected_channel=-1,std::uint16_t *channel_count=nullptr) {
+    constexpr const char * label = "memory WAV";
+    const auto layout = wav_layout(bytes, byte_count);
+    const bool ieee = layout.ieee;
+    const auto channels = layout.channels;
+    const auto bits = layout.bits;
+    const auto rate = layout.rate;
+    const auto * payload = layout.payload;
+    const std::size_t bytes_per_sample = bits / 8;
+    const std::size_t frames = layout.frames;
     if(selected_channel>=static_cast<int>(channels))throw std::runtime_error("WAV channel out of range");
     if(channel_count)*channel_count=channels;
     MonoAudio result;
@@ -192,6 +217,20 @@ PcmAudio read_audio_pcm(const std::filesystem::path &path) {
     }
     for(float x:result.interleaved_samples)if(!std::isfinite(x))throw std::runtime_error("Nonfinite VAE source audio");
     return result;
+}
+
+AudioInfo audio_info(const std::uint8_t * bytes, std::size_t byte_count) {
+    if (std::strcmp(sniff_audio_container(bytes, byte_count), "flac") == 0) {
+        drflac * flac = drflac_open_memory(bytes, byte_count, nullptr);
+        if (!flac) throw std::runtime_error("memory FLAC could not be decoded");
+        const AudioInfo output{static_cast<std::int32_t>(flac->sampleRate), static_cast<std::int32_t>(flac->channels),
+                               static_cast<std::uint64_t>(flac->totalPCMFrameCount)};
+        drflac_close(flac);
+        if (!output.sample_rate || !output.channels || !output.frames) throw std::runtime_error("memory FLAC has no audio");
+        return output;
+    }
+    const auto layout = wav_layout(bytes, byte_count);
+    return {static_cast<std::int32_t>(layout.rate), layout.channels, layout.frames};
 }
 
 const char * sniff_audio_container(const std::uint8_t * bytes, std::size_t byte_count) {

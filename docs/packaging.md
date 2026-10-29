@@ -11,7 +11,7 @@ built, and the checklist for cutting one.
 
 | asset | contents | for |
 |---|---|---|
-| `yuey-vX.Y.Z-windows-x64-core.zip` | `yue2-server.exe`, `yue2-generate.exe`, `yue2-transcribe.exe`, `yue2.dll`, `ggml.dll`, `ggml-base.dll`, every `ggml-cpu-*.dll` variant, the Visual C++ runtime (`msvcp140`, `vcruntime140`, `vcruntime140_1`, `vcomp140`), `LICENSE`, `LICENSE-ggml.txt`, `THIRD_PARTY_NOTICES.md`, `BUILD-INFO.json` | supervisors |
+| `yuey-vX.Y.Z-windows-x64-core.zip` | `yue2-server.exe`, `yue2-generate.exe`, `yue2-transcribe.exe`, the native training tools (`yue2-train-run.exe`, `yue2-train.exe`, `yue2-ar-train.exe`, `yue2-score.exe`, `yue2-semantic-tokenize.exe`, `yue2-vae-encode.exe`), `yue2.dll`, `ggml.dll`, `ggml-base.dll`, every `ggml-cpu-*.dll` variant, the Visual C++ runtime (`msvcp140`, `vcruntime140`, `vcruntime140_1`, `vcomp140`), `LICENSE`, `LICENSE-ggml.txt`, `THIRD_PARTY_NOTICES.md`, `BUILD-INFO.json` | supervisors |
 | `yuey-vX.Y.Z-windows-x64-cuda.zip` | `ggml-cuda.dll` | supervisors, NVIDIA |
 | `yuey-vX.Y.Z-windows-x64-vulkan.zip` | `ggml-vulkan.dll` | supervisors, AMD and Intel |
 | `yuey-vX.Y.Z-windows-x64-standalone.zip` | all of the above, plus the CUDA runtime (`cudart64_12`, `cublas64_12`, `cublasLt64_12`, `NVIDIA-CUDA-EULA.txt`), `models.cmd` and a README | running yuey on its own |
