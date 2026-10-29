@@ -116,6 +116,19 @@ if(YUE2_BUILD_SHARED)
     endif()
 endif()
 
+if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
+    # The native training workflow (yue2-train-run), ported from the Python
+    # orchestration in tools/training_workflow.py.
+    add_library(yue2-training-support STATIC
+        tools/training/dataset.cpp
+        tools/training/process.cpp
+        tools/training/sha256.cpp
+        tools/training/workflow.cpp
+    )
+    target_include_directories(yue2-training-support PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(yue2-training-support PUBLIC yue2 yue2-server-support)
+endif()
+
 if(YUE2_BUILD_TOOLS)
     add_executable(yue2-transcribe tools/yue2-transcribe.cpp)
     target_link_libraries(yue2-transcribe PRIVATE yue2)
@@ -128,6 +141,9 @@ if(YUE2_BUILD_TOOLS)
 
     add_executable(yue2-vae-encode tools/yue2-vae-encode.cpp)
     target_link_libraries(yue2-vae-encode PRIVATE yue2 yue2-server-support)
+
+    add_executable(yue2-train-run tools/yue2-train-run.cpp)
+    target_link_libraries(yue2-train-run PRIVATE yue2-training-support)
 
     add_executable(yue2-training-probe tools/yue2-training-probe.cpp)
     target_include_directories(yue2-training-probe PRIVATE src)
@@ -293,6 +309,11 @@ if(YUE2_BUILD_TESTS)
     target_link_libraries(yue2-quantize-test PRIVATE yue2)
     yue2_enable_test_assertions(yue2-quantize-test)
     add_test(NAME yue2-quantize-test COMMAND yue2-quantize-test)
+
+    add_executable(yue2-training-workflow-test tests/training_workflow_test.cpp)
+    target_link_libraries(yue2-training-workflow-test PRIVATE yue2-training-support)
+    yue2_enable_test_assertions(yue2-training-workflow-test)
+    add_test(NAME yue2-training-workflow-test COMMAND yue2-training-workflow-test)
 
     add_executable(yue2-server-support-test tests/server_support_test.cpp)
     target_link_libraries(yue2-server-support-test PRIVATE yue2-server-support)

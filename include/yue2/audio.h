@@ -33,6 +33,15 @@ MonoAudio decode_wav_mono(const std::uint8_t * bytes, std::size_t byte_count);
 // that is not FLAC is treated as WAV, and the WAV decoder says if it is not.
 const char * sniff_audio_container(const std::uint8_t * bytes, std::size_t byte_count);
 
+struct AudioInfo {
+    std::int32_t sample_rate = 0;
+    std::int32_t channels = 0;
+    std::uint64_t frames = 0;
+};
+// A WAV or FLAC payload's rate, channels and length from its headers, with
+// the WAV checks decoding applies; no samples are decoded.
+AudioInfo audio_info(const std::uint8_t * bytes, std::size_t byte_count);
+
 // Decode an uploaded WAV or FLAC payload, whichever its magic bytes say, and
 // average the channels exactly as decode_wav_mono does: a 16-bit FLAC decodes
 // to the same samples its WAV would.

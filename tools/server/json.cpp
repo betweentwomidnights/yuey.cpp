@@ -1,6 +1,7 @@
 #include "json.h"
 
 #include <cerrno>
+#include <charconv>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
@@ -353,6 +354,167 @@ std::uint32_t u32(const Value & object, std::string_view key, std::uint32_t fall
         throw std::invalid_argument(std::string(key) + " is outside the uint32 range");
     }
     return static_cast<std::uint32_t>(value);
+}
+
+std::string python_repr(double value) {
+    if (!std::isfinite(value)) throw std::invalid_argument("JSON numbers must be finite");
+    // Shortest round-trip digits, then CPython's float_repr_style rules:
+    // positional when -4 < decimal point <= 16, otherwise d.ddde+XX.
+    char buffer[64];
+    const auto written = std::to_chars(buffer, buffer + sizeof(buffer), value, std::chars_format::scientific);
+    if (written.ec != std::errc()) throw std::runtime_error("cannot format number");
+    const std::string text(buffer, written.ptr);
+    const auto e = text.find('e');
+    std::string sign, digits;
+    for (std::size_t i = 0; i < e; ++i) {
+        if (text[i] == '-') sign = "-";
+        else if (text[i] != '.') digits.push_back(text[i]);
+    }
+    const int point = std::stoi(text.substr(e + 1)) + 1;
+    if (point > -4 && point <= 16) {
+        if (point <= 0) return sign + "0." + std::string(static_cast<std::size_t>(-point), '0') + digits;
+        if (static_cast<std::size_t>(point) < digits.size()) {
+            return sign + digits.substr(0, point) + "." + digits.substr(point);
+        }
+        return sign + digits + std::string(point - digits.size(), '0') + ".0";
+    }
+    std::string mantissa = digits.substr(0, 1);
+    if (digits.size() > 1) mantissa += "." + digits.substr(1);
+    const int exponent = point - 1;
+    const auto magnitude = std::to_string(exponent < 0 ? -exponent : exponent);
+    return sign + mantissa + "e" + (exponent < 0 ? "-" : "+") + (magnitude.size() < 2 ? "0" : "") + magnitude;
+}
+
+Value from_double(double value) {
+    Value output;
+    output.type = Type::number;
+    output.text = python_repr(value);
+    return output;
+}
+
+Value from_integer(long long value) {
+    Value output;
+    output.type = Type::number;
+    output.text = std::to_string(value);
+    return output;
+}
+
+Value from_string(std::string value) {
+    Value output;
+    output.type = Type::string;
+    output.text = std::move(value);
+    return output;
+}
+
+Value from_bool(bool value) {
+    Value output;
+    output.type = Type::boolean;
+    output.boolean = value;
+    return output;
+}
+
+Value object() {
+    Value output;
+    output.type = Type::object;
+    return output;
+}
+
+Value array() {
+    Value output;
+    output.type = Type::array;
+    return output;
+}
+
+bool is_integer(const Value & value) {
+    return value.type == Type::number && value.text.find_first_of(".eE") == std::string::npos;
+}
+
+namespace {
+
+std::string quote_ascii(std::string_view value) {
+    static constexpr char digits[] = "0123456789abcdef";
+    std::string output = "\"";
+    auto unit = [&](std::uint32_t code) {
+        output += "\\u";
+        for (int shift = 12; shift >= 0; shift -= 4) output.push_back(digits[(code >> shift) & 15]);
+    };
+    for (std::size_t i = 0; i < value.size();) {
+        const auto byte = static_cast<unsigned char>(value[i]);
+        std::uint32_t code = byte;
+        std::size_t length = 1;
+        if (byte >= 0x80) {
+            length = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 0;
+            if (!length || i + length > value.size()) throw std::invalid_argument("JSON string is not UTF-8");
+            code = byte & (0x7f >> length);
+            for (std::size_t k = 1; k < length; ++k) {
+                const auto next = static_cast<unsigned char>(value[i + k]);
+                if ((next & 0xc0) != 0x80) throw std::invalid_argument("JSON string is not UTF-8");
+                code = (code << 6) | (next & 0x3f);
+            }
+        }
+        i += length;
+        switch (code) {
+            case '"': output += "\\\""; continue;
+            case '\\': output += "\\\\"; continue;
+            case '\b': output += "\\b"; continue;
+            case '\f': output += "\\f"; continue;
+            case '\n': output += "\\n"; continue;
+            case '\r': output += "\\r"; continue;
+            case '\t': output += "\\t"; continue;
+            default: break;
+        }
+        if (code >= 0x20 && code < 0x7f) output.push_back(static_cast<char>(code));
+        else if (code < 0x10000) unit(code);
+        else {
+            code -= 0x10000;
+            unit(0xd800 + (code >> 10));
+            unit(0xdc00 + (code & 0x3ff));
+        }
+    }
+    output.push_back('"');
+    return output;
+}
+
+void pretty_into(std::string & output, const Value & value, int depth) {
+    const auto indent = [&](int level) { output += "\n" + std::string(static_cast<std::size_t>(level) * 2, ' '); };
+    switch (value.type) {
+        case Type::string: output += quote_ascii(value.text); return;
+        case Type::array:
+            if (value.array.empty()) { output += "[]"; return; }
+            output.push_back('[');
+            for (std::size_t i = 0; i < value.array.size(); ++i) {
+                if (i) output.push_back(',');
+                indent(depth + 1);
+                pretty_into(output, value.array[i], depth + 1);
+            }
+            indent(depth);
+            output.push_back(']');
+            return;
+        case Type::object: {
+            if (value.object.empty()) { output += "{}"; return; }
+            output.push_back('{');
+            bool first = true;
+            for (const auto & entry : value.object) {
+                if (!first) output.push_back(',');
+                first = false;
+                indent(depth + 1);
+                output += quote_ascii(entry.first) + ": ";
+                pretty_into(output, entry.second, depth + 1);
+            }
+            indent(depth);
+            output.push_back('}');
+            return;
+        }
+        default: output += stringify(value); return;
+    }
+}
+
+} // namespace
+
+std::string pretty(const Value & value) {
+    std::string output;
+    pretty_into(output, value, 0);
+    return output;
 }
 
 } // namespace yue2::server::json
