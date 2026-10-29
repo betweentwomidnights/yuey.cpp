@@ -4,6 +4,7 @@
 // Query commands print JSON on stdout; preparation prints progress lines.
 // Errors go to stderr with exit code 1.
 #include "training/dataset.h"
+#include "training/driver.h"
 #include "training/sha256.h"
 #include "training/fitting.h"
 #include "training/preparation.h"
@@ -35,6 +36,10 @@ namespace training = yue2::training;
 
 constexpr const char * usage = R"(usage: yue2-train-run COMMAND [options]
 
+  setup --bin DIR --models-dir DIR [--run-root DIR] --out FILE
+                                  write the training runtime yue2-server --training-config reads
+  workflow --run DIR --action prepare|train|resume|publish
+                                  a named run, as yue2-server launches it
   capabilities [--runtime FILE]   supported recipes and storage modes; with a
                                   training runtime, what its native tools support
   settings --request FILE         validated settings for a run request
@@ -298,6 +303,11 @@ json::Value run(const std::string & command, const Arguments & args) {
         else training::fit_nar(o);
         return {};
     }
+    if (command == "setup") {
+        training::write_training_runtime(fs::u8path(args.required("bin")), fs::u8path(option("models-dir", "models")),
+                                         fs::u8path(option("run-root", "outputs/training")), fs::u8path(option("out", "training-runtime.json")));
+        return {};
+    }
     if (command == "publish") return training::publish(fs::u8path(args.required("run")));
     if (command == "release-caches") {
         auto output = json::object();
@@ -326,6 +336,11 @@ int main(int argc, char ** argv) {
         return args.size() < 2 ? 1 : 0;
     }
     try {
+        // The workflow records its own failures in the run's state.json.
+        if (args[1] == "workflow") {
+            const auto parsed = arguments(args);
+            return training::run_workflow(fs::u8path(parsed.required("run")), parsed.required("action"));
+        }
         const auto output = run(args[1], arguments(args));
         if (output.type != json::Type::null) std::cout << json::pretty(output) << "\n";
         return 0;

@@ -416,3 +416,27 @@ and after.
   published GGUF (34.9 MB LoRA, 39.5 MB mixed LoRA/DoRA) and its sidecar were
   byte-equal, republishing returned the same record, and releasing caches
   left the same files and released the same bytes (0.92 and 0.46 GB).
+
+## Native workflow, stage 5: switch-over (2026-10-28)
+
+- **Change:** `yue2-train-run workflow --run RUN --action ACTION` replaces
+  `training_workflow.py`'s `Workflow` and `main()`, and `yue2-server` now
+  launches it instead of Python. `yue2-train-run setup` replaces
+  `setup_training.py`; the config it writes has no `python` or `workspace`.
+  The standalone package no longer carries the Python scripts.
+  - The driver proves ownership with the identity the server records (a new
+    owner-test assertion checks the two agree) and, on Windows, keeps its
+    children in a job that ends with it.
+  - Resuming a run the Python started keeps the script digests that run
+    recorded, CRLF or LF, so its files stay what the Python would write.
+- **Checks** (`tools/check_native_workflow.py`, three real 20 s clips, one FLAC):
+  - **Parity:** the Python and native workflows took the same run through
+    prepare, train and publish. All 200 compared files and the final state
+    were equal, and the published style was byte-equal. The released-cache
+    total differs by 396 bytes, the header difference of 9 `source.wav`
+    files; libsndfile's header records a write time, so it is not compared.
+  - **Resume:** the Python workflow, with its own CRLF digests, was stopped
+    during scores and, in a second run, during NAR conditioning. The native
+    workflow resumed both, keeping the recorded digests, and published both.
+  - **Server:** a run created, trained and published through `yue2-server`'s
+    training API with a native config; the style appeared in `/loras`.

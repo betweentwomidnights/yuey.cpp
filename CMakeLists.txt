@@ -122,6 +122,7 @@ if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
     add_library(yue2-training-support STATIC
         tools/training/conditioning.cpp
         tools/training/dataset.cpp
+        tools/training/driver.cpp
         tools/training/files.cpp
         tools/training/fitting.cpp
         tools/training/preparation.cpp
@@ -328,7 +329,7 @@ if(YUE2_BUILD_TESTS)
     if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(yue2-training-owner-test tests/training_owner_test.cpp)
         target_include_directories(yue2-training-owner-test PRIVATE tools)
-        target_link_libraries(yue2-training-owner-test PRIVATE yue2-server-support)
+        target_link_libraries(yue2-training-owner-test PRIVATE yue2-server-support yue2-training-support)
         yue2_enable_test_assertions(yue2-training-owner-test)
         add_test(NAME yue2-training-owner-test COMMAND yue2-training-owner-test)
     endif()

@@ -161,8 +161,11 @@ def main():
     if args.out.exists(): parser.error('Output exists; choose a new folder')
     args.out = args.out.resolve(); args.train_run = args.train_run.resolve()
     constants = dict(re.findall(r'const char \* const (\w+) = "([0-9a-f]{64})"', (REPO / 'tools/training/preparation.cpp').read_text()))
+    crlf = lambda path: hashlib.sha256(Path(path).read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')).hexdigest()
     pinned = {'normalizer_sha256': lf_digest(REPO / 'tools/ar_dataset.py'),
-              'conditioning_sha256': lf_digest(REPO / 'tools/prepare_nar_dataset.py')}
+              'conditioning_sha256': lf_digest(REPO / 'tools/prepare_nar_dataset.py'),
+              'normalizer_sha256_crlf': crlf(REPO / 'tools/ar_dataset.py'),
+              'conditioning_sha256_crlf': crlf(REPO / 'tools/prepare_nar_dataset.py')}
     if constants != pinned: raise SystemExit(f'Native reference digests are stale: {constants} != {pinned}')
     make_dataset(args.dataset, args.out / 'dataset', args.tracks, args.clip_seconds)
     wrapper = args.out / 'python_preparation.py'; wrapper.write_text(WRAPPER)

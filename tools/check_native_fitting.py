@@ -70,7 +70,7 @@ def compare(python, native):
     for name in sorted(left & right):
         a, b = python / name, native / name
         base = name.rsplit('/', 1)[-1]
-        if base.endswith('.log') or base in ['state.json', 'progress.json', 'process.json'] or re.fullmatch(r'[^/]+\.command\.json', name):
+        if base.endswith('.log') or base in ['state.json', 'progress.json', 'process.json', 'owner.json'] or re.fullmatch(r'[^/]+\.command\.json', name):
             continue
         compared += 1
         if base.endswith('.jsonl'):

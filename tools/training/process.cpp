@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <exception>
 #include <fstream>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 
@@ -201,6 +202,30 @@ int run_streaming(const std::filesystem::path & program, const std::vector<std::
 
 void set_environment(const char * name, const char * value) { _putenv_s(name, value); }
 
+std::filesystem::path current_executable() {
+    std::wstring path(32768, L'\0');
+    const auto size = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+    path.resize(size);
+    return path;
+}
+
+std::string own_process_identity() {
+    FILETIME created, exited, kernel, user;
+    if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) throw std::runtime_error("Cannot identify the training worker");
+    return std::to_string((static_cast<unsigned long long>(created.dwHighDateTime) << 32) | created.dwLowDateTime);
+}
+
+void own_children() {
+    HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!job || !SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)) ||
+        !AssignProcessToJobObject(job, GetCurrentProcess())) {
+        throw std::runtime_error("Cannot establish training child-process ownership");
+    }
+    // The handle stays open until this process exits; children inherit the job.
+}
+
 std::optional<std::filesystem::path> find_program(const std::string & name) {
     const char * path = std::getenv("PATH");
     if (!path) return std::nullopt;
@@ -385,6 +410,22 @@ int run_streaming(const std::filesystem::path & program, const std::vector<std::
 }
 
 void set_environment(const char * name, const char * value) { setenv(name, value, 1); }
+
+std::filesystem::path current_executable() { return std::filesystem::read_symlink("/proc/self/exe"); }
+
+std::string own_process_identity() {
+    std::ifstream in("/proc/self/stat");
+    std::string line;
+    std::getline(in, line);
+    const auto end = line.rfind(')');
+    if (end == std::string::npos) throw std::runtime_error("Cannot identify the training worker");
+    std::istringstream fields(line.substr(end + 2));
+    std::string field;
+    for (int i = 3; i <= 22; ++i) fields >> field;
+    return field;
+}
+
+void own_children() {}
 
 std::optional<std::filesystem::path> find_program(const std::string & name) {
     const char * path = std::getenv("PATH");

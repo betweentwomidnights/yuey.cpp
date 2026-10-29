@@ -24,6 +24,11 @@ namespace yue2::training {
 // record them where the Python recorded its own source digest.
 extern const char * const normalizer_sha256;      // tools/ar_dataset.py
 extern const char * const conditioning_sha256;    // tools/prepare_nar_dataset.py
+// A run the Python started on a Windows checkout recorded the CRLF digests;
+// resuming it keeps whichever of the two equal-content digests it recorded.
+extern const char * const normalizer_sha256_crlf;
+extern const char * const conditioning_sha256_crlf;
+std::string recorded_digest(const std::optional<std::string> & recorded, const char * committed, const char * crlf);
 
 // prepare_ar_dataset.py --phase semantic / scores, from a yue2-ar-training-v1 job.
 void prepare_semantic(const std::filesystem::path & config);

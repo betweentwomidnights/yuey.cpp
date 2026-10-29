@@ -117,18 +117,18 @@ inline std::wstring quote(const std::wstring &s) {
     out.append(slashes*2,L'\\'); return out+L'"';
 }
 #endif
-inline unsigned long launch(const fs::path &python, const fs::path &script, const fs::path &run,
-                            const std::string &action, const fs::path &cwd) {
+// The native workflow: BIN/yue2-train-run workflow --run RUN --action ACTION.
+inline unsigned long launch(const fs::path &program, const fs::path &run, const std::string &action, const fs::path &cwd) {
 #ifdef _WIN32
-    std::wstring command=quote(python.wstring())+L" "+quote(script.wstring())+L" --run "+quote(run.wstring())+L" --action "+fs::path(action).wstring();
+    std::wstring command=quote(program.wstring())+L" workflow --run "+quote(run.wstring())+L" --action "+fs::path(action).wstring();
     STARTUPINFOW startup{}; startup.cb=sizeof(startup); PROCESS_INFORMATION process{};
-    if (!CreateProcessW(python.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+    if (!CreateProcessW(program.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
                         nullptr, cwd.c_str(), &startup, &process))
-        throw std::runtime_error("Cannot launch training Python; check --training-config");
+        throw std::runtime_error("Cannot launch yue2-train-run; check bin in --training-config");
     CloseHandle(process.hThread); CloseHandle(process.hProcess); return process.dwProcessId;
 #else
     const pid_t pid=fork(); if(pid<0) throw std::runtime_error("Cannot fork training worker");
-    if(pid==0) { chdir(cwd.c_str()); execl(python.c_str(),python.c_str(),script.c_str(),"--run",run.c_str(),"--action",action.c_str(),nullptr); _exit(127); }
+    if(pid==0) { chdir(cwd.c_str()); execl(program.c_str(),program.c_str(),"workflow","--run",run.c_str(),"--action",action.c_str(),nullptr); _exit(127); }
     return pid;
 #endif
 }
@@ -230,7 +230,14 @@ public:
             for(const auto &file:{p/"stop.request",p/"data/lora/stop.request",p/"data/dora/stop.request",p/"nar-run/stop.request"}) fs::remove(file);
         }
         auto c=config();
-        const auto pid=launch(fs::absolute(json::string(c,"python")),fs::absolute(json::string(c,"workspace"))/"tools/training_workflow.py",p,action,fs::absolute(json::string(c,"workspace")));
+        const auto bin=fs::absolute(fs::u8path(json::string(c,"bin")));
+#ifdef _WIN32
+        const auto program=bin/"yue2-train-run.exe";
+#else
+        const auto program=bin/"yue2-train-run";
+#endif
+        if(!fs::exists(program)) throw std::invalid_argument("training-config bin has no yue2-train-run");
+        const auto pid=launch(program,fs::absolute(p),action,bin);
         const auto identity=process_identity(pid);
         write(p/"owner.json","{\"pid\":"+std::to_string(pid)+",\"identity\":"+json::quote(identity)+"}");
         return json_response("{\"success\":true,\"id\":"+json::quote(p.filename().string())+",\"pid\":"+std::to_string(pid)+"}",202);

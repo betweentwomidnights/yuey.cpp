@@ -23,6 +23,13 @@ using namespace detail;
 
 const char * const normalizer_sha256 = "be8943f22fd37ee0f0ce4bef32a17568b60a416da490eb12a296a028988f6fb0";
 const char * const conditioning_sha256 = "d649fed4a7f9ea1d59dff161214ecbf9b7cded296b4227f2a7dc5eaf5e0528ea";
+// The same scripts with CRLF line endings, as a Windows checkout ran them.
+const char * const normalizer_sha256_crlf = "10a5670155cb6abb5bce1c72c30abb0def92bafc63b17a873661e20dd5e2b4a3";
+const char * const conditioning_sha256_crlf = "324fddf538ff39267c10b4a2afcc8e3255f4c4be7c403dde0118a41dd4db188b";
+
+std::string recorded_digest(const std::optional<std::string> & recorded, const char * committed, const char * crlf) {
+    return recorded && (*recorded == committed || *recorded == crlf) ? *recorded : committed;
+}
 
 bool python_equal(const json::Value & a, const json::Value & b) {
     const auto numeric = [](const json::Value & v) { return v.type == json::Type::number || v.type == json::Type::boolean; };
@@ -264,7 +271,17 @@ void prepare_scores(const fs::path & config_path) {
     const auto score_tool = from_utf8(text(config, "score_binary"));
     const auto transcriber = binary / executable("yue2-transcribe");
     const auto prefix_tool = binary / executable("yue2-ar-train");
-    const auto tool_identity = make({{"normalizer_sha256", S(normalizer_sha256)}, {"score_runtime", runtime_identity(score_tool)},
+    // A run the Python started keeps the digest it recorded for these rules.
+    const auto dataset_output = get(preparation, "dataset_output", S("dataset.json")).text;
+    std::optional<std::string> recorded;
+    if (fs::exists(out / from_utf8(dataset_output))) {
+        const auto previous = read_json(out / from_utf8(dataset_output));
+        if (const auto * tools = previous.find("tools")) {
+            if (const auto * value = tools->find("normalizer_sha256"); value && value->type == json::Type::string) recorded = value->text;
+        }
+    }
+    const auto normalizer = recorded_digest(recorded, normalizer_sha256, normalizer_sha256_crlf);
+    const auto tool_identity = make({{"normalizer_sha256", S(normalizer)}, {"score_runtime", runtime_identity(score_tool)},
         {"transcription_runtime", runtime_identity(transcriber)}, {"prefix_runtime", runtime_identity(prefix_tool)},
         {"transcription_model_sha256", S(digest(from_utf8(text(models, "transcriber"))))},
         {"text_tokenizer_sha256", S(digest(from_utf8(text(models, "tokenizer"))))},
