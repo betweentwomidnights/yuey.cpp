@@ -126,6 +126,7 @@ if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
         tools/training/fitting.cpp
         tools/training/preparation.cpp
         tools/training/process.cpp
+        tools/training/publication.cpp
         tools/training/sha256.cpp
         tools/training/workflow.cpp
     )
