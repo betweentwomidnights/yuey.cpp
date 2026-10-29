@@ -5,30 +5,33 @@ learns the AR style adapter, freezes its validation-selected checkpoint, prepare
 matched NAR conditioning, and calibrates the NAR adapter. Publication combines
 the pair into one style entry with a caption pool. Planning remains base/common.
 
-This is an instrumental training workflow. **All model computation uses native
-GGML**, including VAE posterior-mean encoding. Python coordinates manifests,
-provenance and processes; the training add-on does not require or import PyTorch.
-The optional PyTorch encoder remains a developer-only numerical oracle.
+This is an instrumental training workflow, and it is entirely native: GGML does
+all model computation, and `yue2-train-run` coordinates manifests, provenance
+and processes. Training needs no Python. The Python scripts under `tools/` are
+the reference the native workflow was checked against, and the optional
+PyTorch encoder remains a developer-only numerical oracle.
 
 ## Setup
 
-Use 64-bit Python with the packages in `tools/requirements-training.txt`. For a
-source checkout, create a separate virtual environment and build the normal
-tools. A standalone Windows package carries these tools and scripts, but does
-not bundle Python or download models. Inference works without the training add-on.
+Build the normal tools, or unpack a standalone Windows package, which carries
+them but downloads no models. Inference works without training set up.
 
 ```powershell
-python -m venv .venv-training
-.venv-training/Scripts/python -m pip install -r tools/requirements-training.txt
-.venv-training/Scripts/python tools/setup_training.py --bin build/bin/Release --models-dir models
+build/bin/Release/yue2-train-run setup --bin build/bin/Release --models-dir models --out training-runtime.json
 build/bin/Release/yue2-server --models-dir models --training-config training-runtime.json
 ```
 
 For an unpacked standalone package, use `--bin .`. Setup requires the BF16
 generation model, folded F16 VAE, v9 semantic tokenizer, SheetSage2 transcriber,
 Qwen text tokenizer and instrumental companion. `training-runtime.json` records
-absolute paths, Python, device, native binary folder, managed run root and model
-publication folder. Use that same models folder as the inference adapter folder.
+absolute paths, the device, the native tools' folder, the managed run root and
+the model publication folder. Use that same models folder as the inference
+adapter folder. The server starts `yue2-train-run workflow` for each run.
+
+A training config written by `setup_training.py` still works: the server
+ignores its `python` entry, and a run keeps the `workspace` its job recorded.
+A run the Python workflow started resumes natively (see
+[native workflow](#native-workflow)).
 Model/runtime paths are installation settings; the browser cannot override them.
 VAE encoding follows `device` by default. Optional `vae_device`, `vae_binary`
 and `vae_core_frames` settings select an independent installed backend/tool and
@@ -264,10 +267,10 @@ real dataset with `--window-seconds 30 --rank 32` for representative timings.
 
 ## Native workflow
 
-The Python orchestration is being replaced by `yue2-train-run`, one stage at a
-time, so that a supervisor such as gary4local can train without Python. Each
-stage must equal the Python it replaces before the server switches to it; until
-then the server still launches `training_workflow.py`.
+`yue2-train-run` replaced the Python orchestration one stage at a time, so
+that a supervisor such as gary4local can train without Python. Each stage was
+checked equal to the Python it replaces; the server now launches
+`yue2-train-run workflow` for every run.
 
 | Stage | Replaces | Status |
 | --- | --- | --- |
@@ -275,7 +278,7 @@ then the server still launches `training_workflow.py`.
 | 2. Preparation | `prepare_ar_dataset.py`, `prepare_nar_targets.py`, `prepare_nar_dataset.py` | native, equal to Python |
 | 3. Fitting | `train_ar_run.py`, `train_nar_run.py` | native, equal to Python |
 | 4. Publication | `publish_training_adapter.py`; `Workflow.release_caches()` | native, equal to Python |
-| 5. Switch-over | the server launches `yue2-train-run`; no Python in the training runtime | |
+| 5. Switch-over | `Workflow` and `main()` in `training_workflow.py`; `setup_training.py`; the server launches `yue2-train-run` | native |
 | 6. Removal | the shipped Python training scripts | |
 | 7. Quantized base | training against the Q4_K_M base gary4local installs | |
 
@@ -322,8 +325,10 @@ samples, and so every transcription, are the same.
 The Python recorded a digest of its own script (`ar_dataset.py`,
 `prepare_nar_dataset.py`) in each identity, and that digest follows the
 checkout's line endings. The native side records the committed (LF) digests of
-the scripts it equals. A run the Python prepared on a Windows checkout
-therefore names a different digest. Accepting both is part of the switch-over.
+the scripts it equals. A run the Python prepared on a Windows checkout names
+the CRLF digest of the same scripts instead. Resuming such a run, the native
+side keeps the digest the run recorded when it is either of the two, so the
+run's files stay what the Python would have written.
 
 To check it on a machine with the training models:
 

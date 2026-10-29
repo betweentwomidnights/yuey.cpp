@@ -334,11 +334,18 @@ void prepare_conditioning(const ConditioningOptions & o) {
     const auto common = from_utf8(resolved_path(from_utf8(text(models, "companion"))));
     const auto adapter = from_utf8(resolved_path(o.ar_adapter));
     const auto binary = from_utf8(resolved_path(o.binary));
+    // A run the Python started keeps the digest it recorded for these rules.
+    std::optional<std::string> recorded;
+    if (fs::exists(o.out / "identity.json")) {
+        const auto previous = read_json(o.out / "identity.json");
+        if (const auto * value = previous.find("preparation_source_sha256"); value && value->type == json::Type::string) recorded = value->text;
+    }
+    const auto conditioning_source = recorded_digest(recorded, conditioning_sha256, conditioning_sha256_crlf);
     auto identity = make({{"format", S("yue2-nar-cache-job-v1")}, {"ar_dataset_sha256", S(digest(dataset_path))},
         {"target_index_sha256", S(digest(o.targets))}, {"vae_identity", member(targets, "identity")}, {"base_sha256", S(digest(base))},
         {"companion_sha256", S(digest(common))}, {"ar_adapter_sha256", S(digest(adapter))}, {"runtime", runtime_identity(binary)},
         {"device", S(o.device)}, {"threads", I(o.threads)}, {"tf32", B(false)}, {"conditioning_only", B(true)}, {"kv_type", S(o.kv_type)},
-        {"prefill_batch", I(o.batch)}, {"flash_attention", B(false)}, {"preparation_source_sha256", S(conditioning_sha256)},
+        {"prefill_batch", I(o.batch)}, {"flash_attention", B(false)}, {"preparation_source_sha256", S(conditioning_source)},
         {"prefix_policy", S("Exact AR training prefix and semantic IDs")}, {"replay_policy", S("Real targets only")},
         {"auxiliary", json::Value{}}});
     if (o.storage != "cache") identity.object["storage"] = S(o.storage);

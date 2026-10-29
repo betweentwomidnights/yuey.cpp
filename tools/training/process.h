@@ -30,6 +30,16 @@ int run_streaming(const std::filesystem::path & program, const std::vector<std::
 // Set a variable for this process and the programs it starts.
 void set_environment(const char * name, const char * value);
 
+// This program's own path, to run its other commands as children.
+std::filesystem::path current_executable();
+// This process's creation identity as yue2-server records it in owner.json:
+// the creation FILETIME on Windows, the start time in clock ticks on Linux.
+std::string own_process_identity();
+// On Windows, put this process and every child it starts in a job that ends
+// them all when this process ends, so a crashed coordinator cannot leave a
+// fitter holding the GPU. Elsewhere it does nothing.
+void own_children();
+
 // A program on PATH (with .exe on Windows), or nothing.
 std::optional<std::filesystem::path> find_program(const std::string & name);
 

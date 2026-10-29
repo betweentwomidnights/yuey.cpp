@@ -1,4 +1,5 @@
 #include "server/training.h"
+#include "training/process.h"
 #include <cassert>
 #include <iostream>
 
@@ -16,6 +17,8 @@ int main() {
     training::write(runtime,"{\"run_root\":"+json::quote((root/"runs").string())+"}");
     training::write(root/"runs/live/request.json","{\"id\":\"live\",\"dataset\":\"fixture\"}");
     const auto identity=training::process_identity(pid); assert(!identity.empty());
+    // The native workflow proves its ownership with the identity the server records.
+    assert(yue2::training::own_process_identity()==identity);
     const auto owner=root/"runs/live/owner.json";
     training::write(owner,"{\"pid\":"+std::to_string(pid)+",\"identity\":"+json::quote(identity)+"}");
     training::Manager first(runtime); assert(first.active());
