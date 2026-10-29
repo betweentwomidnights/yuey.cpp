@@ -17,15 +17,6 @@ namespace {
 
 using Codes = std::vector<std::uint32_t>;
 
-// Python's round() and math.floor/ceil on a float: round half to even.
-long long round_even(double value) {
-    const double floor = std::floor(value), fraction = value - floor;
-    const auto lower = static_cast<long long>(floor);
-    if (fraction > 0.5) return lower + 1;
-    if (fraction < 0.5) return lower;
-    return lower % 2 == 0 ? lower : lower + 1;
-}
-
 bool digit(std::uint32_t c) { return c >= '0' && c <= '9'; }
 std::uint32_t lower(std::uint32_t c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
 
@@ -131,6 +122,14 @@ long long optional_int(const json::Value & object, const char * key) {
 
 } // namespace
 
+long long round_half_even(double value) {
+    const double floor = std::floor(value), fraction = value - floor;
+    const auto lower = static_cast<long long>(floor);
+    if (fraction > 0.5) return lower + 1;
+    if (fraction < 0.5) return lower;
+    return lower % 2 == 0 ? lower : lower + 1;
+}
+
 std::string strip(const std::string & text) {
     const auto codes = unicode::decode(text);
     return unicode::encode(strip_codes(codes, 0, codes.size()));
@@ -183,7 +182,7 @@ std::vector<long long> window_starts(long long total_frames, long long frames, d
     std::set<long long> starts{0};
     for (long long at = frames; at < total_frames; at += frames) {
         const auto bars = static_cast<long long>(std::floor(std::min(at, total_frames - frames) / bar_frames));
-        const auto candidate = round_even(bars * bar_frames);
+        const auto candidate = round_half_even(bars * bar_frames);
         starts.insert(std::max(0LL, std::min(total_frames - frames, candidate)));
     }
     return {starts.begin(), starts.end()};
@@ -265,7 +264,7 @@ EngravedScore score_from_events(const json::Value & events, const json::Value & 
     for (const auto & event : events.array) {
         const double start = as_double(field(event, "time_seconds"), "onset");
         if (!std::isfinite(start)) throw std::invalid_argument("Nonfinite onset");
-        const auto at = std::max(0LL, round_even(start * scale));
+        const auto at = std::max(0LL, round_half_even(start * scale));
         if (optional_int(event, "meter_numerator")) {
             meter_changes.emplace(optional_int(event, "meter_numerator"), as_int(field(event, "meter_denominator"), "meter"));
         }
@@ -282,7 +281,7 @@ EngravedScore score_from_events(const json::Value & events, const json::Value & 
                 throw std::invalid_argument("Invalid note event");
             }
             if (start >= seconds || end <= 0) continue;
-            const auto finish = std::min(limit, std::max(at + 1, round_even(std::min(end, seconds) * scale)));
+            const auto finish = std::min(limit, std::max(at + 1, round_half_even(std::min(end, seconds) * scale)));
             if (at >= finish) { ++invalid; continue; }
             rounding.push_back(std::abs(at / scale - std::max(0.0, start)));
             rounding.push_back(std::abs(finish / scale - std::min(end, seconds)));
@@ -292,7 +291,7 @@ EngravedScore score_from_events(const json::Value & events, const json::Value & 
     if (meter_changes.size() > 1) throw std::invalid_argument("Changing meter needs explicit review");
 
     std::vector<std::string> lines{"X:1", "T:", "M:" + std::to_string(numerator) + "/" + std::to_string(denominator), "L:1/16",
-                                   "Q:1/4=" + std::to_string(round_even(bpm)),
+                                   "Q:1/4=" + std::to_string(round_half_even(bpm)),
                                    "V: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\"",
                                    "V: Ins clef=treble name=\"Ins Melody\" snm=\"Inst.\"", "K:" + key};
     long long retained = 0, duplicates = 0;

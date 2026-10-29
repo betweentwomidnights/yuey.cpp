@@ -31,7 +31,7 @@ bool has(int argc, char ** argv, std::string_view name) {
 void usage(const char * executable) {
     std::cout
         << "Usage: " << executable
-        << " --model yue2-semantic-tokenizer.gguf --audio input.wav --out tokens.i32"
+        << " --model yue2-semantic-tokenizer.gguf --audio input.wav|input.flac --out tokens.i32"
            " [--device cuda|cpu] [--threads N]\n"
         << "Writes little-endian raw int32 codec IDs at 25 Hz.\n";
 }
@@ -48,7 +48,7 @@ int main(int argc, char ** argv) {
         options.device = option(argc, argv, "--device", false);
         const auto threads = option(argc, argv, "--threads", false);
         if (!threads.empty()) options.threads = std::stoi(threads);
-        auto audio = yue2::audio::read_wav_mono_24k(option(argc, argv, "--audio"));
+        auto audio = yue2::audio::read_audio_mono_24k(option(argc, argv, "--audio"));
         yue2::mert2::Encoder encoder(option(argc, argv, "--model"), options);
         const auto tokens = encoder.semantic_tokens_24k(audio.samples);
 

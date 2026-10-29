@@ -120,7 +120,10 @@ if(YUE2_BUILD_TOOLS OR YUE2_BUILD_TESTS)
     # The native training workflow (yue2-train-run), ported from the Python
     # orchestration in tools/training_workflow.py.
     add_library(yue2-training-support STATIC
+        tools/training/conditioning.cpp
         tools/training/dataset.cpp
+        tools/training/files.cpp
+        tools/training/preparation.cpp
         tools/training/process.cpp
         tools/training/sha256.cpp
         tools/training/workflow.cpp

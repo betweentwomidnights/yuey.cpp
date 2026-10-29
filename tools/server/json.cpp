@@ -1,5 +1,6 @@
 #include "json.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cmath>
@@ -241,7 +242,7 @@ const Value * member(const Value & object, std::string_view key) {
 
 const Value * Value::find(std::string_view key) const {
     if (type != Type::object) return nullptr;
-    const auto found = object.find(std::string(key));
+    const auto found = object.find(key);
     return found == object.end() ? nullptr : &found->second;
 }
 
@@ -515,6 +516,32 @@ std::string pretty(const Value & value) {
     std::string output;
     pretty_into(output, value, 0);
     return output;
+}
+
+std::string python_dumps_sorted(const Value & value) {
+    switch (value.type) {
+        case Type::string: return quote_ascii(value.text);
+        case Type::array: {
+            std::string output = "[";
+            for (std::size_t i = 0; i < value.array.size(); ++i) {
+                if (i) output += ", ";
+                output += python_dumps_sorted(value.array[i]);
+            }
+            return output + "]";
+        }
+        case Type::object: {
+            std::vector<const Object::Entry *> entries;
+            for (const auto & entry : value.object) entries.push_back(&entry);
+            std::sort(entries.begin(), entries.end(), [](const auto * a, const auto * b) { return a->first < b->first; });
+            std::string output = "{";
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                if (i) output += ", ";
+                output += quote_ascii(entries[i]->first) + ": " + python_dumps_sorted(entries[i]->second);
+            }
+            return output + "}";
+        }
+        default: return stringify(value);
+    }
 }
 
 } // namespace yue2::server::json

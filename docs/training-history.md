@@ -356,3 +356,32 @@ and after.
   today's engraving, and from the Python's equally. They were written on
   2026-10-26, before chord inversions were engraved; that is the only
   difference.
+
+## Native workflow, stage 2: preparation (2026-10-28)
+
+- **Change:** `yue2-train-run prepare-semantic`, `prepare-scores`,
+  `prepare-targets`, `prepare-conditioning` and `materialize` replace the three
+  preparation scripts on the product path. See
+  [native workflow](training.md#native-workflow).
+  - Identities hash the manifests they depend on. For a run to move between
+    the implementations, the native side writes those manifests byte for byte
+    as the Python did. Its JSON objects now keep insertion order, and its
+    writer matches `json.dumps` with Windows line endings. `latent_rms` uses
+    numpy's pairwise summation, checked against numpy on 45 arrays.
+  - The Python recorded digests of its own scripts, which follow the
+    checkout's line endings. The native side records the committed LF digests.
+- **Parity:** `tools/check_native_preparation.py` prepared three real 20 s
+  clips (one a 24-bit FLAC) with 8 s windows twice in the same run folder:
+  review, cache and rolling conditioning, and a rolling regeneration. All 212
+  compared files were equal: manifests, 9 examples' scores, prefixes and
+  MIDI, VAE targets, and 11 conditioning caches. `source.wav` samples were equal; its header and
+  the logs and timings are not compared.
+- **Found:**
+  - `yue2-semantic-tokenize` read WAV only, though inventory accepts FLAC, so
+    a FLAC dataset failed at its first semantic cache in both
+    implementations. It now reads either, through the decoder uploads use.
+    A 20 s real clip gave identical codes as a 24-bit WAV (before and after
+    the change) and as a 24-bit FLAC.
+  - A rolling regeneration run without `GGML_CUDA_TF32=0` gives different
+    bytes and fails its check. `train_nar_run.py` sets it before calling
+    `materialize()`; the native `materialize` now sets it itself.

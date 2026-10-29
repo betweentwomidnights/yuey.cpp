@@ -372,6 +372,21 @@ std::vector<float> resample_vae(const std::vector<float> &input,int32_t input_ra
     return result;
 }
 
+MonoAudio read_audio_mono_24k(const std::filesystem::path & path) {
+    const auto bytes = read_file(path);
+    MonoAudio audio;
+    try {
+        audio = decode_audio_mono(bytes.data(), bytes.size());
+    } catch (const std::runtime_error & error) {
+        throw std::runtime_error(path.string() + ": " + error.what());
+    }
+    if (audio.sample_rate != transcription_sample_rate) {
+        audio.samples = resample_sinc(audio.samples, audio.sample_rate, transcription_sample_rate);
+        audio.sample_rate = transcription_sample_rate;
+    }
+    return audio;
+}
+
 MonoAudio read_wav_mono_24k(const std::filesystem::path & path) {
     auto audio = read_wav_mono(path);
     if (audio.sample_rate != transcription_sample_rate) {
