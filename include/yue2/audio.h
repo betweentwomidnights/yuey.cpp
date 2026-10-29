@@ -59,6 +59,11 @@ std::vector<float> resample_vae(const std::vector<float> &input,
 
 MonoAudio read_wav_mono_24k(const std::filesystem::path & path);
 
+// A WAV or FLAC file, whichever its magic bytes say, decoded like
+// decode_audio_mono and resampled to 24 kHz like read_wav_mono_24k. A WAV
+// gives exactly what read_wav_mono_24k gives.
+MonoAudio read_audio_mono_24k(const std::filesystem::path & path);
+
 // Writes interleaved IEEE-float32 PCM as a standard little-endian RIFF/WAVE.
 // The function preserves model output amplitude and rejects non-finite samples.
 void write_wav_float(
