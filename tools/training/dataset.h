@@ -22,6 +22,9 @@ struct CaptionMetadata {
 // and ASCII case folding.
 CaptionMetadata caption_metadata(const std::string & caption);
 
+// Python's round() of a float: half to even.
+long long round_half_even(double value);
+
 // Python's str.strip(): Unicode whitespace at both ends.
 std::string strip(const std::string & text);
 

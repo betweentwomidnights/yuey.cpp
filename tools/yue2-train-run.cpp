@@ -1,9 +1,11 @@
 // yue2-train-run: the native training workflow. It replaces the Python
-// orchestration in tools/training_workflow.py stage by stage; this stage
-// holds run settings, dataset inventory and review, and capabilities.
-// Every command prints JSON on stdout; errors go to stderr with exit code 1.
+// orchestration in tools/training_workflow.py stage by stage: run settings,
+// dataset inventory and review, capabilities, and dataset preparation.
+// Query commands print JSON on stdout; preparation prints progress lines.
+// Errors go to stderr with exit code 1.
 #include "training/dataset.h"
 #include "training/sha256.h"
+#include "training/preparation.h"
 #include "training/workflow.h"
 
 #include <cstdlib>
@@ -41,6 +43,18 @@ constexpr const char * usage = R"(usage: yue2-train-run COMMAND [options]
                                   re-engrave transcriber events as ABC
   identity --executable FILE      SHA-256 of a native tool and its libraries
   sha256 FILE...                  SHA-256 of files
+  prepare-semantic --config AR_JOB
+  prepare-scores --config AR_JOB  semantic caches, then scored AR examples
+  prepare-targets --dataset DATASET --vae VAE --binary YUE2_VAE_ENCODE --out DIR
+                  [--device cuda] [--threads 4] [--core-frames 128] [--halo-frames 50] [--stop-file FILE]
+                                  posterior-mean VAE targets
+  prepare-conditioning --config AR_JOB --targets INDEX --ar-adapter ADAPTER --binary YUE2_TRAIN --out DIR
+                  [--conditioning-device cuda] [--threads 6] [--cache-kv-type f16] [--conditioning-batch 0]
+                  [--storage cache|rolling|resident] [--stop-file FILE]
+                                  frozen-AR conditioning for NAR fitting
+  materialize --manifest DATASET --rows ROWS --binary YUE2_TRAIN --base BASE --common COMPANION
+              --adapter ADAPTER [--stop-file FILE]
+                                  regenerate absent rolling caches
   parity --cases FILE             evaluate a batch of cases, for the Python
                                   parity check (tests/test_native_training_workflow.py)
 )";
@@ -221,6 +235,56 @@ json::Value run(const std::string & command, const Arguments & args) {
         return output;
     }
     if (command == "parity") return parity(fs::u8path(args.required("cases")));
+    const auto option = [&](const char * key, const std::string & fallback) {
+        const auto found = args.options.find(key);
+        return found == args.options.end() ? fallback : found->second;
+    };
+    const auto stop_file = [&]() {
+        const auto found = args.options.find("stop-file");
+        return found == args.options.end() ? std::optional<fs::path>() : std::optional<fs::path>(fs::u8path(found->second));
+    };
+    if (command == "prepare-semantic") { training::prepare_semantic(fs::u8path(args.required("config"))); return {}; }
+    if (command == "prepare-scores") { training::prepare_scores(fs::u8path(args.required("config"))); return {}; }
+    if (command == "prepare-targets") {
+        training::TargetOptions o;
+        o.dataset = fs::u8path(args.required("dataset"));
+        o.vae = fs::u8path(args.required("vae"));
+        o.binary = fs::u8path(args.required("binary"));
+        o.out = fs::u8path(args.required("out"));
+        o.device = option("device", "cuda");
+        o.threads = integer(option("threads", "4"));
+        o.core_frames = integer(option("core-frames", "128"));
+        o.halo_frames = integer(option("halo-frames", "50"));
+        o.stop_file = stop_file();
+        training::prepare_targets(o);
+        return {};
+    }
+    if (command == "prepare-conditioning") {
+        training::ConditioningOptions o;
+        o.config = fs::u8path(args.required("config"));
+        o.targets = fs::u8path(args.required("targets"));
+        o.ar_adapter = fs::u8path(args.required("ar-adapter"));
+        o.binary = fs::u8path(args.required("binary"));
+        o.out = fs::u8path(args.required("out"));
+        o.device = option("conditioning-device", "cuda");
+        o.threads = integer(option("threads", "6"));
+        o.kv_type = option("cache-kv-type", "f16");
+        o.batch = integer(option("conditioning-batch", "0"));
+        o.storage = option("storage", "cache");
+        o.stop_file = stop_file();
+        training::prepare_conditioning(o);
+        return {};
+    }
+    if (command == "materialize") {
+        const auto rows = json::parse(read(fs::u8path(args.required("rows"))));
+        if (rows.type != json::Type::array) throw std::invalid_argument("rows must be an array");
+        const auto made = training::materialize(fs::u8path(args.required("manifest")), rows.array, fs::u8path(args.required("binary")),
+                                                fs::u8path(args.required("base")), fs::u8path(args.required("common")),
+                                                fs::u8path(args.required("adapter")), stop_file());
+        auto output = json::object();
+        output.object["materialized"] = json::from_integer(made);
+        return output;
+    }
     throw std::invalid_argument("unknown command: " + command);
 }
 
@@ -233,7 +297,8 @@ int main(int argc, char ** argv) {
         return args.size() < 2 ? 1 : 0;
     }
     try {
-        std::cout << json::pretty(run(args[1], arguments(args))) << "\n";
+        const auto output = run(args[1], arguments(args));
+        if (output.type != json::Type::null) std::cout << json::pretty(output) << "\n";
         return 0;
     } catch (const std::exception & error) {
         std::cerr << "error: " << error.what() << "\n";

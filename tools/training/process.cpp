@@ -1,6 +1,10 @@
 #include "training/process.h"
 
 #include <chrono>
+#include <cstdlib>
+#include <exception>
+#include <fstream>
+#include <stdexcept>
 #include <thread>
 
 #ifdef _WIN32
@@ -17,6 +21,57 @@
 #endif
 
 namespace yue2::training {
+namespace {
+
+// Splits output into lines like Python's text mode: \r\n, \r and \n all end one.
+class Lines {
+public:
+    explicit Lines(std::function<void(const std::string &)> on_line) : on_line_(std::move(on_line)) {}
+    void feed(const char * data, std::size_t size) {
+        for (std::size_t i = 0; i < size; ++i) {
+            const char c = data[i];
+            if (carriage_ && c == '\n') { carriage_ = false; continue; }
+            carriage_ = c == '\r';
+            if (c == '\r' || c == '\n') { emit(); continue; }
+            pending_.push_back(c);
+        }
+    }
+    void finish() { if (!pending_.empty()) emit(); }
+
+private:
+    void emit() {
+        auto line = std::move(pending_);
+        pending_.clear();
+        on_line_(line);
+    }
+    std::function<void(const std::string &)> on_line_;
+    std::string pending_;
+    bool carriage_ = false;
+};
+
+// Forwards lines to the log, then to the caller; after a caller's exception
+// it keeps logging and reports the exception at the end.
+struct Forward {
+    std::ofstream & log;
+    const std::function<void(const std::string &)> & on_line;
+    std::exception_ptr error;
+    void operator()(const std::string & line) {
+        log << line << '\n';
+        log.flush();
+        if (error) return;
+        try { on_line(line); } catch (...) { error = std::current_exception(); }
+    }
+};
+
+std::ofstream open_log(const std::filesystem::path & log, bool append) {
+    if (log.has_parent_path()) std::filesystem::create_directories(log.parent_path());
+    // Text mode, like Python's log handles: "\n" becomes "\r\n" on Windows.
+    std::ofstream stream(log, append ? std::ios::app : std::ios::trunc);
+    if (!stream) throw std::runtime_error("Cannot open log " + log.u8string());
+    return stream;
+}
+
+} // namespace
 
 #ifdef _WIN32
 namespace {
@@ -47,6 +102,36 @@ std::wstring quote(const std::wstring & value) {
     return quoted ? output + L"\"" : output;
 }
 
+// Starts program with the given inheritable standard output and error; the
+// caller owns the returned process handle. Null when it cannot start.
+HANDLE spawn(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+             const std::filesystem::path & cwd, HANDLE output, HANDLE error) {
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = INVALID_HANDLE_VALUE;
+    startup.hStdOutput = output;
+    startup.hStdError = error;
+    auto command = quote(program.wstring());
+    for (const auto & argument : arguments) command += L" " + quote(wide(argument));
+    PROCESS_INFORMATION process{};
+    const auto directory = cwd.empty() ? std::wstring() : cwd.wstring();
+    if (!CreateProcessW(program.wstring().c_str(), command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
+                        directory.empty() ? nullptr : directory.c_str(), &startup, &process)) {
+        return nullptr;
+    }
+    CloseHandle(process.hThread);
+    return process.hProcess;
+}
+
+int exit_code(HANDLE process) {
+    WaitForSingleObject(process, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(process, &code);
+    CloseHandle(process);
+    return static_cast<int>(code);
+}
+
 } // namespace
 
 std::optional<std::string> capture_output(const std::filesystem::path & program, const std::vector<std::string> & arguments,
@@ -56,58 +141,118 @@ std::optional<std::string> capture_output(const std::filesystem::path & program,
     if (!CreatePipe(&read_end, &write_end, &inherit, 0)) return std::nullopt;
     SetHandleInformation(read_end, HANDLE_FLAG_INHERIT, 0);
     HANDLE null = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherit, OPEN_EXISTING, 0, nullptr);
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = INVALID_HANDLE_VALUE;
-    startup.hStdOutput = write_end;
-    startup.hStdError = null;
-    auto command = quote(program.wstring());
-    for (const auto & argument : arguments) command += L" " + quote(wide(argument));
-    PROCESS_INFORMATION process{};
-    const bool started = CreateProcessW(program.wstring().c_str(), command.data(), nullptr, nullptr, TRUE,
-                                        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
+    HANDLE process = spawn(program, arguments, {}, write_end, null);
     CloseHandle(write_end);
     if (null != INVALID_HANDLE_VALUE) CloseHandle(null);
-    if (!started) { CloseHandle(read_end); return std::nullopt; }
+    if (!process) { CloseHandle(read_end); return std::nullopt; }
     std::string output;
     std::thread reader([&]() {
         char buffer[4096];
         DWORD got = 0;
         while (ReadFile(read_end, buffer, sizeof(buffer), &got, nullptr) && got) output.append(buffer, got);
     });
-    const bool finished = WaitForSingleObject(process.hProcess, static_cast<DWORD>(timeout_seconds) * 1000) == WAIT_OBJECT_0;
-    if (!finished) {
-        TerminateProcess(process.hProcess, 1);
-        WaitForSingleObject(process.hProcess, INFINITE);
-    }
+    const bool finished = WaitForSingleObject(process, static_cast<DWORD>(timeout_seconds) * 1000) == WAIT_OBJECT_0;
+    if (!finished) TerminateProcess(process, 1);
+    exit_code(process);
     reader.join();
     CloseHandle(read_end);
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
     if (!finished) return std::nullopt;
     return output;
 }
+
+int run_to_log(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+               const std::filesystem::path & cwd, const std::filesystem::path & log, bool append) {
+    { open_log(log, append); }
+    SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+    HANDLE file = CreateFileW(log.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherit, OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot open log " + log.u8string());
+    HANDLE process = spawn(program, arguments, cwd, file, file);
+    CloseHandle(file);
+    if (!process) throw std::runtime_error("Cannot start " + program.u8string());
+    return exit_code(process);
+}
+
+int run_streaming(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+                  const std::filesystem::path & cwd, const std::filesystem::path & log,
+                  const std::function<void(const std::string &)> & on_line) {
+    auto stream = open_log(log, true);
+    SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+    HANDLE read_end = nullptr, write_end = nullptr;
+    if (!CreatePipe(&read_end, &write_end, &inherit, 0)) throw std::runtime_error("Cannot create a pipe");
+    SetHandleInformation(read_end, HANDLE_FLAG_INHERIT, 0);
+    HANDLE process = spawn(program, arguments, cwd, write_end, write_end);
+    CloseHandle(write_end);
+    if (!process) { CloseHandle(read_end); throw std::runtime_error("Cannot start " + program.u8string()); }
+    Forward forward{stream, on_line, nullptr};
+    Lines lines(std::ref(forward));
+    char buffer[4096];
+    DWORD got = 0;
+    while (ReadFile(read_end, buffer, sizeof(buffer), &got, nullptr) && got) lines.feed(buffer, got);
+    lines.finish();
+    CloseHandle(read_end);
+    const int code = exit_code(process);
+    if (forward.error) std::rethrow_exception(forward.error);
+    return code;
+}
+
+void set_environment(const char * name, const char * value) { _putenv_s(name, value); }
 #else
-std::optional<std::string> capture_output(const std::filesystem::path & program, const std::vector<std::string> & arguments,
-                                          int timeout_seconds) {
-    int pipe_ends[2];
-    if (pipe(pipe_ends) != 0) return std::nullopt;
+namespace {
+
+// Starts program with standard output and error on output_fd; -1 when it cannot start.
+pid_t spawn(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+            const std::filesystem::path & cwd, int output_fd, int error_fd, int * exec_error_fd) {
+    int status_pipe[2];
+    if (pipe(status_pipe) != 0) return -1;
+    fcntl(status_pipe[1], F_SETFD, FD_CLOEXEC);
     const pid_t child = fork();
-    if (child < 0) { close(pipe_ends[0]); close(pipe_ends[1]); return std::nullopt; }
+    if (child < 0) { close(status_pipe[0]); close(status_pipe[1]); return -1; }
     if (child == 0) {
-        dup2(pipe_ends[1], STDOUT_FILENO);
+        close(status_pipe[0]);
         const int null = open("/dev/null", O_RDWR);
-        if (null >= 0) { dup2(null, STDERR_FILENO); dup2(null, STDIN_FILENO); }
-        close(pipe_ends[0]);
-        close(pipe_ends[1]);
+        if (null >= 0) dup2(null, STDIN_FILENO);
+        dup2(output_fd, STDOUT_FILENO);
+        dup2(error_fd >= 0 ? error_fd : null, STDERR_FILENO);
+        if (!cwd.empty() && chdir(cwd.c_str()) != 0) { const char failed = 1; (void)!write(status_pipe[1], &failed, 1); _exit(127); }
         std::vector<char *> argv{const_cast<char *>(program.c_str())};
         for (const auto & argument : arguments) argv.push_back(const_cast<char *>(argument.c_str()));
         argv.push_back(nullptr);
         execv(program.c_str(), argv.data());
+        const char failed = 1;
+        (void)!write(status_pipe[1], &failed, 1);
         _exit(127);
     }
+    close(status_pipe[1]);
+    *exec_error_fd = status_pipe[0];
+    return child;
+}
+
+// True when the child reported that exec failed (the status pipe closes on success).
+bool exec_failed(int status_fd) {
+    char failed = 0;
+    const auto got = read(status_fd, &failed, 1);
+    close(status_fd);
+    return got == 1;
+}
+
+int wait_exit(pid_t child) {
+    int status = 0;
+    waitpid(child, &status, 0);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+}
+
+} // namespace
+
+std::optional<std::string> capture_output(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+                                          int timeout_seconds) {
+    int pipe_ends[2];
+    if (pipe(pipe_ends) != 0) return std::nullopt;
+    int status_fd = -1;
+    const pid_t child = spawn(program, arguments, {}, pipe_ends[1], -1, &status_fd);
     close(pipe_ends[1]);
+    if (child < 0) { close(pipe_ends[0]); return std::nullopt; }
+    if (exec_failed(status_fd)) { close(pipe_ends[0]); wait_exit(child); return std::nullopt; }
     std::string output;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
     bool timed_out = false;
@@ -123,11 +268,55 @@ std::optional<std::string> capture_output(const std::filesystem::path & program,
     }
     close(pipe_ends[0]);
     if (timed_out) kill(child, SIGKILL);
-    int status = 0;
-    waitpid(child, &status, 0);
-    if (timed_out || (WIFEXITED(status) && WEXITSTATUS(status) == 127)) return std::nullopt;
+    wait_exit(child);
+    if (timed_out) return std::nullopt;
     return output;
 }
+
+int run_to_log(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+               const std::filesystem::path & cwd, const std::filesystem::path & log, bool append) {
+    { open_log(log, append); }
+    const int file = open(log.c_str(), O_WRONLY | O_APPEND);
+    if (file < 0) throw std::runtime_error("Cannot open log " + log.u8string());
+    int status_fd = -1;
+    const pid_t child = spawn(program, arguments, cwd, file, file, &status_fd);
+    close(file);
+    if (child < 0) throw std::runtime_error("Cannot start " + program.u8string());
+    if (exec_failed(status_fd)) { wait_exit(child); throw std::runtime_error("Cannot start " + program.u8string()); }
+    return wait_exit(child);
+}
+
+int run_streaming(const std::filesystem::path & program, const std::vector<std::string> & arguments,
+                  const std::filesystem::path & cwd, const std::filesystem::path & log,
+                  const std::function<void(const std::string &)> & on_line) {
+    auto stream = open_log(log, true);
+    int pipe_ends[2];
+    if (pipe(pipe_ends) != 0) throw std::runtime_error("Cannot create a pipe");
+    int status_fd = -1;
+    const pid_t child = spawn(program, arguments, cwd, pipe_ends[1], pipe_ends[1], &status_fd);
+    close(pipe_ends[1]);
+    if (child < 0) { close(pipe_ends[0]); throw std::runtime_error("Cannot start " + program.u8string()); }
+    if (exec_failed(status_fd)) {
+        close(pipe_ends[0]);
+        wait_exit(child);
+        throw std::runtime_error("Cannot start " + program.u8string());
+    }
+    Forward forward{stream, on_line, nullptr};
+    Lines lines(std::ref(forward));
+    char buffer[4096];
+    for (;;) {
+        const auto got = read(pipe_ends[0], buffer, sizeof(buffer));
+        if (got <= 0) break;
+        lines.feed(buffer, static_cast<std::size_t>(got));
+    }
+    lines.finish();
+    close(pipe_ends[0]);
+    const int code = wait_exit(child);
+    if (forward.error) std::rethrow_exception(forward.error);
+    return code;
+}
+
+void set_environment(const char * name, const char * value) { setenv(name, value, 1); }
 #endif
 
 } // namespace yue2::training

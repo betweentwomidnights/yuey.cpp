@@ -272,7 +272,7 @@ then the server still launches `training_workflow.py`.
 | Stage | Replaces | Status |
 | --- | --- | --- |
 | 1. Settings, inventory, review | `settings()`, `inventory()`, the review estimates and `capabilities()` in `training_workflow.py`; `ar_dataset.py`; `training_provenance.py` | native, equal to Python |
-| 2. Preparation | `prepare_ar_dataset.py`, `prepare_nar_targets.py`, `prepare_nar_dataset.py` | Python |
+| 2. Preparation | `prepare_ar_dataset.py`, `prepare_nar_targets.py`, `prepare_nar_dataset.py` | native, equal to Python |
 | 3. Fitting | `train_ar_run.py`, `train_nar_run.py` | Python |
 | 4. Publication | `publish_training_adapter.py` | Python |
 | 5. Switch-over | the server launches `yue2-train-run`; no Python in the training runtime | |
@@ -300,6 +300,45 @@ half to even, captions match with Unicode word boundaries and whitespace, and
 Windows sorts a dataset folder case-insensitively. Two are narrower than
 Python's: caption digits and case folding are ASCII-only, and an audio file is
 read with the WAV and FLAC checks the native encoders apply.
+
+Stage 2's commands take the Python scripts' arguments and write the same files:
+
+```bash
+yue2-train-run prepare-semantic --config RUN/ar-job.json
+yue2-train-run prepare-scores --config RUN/ar-job.json
+yue2-train-run prepare-targets --dataset RUN/data/dataset.json --vae VAE --binary yue2-vae-encode --out RUN/vae-targets
+yue2-train-run prepare-conditioning --config RUN/ar-job.json --targets RUN/vae-targets/index.json \
+    --ar-adapter AR.gguf --binary yue2-train --out RUN/nar-conditioning [--storage rolling]
+yue2-train-run materialize --manifest DATASET --rows ROWS --binary yue2-train --base BASE --common COMPANION --adapter AR.gguf
+```
+
+Preparation identities hash the manifests they depend on, so a run can only
+move between the two implementations if both write those manifests byte for
+byte. They do: JSON keeps Python's key order, number formatting and escaping,
+and Windows line endings, and `latent_rms` uses numpy's pairwise summation.
+`source.wav` is the exception. Its header differs from libsndfile's, but its
+samples, and so every transcription, are the same.
+
+The Python recorded a digest of its own script (`ar_dataset.py`,
+`prepare_nar_dataset.py`) in each identity, and that digest follows the
+checkout's line endings. The native side records the committed (LF) digests of
+the scripts it equals. A run the Python prepared on a Windows checkout
+therefore names a different digest. Accepting both is part of the switch-over.
+
+To check it on a machine with the training models:
+
+```bash
+python tools/check_native_preparation.py --runtime training-runtime.json --train-run yue2-train-run \
+    --dataset RECORDINGS --ar-adapter AR.gguf --out outputs/native-prepare
+```
+
+Each implementation prepares the same clips in the same run folder: review,
+conditioning with cache and rolling storage, and a rolling regeneration. Then
+every file is compared.
+
+Only the product path is ported. `inference_urls`, reused semantic or
+transcription manifests, generated targets and auxiliary replay datasets are
+research options; the native commands refuse them and the Python keeps them.
 
 ## HTTP surface
 

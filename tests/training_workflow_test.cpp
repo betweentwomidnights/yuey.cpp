@@ -1,6 +1,9 @@
 // Native training workflow pieces that need no models. Equality with the
 // Python reference is checked by tests/test_native_training_workflow.py.
+#include "server/flac.h"
 #include "training/dataset.h"
+#include "training/files.h"
+#include "training/preparation.h"
 #include "training/process.h"
 #include "training/sha256.h"
 #include "training/workflow.h"
@@ -81,10 +84,14 @@ void check_windows_and_scores() {
 
 void check_settings() {
     const auto defaults = training::settings(json::parse(R"({"id":"koan","recipe_version":5})"));
+    // Python's dict order, so a written state.json matches byte for byte.
     assert(json::stringify(defaults) ==
-           R"({"ar_lr":2e-05,"ar_steps":800,"cache_fingerprint":"bytes-v2","conditioning_storage":"cache","eval_every":100,)"
-           R"("evaluation_scope":"heldout","family":"dora","keep_caches":false,"kl_weight":0.2,"nar_lr":3e-05,"nar_steps":400,)"
-           R"("rank":32,"seed":831001,"teacher_cache":"f32","trigger":"koan_style","window_seconds":30})");
+           R"({"window_seconds":30,"rank":32,"ar_steps":800,"nar_steps":400,"ar_lr":2e-05,"nar_lr":3e-05,"kl_weight":0.2,)"
+           R"("seed":831001,"eval_every":100,"family":"dora","trigger":"koan_style","keep_caches":false,)"
+           R"("evaluation_scope":"heldout","cache_fingerprint":"bytes-v2","teacher_cache":"f32","conditioning_storage":"cache"})");
+    // "z" holds U+00E9 as UTF-8 bytes; the dump escapes it.
+    auto nested = json::parse("{\"b\":[1,{\"z\":\"\xC3\xA9\",\"a\":null}],\"a\":true}");
+    assert(json::python_dumps_sorted(nested) == "{\"a\": true, \"b\": [1, {\"a\": null, \"z\": \"\\u00e9\"}]}");
     assert(rejection([] { training::settings(json::parse(R"({"id":"a","rank":1})")); }) == "rank must be between 2 and 128");
     assert(rejection([] { training::settings(json::parse(R"({"id":"a","ar_lr":1})")); }) == "ar_lr must be between 1e-07 and 0.001");
     assert(rejection([] { training::settings(json::parse(R"({"id":"a","teacher_storage":"online"})")); }) ==
@@ -123,6 +130,62 @@ void check_audio_info() {
     assert(info.sample_rate == 48000 && info.channels == 2 && info.frames == 4800);
 }
 
+// Semantic preparation reads FLAC recordings as it reads their WAV.
+void check_flac_reads_like_wav() {
+    const std::uint32_t rate = 44100, channels = 2;
+    std::vector<std::int16_t> pcm(rate * channels);
+    for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = static_cast<std::int16_t>((i * 7919 + i / 3) % 60000 - 30000);
+    const auto le = [](std::string & out, std::uint32_t value, int bytes) {
+        for (int b = 0; b < bytes; ++b) out.push_back(static_cast<char>((value >> (8 * b)) & 0xff));
+    };
+    const auto data_bytes = static_cast<std::uint32_t>(pcm.size() * 2);
+    std::string wav = "RIFF";
+    le(wav, 36 + data_bytes, 4);
+    wav += "WAVEfmt ";
+    le(wav, 16, 4); le(wav, 1, 2); le(wav, channels, 2); le(wav, rate, 4); le(wav, rate * channels * 2, 4);
+    le(wav, channels * 2, 2); le(wav, 16, 2);
+    wav += "data";
+    le(wav, data_bytes, 4);
+    wav.append(reinterpret_cast<const char *>(pcm.data()), data_bytes);
+    const auto flac = yue2::server::encode_flac_pcm16(pcm, rate, channels);
+    const auto folder = std::filesystem::temp_directory_path();
+    std::ofstream(folder / "yue2-semantic-test.wav", std::ios::binary) << wav;
+    std::ofstream(folder / "yue2-semantic-test.flac", std::ios::binary)
+        .write(reinterpret_cast<const char *>(flac.data()), static_cast<std::streamsize>(flac.size()));
+    const auto from_wav = yue2::audio::read_audio_mono_24k(folder / "yue2-semantic-test.wav");
+    const auto from_flac = yue2::audio::read_audio_mono_24k(folder / "yue2-semantic-test.flac");
+    assert(from_wav.sample_rate == 24000 && from_flac.sample_rate == 24000);
+    assert(from_wav.samples == from_flac.samples);
+    assert(from_wav.samples == yue2::audio::read_wav_mono_24k(folder / "yue2-semantic-test.wav").samples);
+    std::filesystem::remove(folder / "yue2-semantic-test.wav");
+    std::filesystem::remove(folder / "yue2-semantic-test.flac");
+}
+
+void check_files() {
+#ifdef _WIN32
+    assert(training::python_path("C:/runs//koan/./data/") == "C:\\runs\\koan\\data");
+    assert(training::python_path("..\\a/b") == "..\\a\\b");
+    assert(training::python_path("\\\\host\\share/x") == "\\\\host\\share\\x");
+#else
+    assert(training::python_path("/runs//koan/./data/") == "/runs/koan/data");
+    assert(training::python_path("../a/b") == "../a/b");
+#endif
+    assert(training::python_path("") == ".");
+    assert(training::python_equal(json::parse(R"({"a":1,"b":[2.0,true]})"), json::parse(R"({"b":[2,1],"a":1.0})")));
+    assert(!training::python_equal(json::parse(R"({"a":"1"})"), json::parse(R"({"a":1})")));
+    assert(!training::python_equal(json::parse(R"([1,2])"), json::parse(R"([2,1])")));
+    // save() writes json.dumps(indent=2) and a newline in text mode.
+    const auto path = std::filesystem::temp_directory_path() / "yue2-training-save-test.json";
+    training::save(path, json::parse(R"({"b":1,"a":[]})"));
+#ifdef _WIN32
+    assert(training::read_bytes(path) == "{\r\n  \"b\": 1,\r\n  \"a\": []\r\n}\r\n");
+#else
+    assert(training::read_bytes(path) == "{\n  \"b\": 1,\n  \"a\": []\n}\n");
+#endif
+    assert(!std::filesystem::exists(training::with_suffix(path, ".json.partial")));
+    std::filesystem::remove(path);
+}
+
 } // namespace
 
 int main() {
@@ -133,5 +196,7 @@ int main() {
     check_settings();
     check_processes_and_folders();
     check_audio_info();
+    check_files();
+    check_flac_reads_like_wav();
     return 0;
 }
