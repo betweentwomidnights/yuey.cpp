@@ -1,5 +1,22 @@
 # changelog
 
+## v0.3.1
+
+**ggml moves from `b77ae790` to `e3db5210`,** the shared fork on upstream GGML
+0.29 ([ggml#22](https://github.com/betweentwomidnights/ggml/pull/22)). it keeps
+the training kernels and backward ops and adds Metal cross-entropy, so AR LoRA
+training now runs on Metal. AR and NAR training match PyTorch at both pins, and
+on CUDA the AR oracle lands closer (loss error 2.5e-4 to 3.6e-5). transcriptions
+are byte-identical. sampled generation gives a different take from the same
+seed.
+
+**NAR training runs on any GPU.** cache minting and `--generate-latents`
+refused every device but CUDA, and conditioning accepted only `cpu` or `cuda`.
+they now refuse only CPU. NAR preparation, LoRA, DoRA and the gradient probe run
+on Vulkan (RTX 5070) and Metal (M4), and the NAR PyTorch check passes on both.
+the training pipeline still defaults its device to `cuda`
+(`tools/training/driver.cpp`), so the web UI's training stays on CUDA for now.
+
 ## v0.3.0
 
 **train your own style.** `/training` in the web UI takes a folder of
