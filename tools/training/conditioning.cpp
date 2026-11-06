@@ -320,7 +320,7 @@ void prepare_targets(const TargetOptions & o) {
 
 void prepare_conditioning(const ConditioningOptions & o) {
     if (o.threads < 1) throw std::invalid_argument("threads must be positive");
-    if (o.device != "cpu" && o.device != "cuda") throw std::invalid_argument("conditioning device must be cpu or cuda");
+    if (o.device.empty()) throw std::invalid_argument("conditioning device must name a GGML device (cpu, cuda, vulkan, mtl)");
     if (o.kv_type != "f16" && o.kv_type != "f32") throw std::invalid_argument("cache K/V type must be f16 or f32");
     if (o.storage != "cache" && o.storage != "rolling" && o.storage != "resident") throw std::invalid_argument("storage must be cache, rolling or resident");
     set_environment("GGML_CUDA_TF32", "0");

@@ -7,6 +7,7 @@
 #include "yue2/nar_training.h"
 #include "yue2/tokenizer.h"
 #include <array>
+#include <cctype>
 #include <algorithm>
 #include <cstring>
 #include <cmath>
@@ -171,9 +172,13 @@ void prepare(const std::map<std::string, std::string> &args,
                                  conditioning_adapters.end());
     if ((args.count("--mint-frames") || args.count("--generate-latents") ||
          args.count("--reference")) &&
-        runtime.device != "cuda")
-        throw std::runtime_error("minting/flow diagnostics currently require --device cuda; CPU "
-                                 "supports frozen conditioning caches from supplied latents");
+        [&] {
+            std::string device = runtime.device;
+            for (char & c : device) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return device == "cpu";
+        }())
+        throw std::runtime_error("minting/flow diagnostics require a GPU --device (cuda, vulkan, mtl); "
+                                 "CPU supports frozen conditioning caches from supplied latents");
     if (!resident) resident = std::make_unique<yue2::AutoregressiveModel>(required("--model"), runtime);
     auto &model = *resident;
     std::vector<int32_t> codes;
@@ -279,8 +284,8 @@ int main(int argc, char **argv) {
                              "sample.gguf\n"
                              "  --tokens codes.i32 --generate-latents renders known tokens "
                              "as the "
-                             "target. Minting/flow diagnostics require CUDA.\n"
-                             "  [--abc score.abc] [--reference] [--device cpu|cuda] "
+                             "target. Minting/flow diagnostics require a GPU device.\n"
+                             "  [--abc score.abc] [--reference] [--device cpu|cuda|vulkan|mtl] "
                              "[--fixed-lora "
                              "COMPANION]\n"
                              "  --prefix prefix.i32 uses exact conditioning instead of "
@@ -299,7 +304,7 @@ int main(int argc, char **argv) {
                              "(repeat)]\n"
                              "  [--retention sample.gguf (repeat)] evaluation only, separate "
                              "from heldout selection.\n"
-                             "  [--device cuda|cpu] [--rank 8] [--steps 100] [--lr 0.0001] "
+                             "  [--device cuda|vulkan|mtl|cpu] [--rank 8] [--steps 100] [--lr 0.0001] "
                              "[--seed "
                              "831001]\n"
                              "  [--save-every 10] [--eval-every 10] [--resume state.gguf] "
