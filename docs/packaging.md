@@ -94,6 +94,25 @@ with `-CudaRuntime`, `dist\` holds everything gary4local installs. point
 `GARY4LOCAL_NATIVE_PACKAGE_DIR` at it to test an install before a release
 exists.
 
+### reusing ggml-cuda
+
+compiling `ggml-cuda.dll` is over 90% of a Windows build: close to two hours on
+a hosted runner. it depends only on the ggml pin, the CUDA toolkit, the
+compiler, and how `CMakeLists.txt` and `ci/package-windows.ps1` configure ggml
+(yuey turns CUDA graphs on). `ci\package-windows.ps1 -PrintGgmlCudaKey` names
+all of that, leaving out the `project(VERSION)` line, so a version bump alone
+doesn't change it.
+
+`release.yml` builds the DLL in its own job with `-GgmlCudaOnly` and keeps it,
+with the CUDA runtime, as a 90-day attested artifact named
+`ggml-cuda-<key>`. a later run with the same key packages that build with
+`-PrebuiltCuda` instead of compiling, so a release after a dry run takes
+minutes and ships the DLL the dry run tested. the packaging job checks the
+build's attestation against this repository's `release.yml`, and the package
+script refuses a bundle whose key isn't the one the checkout computes.
+`BUILD-INFO.json` names the run and commit that built the DLL. dispatch with
+`-f rebuild_ggml_cuda=true` to compile regardless.
+
 ## cutting a release
 
 1. **version and notes.** bump `project(VERSION)` in `CMakeLists.txt`, add the
@@ -108,6 +127,8 @@ exists.
    and keeps the zips as a workflow artifact for 14 days. download them and
    install them through gary4local (`GARY4LOCAL_NATIVE_PACKAGE_DIR`), on CUDA
    and on Vulkan.
+   this is the slow run when the key has changed (see
+   [reusing ggml-cuda](#reusing-ggml-cuda)). the release then reuses its build.
 3. **publish.** create the GitHub release `vX.Y.Z` from `main`. publishing
    starts the workflow, which builds the tag, attests the zips and attaches them
    with `SHA256SUMS`. if a runner fails, run it again for the same tag. assets
