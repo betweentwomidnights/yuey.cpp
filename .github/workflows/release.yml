@@ -28,7 +28,7 @@ on:
         description: which packages to build (a release event always builds both)
         required: false
         type: choice
-        options: [all, windows, macos]
+        options: [all, windows, macos, linux]
         default: all
       rebuild_ggml_cuda:
         description: compile ggml-cuda even if a build with the same key already exists
@@ -63,7 +63,7 @@ jobs:
     # generator by name. A runner image moving to a newer Visual Studio should
     # be a change made here on purpose, not one that turns up as a red release.
     runs-on: windows-2022
-    if: (github.event_name == 'release' || inputs.platforms != 'macos') && !inputs.publish_stable
+    if: (github.event_name == 'release' || (inputs.platforms != 'macos' && inputs.platforms != 'linux')) && !inputs.publish_stable
     timeout-minutes: 240
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -167,7 +167,7 @@ jobs:
     # Pinned for the same reason as windows-cuda; they must match.
     needs: windows-cuda
     runs-on: windows-2022
-    if: (github.event_name == 'release' || inputs.platforms != 'macos') && !inputs.publish_stable
+    if: (github.event_name == 'release' || (inputs.platforms != 'macos' && inputs.platforms != 'linux')) && !inputs.publish_stable
     timeout-minutes: 90
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -278,7 +278,7 @@ jobs:
     name: macos-universal (metal + cpu)
     # macOS 15: its Rosetta runs the x86_64 slice's AVX2 code, so CI tests both slices.
     runs-on: macos-15
-    if: (github.event_name == 'release' || inputs.platforms != 'windows') && !inputs.publish_stable
+    if: (github.event_name == 'release' || (inputs.platforms != 'windows' && inputs.platforms != 'linux')) && !inputs.publish_stable
     timeout-minutes: 90
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -439,3 +439,10 @@ jobs:
           current="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -1 | cut -f1)"
           [ "$current" = "$EXPECTED_COMMIT" ] || { echo "tag moved during verification"; exit 1; }
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest
+
+  linux:
+    name: Linux experimental packages
+    if: github.event_name == 'workflow_dispatch' && inputs.tag == '' && (inputs.platforms == 'all' || inputs.platforms == 'linux') && !inputs.publish_stable
+    permissions:
+      contents: read
+    uses: ./.github/workflows/linux-packaging.yml

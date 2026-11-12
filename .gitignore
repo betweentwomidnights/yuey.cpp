@@ -13,3 +13,7 @@ __pycache__/
 *.pyc
 /tests/fixtures/generated/
 /tests/fixtures/qwen.tiktoken
+
+# Dedicated Linux package outputs
+/build-dist-linux*/
+/dist-linux*/
