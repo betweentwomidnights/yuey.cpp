@@ -1,5 +1,7 @@
 # packaging and releases
 
+Experimental Linux core/CUDA/Vulkan builds: [Linux packaging](LINUX_PACKAGING.md).
+
 every yuey release comes with prebuilt Windows and macOS packages. they follow the native
 runtime package contract that gary4local installs all of its GGML services by:
 [`docs/native-runtime-packages.md`](https://github.com/betweentwomidnights/gary-localhost-installer/blob/main/docs/native-runtime-packages.md)
