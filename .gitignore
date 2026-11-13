@@ -17,3 +17,6 @@ __pycache__/
 # Dedicated Linux package outputs
 /build-dist-linux*/
 /dist-linux*/
+
+# Verified Linux release preparation
+dist-linux-preview/

@@ -49,8 +49,9 @@ cannot be used on Linux. No model downloads are performed by this script.
 `linux-packaging.yml` packages Vulkan on native Ubuntu 24.04 x64 and ARM64
 runners, including extracted checks, with seven-day artifact retention. It also
 runs through `release.yml` for a no-tag dispatch with `platforms=linux` or `all`.
-Linux publishing stays disabled; published releases and tagged rebuilds retain
-their existing Windows/macOS behavior. Hosted jobs do not validate GPU execution.
+Tagged engine releases retain their existing Windows/macOS behavior. Linux
+previews are published only through explicit artifact promotion below. Hosted
+jobs do not validate GPU execution.
 
 ```sh
 gh workflow run release.yml -R betweentwomidnights/yuey.cpp \
@@ -63,3 +64,21 @@ under its parent workspace, and update `WORKSPACE.md` / `storage.tsv`. Productio
 services and their model stores are separate. Check artifact metadata/hashes
 before exercising downloaded CI binaries; choose unused loopback ports and
 stop private test servers afterwards. Preserve desired evidence before cleanup.
+
+## Versioned Linux previews
+
+The release workflow can promote an existing successful Linux CI run without
+rebuilding its ZIPs. Set `platforms=linux`, `linux_preview_run_id`, the exact
+`linux_preview_source_sha`, and `linux_preview_number`. With publication false,
+the workflow retains a concrete release plan and checksum-verified artifacts.
+Set `publish_linux_preview=true` only for the approved plan. Tags use
+`linux-vX.Y.Z-preview.N`; engine versions and asset basenames stay `vX.Y.Z`.
+Previews are never marked latest and do not replace Windows/macOS assets.
+
+The script verifies repository/run identity, both native Linux jobs, the outer
+artifact digests, inner SHA256SUMS, source/ggml commits, portable Vulkan flags
+and test metadata. Uploads are checked while draft before publication; existing
+tags are never moved and conflicting assets are refused. A matching interrupted
+draft can resume. Publishing is restricted to the repository workflow token,
+which avoids recursively starting unrelated release builds. The immutable
+LINUX-PREVIEW.json index preserves provenance after CI artifacts expire.
