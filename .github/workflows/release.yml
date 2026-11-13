@@ -41,6 +41,23 @@ on:
         type: boolean
         default: false
 
+      linux_preview_run_id:
+        description: successful Linux CI run to promote (empty keeps the normal build path)
+        required: false
+        type: string
+      linux_preview_source_sha:
+        description: exact approved 40-character source SHA of that run
+        required: false
+        type: string
+      linux_preview_number:
+        description: immutable Linux preview sequence
+        type: number
+        default: 1
+      publish_linux_preview:
+        description: publish the verified plan as a prerelease (otherwise prepare only)
+        type: boolean
+        default: false
+
 permissions:
   # Finding and downloading a ggml-cuda build kept by an earlier run.
   actions: read
@@ -442,7 +459,40 @@ jobs:
 
   linux:
     name: Linux experimental packages
-    if: github.event_name == 'workflow_dispatch' && inputs.tag == '' && (inputs.platforms == 'all' || inputs.platforms == 'linux') && !inputs.publish_stable
+    if: github.event_name == 'workflow_dispatch' && inputs.tag == '' && (inputs.platforms == 'all' || inputs.platforms == 'linux') && !inputs.publish_stable && inputs.linux_preview_run_id == ''
     permissions:
       contents: read
     uses: ./.github/workflows/linux-packaging.yml
+
+  linux-preview:
+    name: Verify/promote Linux preview
+    if: github.event_name == 'workflow_dispatch' && inputs.platforms == 'linux' && inputs.tag == '' && inputs.linux_preview_run_id != '' && !inputs.publish_stable
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    concurrency:
+      group: linux-preview-${{ inputs.linux_preview_number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check promotion boundaries
+        run: python3 tests/linux_preview_test.py
+      - name: Prepare verified artifacts and optional publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.linux_preview_run_id }}
+          SOURCE_SHA: ${{ inputs.linux_preview_source_sha }}
+          PREVIEW: ${{ inputs.linux_preview_number }}
+          PUBLISH: ${{ inputs.publish_linux_preview }}
+        run: |
+          args=()
+          if [ "$PUBLISH" = true ]; then args+=(--publish); fi
+          python3 ci/publish-linux-preview.py --run-id "$SOURCE_RUN" --source-sha "$SOURCE_SHA" --preview "$PREVIEW" "${args[@]}"
+      - name: Keep concrete release plan and verified ZIPs
+        uses: actions/upload-artifact@v4
+        with:
+          name: yuey-linux-preview-plan
+          path: dist-linux-preview/*
+          retention-days: 7
