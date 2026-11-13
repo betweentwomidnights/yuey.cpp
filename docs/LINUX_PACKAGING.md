@@ -49,8 +49,9 @@ cannot be used on Linux. No model downloads are performed by this script.
 `linux-packaging.yml` packages Vulkan on native Ubuntu 24.04 x64 and ARM64
 runners, including extracted checks, with seven-day artifact retention. It also
 runs through `release.yml` for a no-tag dispatch with `platforms=linux` or `all`.
-Linux publishing stays disabled; published releases and tagged rebuilds retain
-their existing Windows/macOS behavior. Hosted jobs do not validate GPU execution.
+Tagged engine releases retain their existing Windows/macOS behavior. Linux
+previews are published only through explicit artifact promotion below. Hosted
+jobs do not validate GPU execution.
 
 ```sh
 gh workflow run release.yml -R betweentwomidnights/yuey.cpp \
