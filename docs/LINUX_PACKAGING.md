@@ -1,4 +1,4 @@
-# Experimental Linux runtime packages
+# Linux runtime packages
 
 Adapted from the validated sa3.cpp Linux package contract. Each engine owns its
 own builder; there is no runtime or build dependency on another engine checkout.
@@ -48,10 +48,21 @@ cannot be used on Linux. No model downloads are performed by this script.
 
 `linux-packaging.yml` packages Vulkan on native Ubuntu 24.04 x64 and ARM64
 runners, including extracted checks, with seven-day artifact retention. It also
-runs through `release.yml` for a no-tag dispatch with `platforms=linux` or `all`.
-Tagged engine releases retain their existing Windows/macOS behavior. Linux
-previews are published only through explicit artifact promotion below. Hosted
-jobs do not validate GPU execution.
+runs through `release.yml` on every release event and for a dispatch with
+`platforms=linux` or `all`. With a tag (the release's, or the dispatch's `tag`)
+it checks out that tag, refuses a tag that disagrees with `project(VERSION)`,
+and the `linux-attach` job attests the four ZIPs and uploads them with both
+`SHA256SUMS-linux-*` files to that release, beside Windows and macOS. An empty
+tag keeps artifacts without publishing. Hosted jobs do not validate GPU execution.
+A tagged `platforms=linux` dispatch adds Linux packages to a release published
+before this:
+
+```sh
+gh workflow run release.yml -R betweentwomidnights/yuey.cpp \
+  --ref main -f tag=vX.Y.Z -f platforms=linux
+```
+
+A no-tag dry run:
 
 ```sh
 gh workflow run release.yml -R betweentwomidnights/yuey.cpp \
@@ -67,7 +78,8 @@ stop private test servers afterwards. Preserve desired evidence before cleanup.
 
 ## Versioned Linux previews
 
-The release workflow can promote an existing successful Linux CI run without
+Releases now carry their Linux packages; previews remain for promoting a build
+that has no release of its own. The release workflow can promote an existing successful Linux CI run without
 rebuilding its ZIPs. Set `platforms=linux`, `linux_preview_run_id`, the exact
 `linux_preview_source_sha`, and `linux_preview_number`. With publication false,
 the workflow retains a concrete release plan and checksum-verified artifacts.

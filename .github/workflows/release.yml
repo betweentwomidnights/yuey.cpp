@@ -1,4 +1,4 @@
-# ABOUTME: Builds Windows packages and a signed, notarized universal macOS package.
+# ABOUTME: Builds Windows and Linux packages and a signed, notarized universal macOS package.
 # ABOUTME: Attaches packages and platform checksums for supervisors that install yuey.
 #
 # The package contract every native service follows is
@@ -25,7 +25,7 @@ on:
         required: false
         type: string
       platforms:
-        description: which packages to build (a release event always builds both)
+        description: which packages to build (a release event builds all three)
         required: false
         type: choice
         options: [all, windows, macos, linux]
@@ -432,6 +432,12 @@ jobs:
             --pattern "yuey-$TAG-*.zip" --pattern SHA256SUMS --pattern SHA256SUMS-macos
           sha256sum -c SHA256SUMS
           sha256sum -c SHA256SUMS-macos
+          for platform in linux-x64 linux-arm64; do
+            if grep -qx "SHA256SUMS-$platform" <<<"$attached"; then
+              gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "SHA256SUMS-$platform"
+              sha256sum -c "SHA256SUMS-$platform"
+            fi
+          done
           for package in *.zip; do
             gh attestation verify "$package" --repo "$GITHUB_REPOSITORY"
           done
@@ -458,11 +464,52 @@ jobs:
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest
 
   linux:
-    name: Linux experimental packages
-    if: github.event_name == 'workflow_dispatch' && inputs.tag == '' && (inputs.platforms == 'all' || inputs.platforms == 'linux') && !inputs.publish_stable && inputs.linux_preview_run_id == ''
+    name: Linux packages
+    # The same x64/ARM64 Vulkan build and checks as the PR job, from the release
+    # tag when there is one. linux-attach publishes what it builds.
+    if: github.event_name == 'release' || (inputs.linux_preview_run_id == '' && !inputs.publish_stable && (inputs.platforms == 'all' || inputs.platforms == 'linux'))
     permissions:
       contents: read
     uses: ./.github/workflows/linux-packaging.yml
+    with:
+      tag: ${{ github.event.release.tag_name || inputs.tag }}
+
+  linux-attach:
+    name: Attach Linux packages
+    needs: linux
+    if: github.event.release.tag_name != '' || inputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Fetch both platforms' packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: yuey-linux-*-vulkan-dry-run
+          path: dist
+          merge-multiple: true
+
+      - name: Check the packages are this release's
+        working-directory: dist
+        run: |
+          for platform in linux-x64 linux-arm64; do
+            sha256sum -c "SHA256SUMS-$platform"
+            for part in core vulkan; do
+              test -f "yuey-$TAG-$platform-$part.zip"
+            done
+          done
+          test "$(ls *.zip | wc -l)" -eq 4
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*.zip'
+
+      - name: Attach to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/yuey-*-linux-*.zip dist/SHA256SUMS-linux-* --clobber
 
   linux-preview:
     name: Verify/promote Linux preview
