@@ -85,7 +85,8 @@ build_slice() {
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$1" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" \
     -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=OFF -DBUILD_SHARED_LIBS=ON \
-    -DGGML_METAL="$2" -DYUE2_METAL="$2" -DGGML_METAL_EMBED_LIBRARY=ON \
+    -DGGML_METAL="$2" -DYUE2_METAL="$2" -DGGML_METAL_EMBED_LIBRARY=OFF \
+    -DGGML_METAL_MACOSX_VERSION_MIN="$DEPLOYMENT_TARGET" -DGGML_METAL_PRECOMPILE_BF16="$2" \
     -DYUE2_CUDA=OFF -DYUE2_VULKAN=OFF -DYUE2_BUILD_TOOLS=ON \
     -DYUE2_BUILD_SHARED=ON -DYUE2_BUILD_TESTS=ON -DBUILD_TESTING=ON
   cmake --build "$BUILD_PATH/$1" --config Release --parallel "$JOBS"
@@ -153,6 +154,12 @@ cp include/yue2/c_api.h include/yue2/c_api_v1.h "$STAGE/include/yue2/"
 cp ci/macos-README.txt "$STAGE/README.txt"
 cp docs/THIRD_PARTY_NOTICES.md "$STAGE/"
 cp ggml/LICENSE "$STAGE/LICENSE-ggml.txt"
+# Stage Metal data beside the backend. The tensor API library requires an OS 26 SDK.
+cp "$ARM/default.metallib" "$ARM/default-bf16.metallib" "$STAGE/"
+METAL_SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+if [ "${METAL_SDK_VERSION%%.*}" -ge 26 ]; then
+  cp "$ARM/ggml-tensor.metallib" "$STAGE/"
+fi
 DIRTY=false
 [ -z "$(git status --porcelain --untracked-files=no)" ] || DIRTY=true
 cat > "$STAGE/BUILD-INFO.json" <<EOF
@@ -169,9 +176,9 @@ cat > "$STAGE/BUILD-INFO.json" <<EOF
 EOF
 # --- sign -------------------------------------------------------------------
 #
-# Hardened runtime with no entitlements: nothing here JITs or loads foreign code, and
-# Metal compiles its embedded shaders without one. The secure timestamp is required
-# for notarization.
+# Hardened runtime with no entitlements: nothing here JITs or loads foreign code. The
+# secure timestamp is required for notarization. The Metal libraries are data files in
+# the notarized archive.
 
 if [ "$SIGN" = 1 ]; then
   for f in "${BINARIES[@]}"; do
@@ -180,6 +187,35 @@ if [ "$SIGN" = 1 ]; then
   done
   codesign -dvv "$STAGE/libyue2.dylib" 2>&1 | grep -E '^(Authority|TeamIdentifier|Timestamp)=' | sed -n '1,3p'
 fi
+
+# --- precompiled Metal --------------------------------------------------------
+#
+# The arm64 backend must load the precompiled Metal libraries staged beside it,
+# not compile shaders when a service starts. Check from outside the package: the
+# BF16 library where the device supports it, then the base library with BF16 off.
+METAL_STAGE="$(cd "$STAGE" && pwd -P)"
+METAL_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/yuey-metal-check.XXXXXX")"
+metal_probe() {  # accepted libraries (space-separated), then the command to run
+  local accept="$1" log loaded name
+  shift
+  log="$METAL_SCRATCH/probe.log"
+  (cd "$METAL_SCRATCH" && "$@") >/dev/null 2>"$log" || { cat "$log" >&2; fail "Metal probe failed: $*"; }
+  loaded="$(sed -n "s/^ggml_metal_library_init: loading '\(.*\)'\$/\1/p" "$log" | head -n 1)"
+  for name in $accept; do
+    if [ "$loaded" = "$METAL_STAGE/$name" ] && grep -q '^ggml_metal_library_init: loaded in ' "$log"; then
+      echo "Metal: loaded the packaged $name"
+      return 0
+    fi
+  done
+  cat "$log" >&2
+  fail "the packaged Metal backend did not load ${accept// / or } (loaded: ${loaded:-nothing}): $*"
+}
+for name in default.metallib default-bf16.metallib; do
+  [ -s "$STAGE/$name" ] || fail "$name is not staged"
+done
+metal_probe "default.metallib default-bf16.metallib" "$STAGE/yue2-server" --props
+metal_probe default.metallib env GGML_METAL_BF16_DISABLE=1 "$STAGE/yue2-server" --props
+rm -rf "$METAL_SCRATCH"
 
 # Check startup and the linked ABI contract from outside the package directory.
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/yuey-package-check.XXXXXX")"

@@ -18,7 +18,7 @@ built, and the checklist for cutting one.
 | `yuey-vX.Y.Z-windows-x64-vulkan.zip` | `ggml-vulkan.dll` | supervisors, AMD and Intel |
 | `yuey-vX.Y.Z-windows-x64-standalone.zip` | all of the above, plus the CUDA runtime (`cudart64_12`, `cublas64_12`, `cublasLt64_12`, `NVIDIA-CUDA-EULA.txt`), `models.cmd` and a README | running yuey on its own |
 | `SHA256SUMS` | one `sha256  name` line per zip, LF endings | everyone |
-| `yuey-vX.Y.Z-macos-universal.zip` | universal server, CLI tools and `libyue2.dylib`, GGML dylibs, embedded Metal shaders, C ABI headers, `models.sh`, licenses, README and `BUILD-INFO.json` | macOS 13.3+, Apple Silicon (Metal/CPU) and Intel (CPU) |
+| `yuey-vX.Y.Z-macos-universal.zip` | universal server, CLI tools and `libyue2.dylib`, GGML dylibs, precompiled Metal libraries, C ABI headers, `models.sh`, licenses, README and `BUILD-INFO.json` | macOS 13.3+, Apple Silicon (Metal/CPU) and Intel (CPU) |
 | `SHA256SUMS-macos` | SHA-256 of the macOS zip, separate from the Windows checksum file | macOS |
 
 the macOS archive is one flat runtime rather than split core/backend packages.
