@@ -431,3 +431,16 @@ if(YUE2_BUILD_TESTS)
         endif()
     endif()
 endif()
+
+# Every yue2 executable runs with UTF-8 as its Windows process code page, so the narrow argv,
+# std::filesystem::path(std::string), path::string() and fopen agree with yue2-train-run, which
+# already passes paths as UTF-8. A library cannot set this: an app that loads yue2 chooses its own.
+if(MSVC)
+    get_property(yue2_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(yue2_target IN LISTS yue2_directory_targets)
+        get_target_property(yue2_target_type ${yue2_target} TYPE)
+        if(yue2_target_type STREQUAL "EXECUTABLE")
+            target_sources(${yue2_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/utf8-code-page.manifest)
+        endif()
+    endforeach()
+endif()

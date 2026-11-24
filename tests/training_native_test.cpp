@@ -62,7 +62,10 @@ namespace conditioning = yue2::training::conditioning_detail;
 
 class Folder {
 public:
-    explicit Folder(const std::string & name) : path_(fs::temp_directory_path() / ("yue2-native-test-" + name)) {
+    // Accented and Japanese characters keep every tool run here on UTF-8 paths. On Windows the tools
+    // used to read narrow arguments in the system code page, so the Japanese reached them as "???".
+    explicit Folder(const std::string & name)
+        : path_(fs::temp_directory_path() / fs::u8path("yue2-native-test-J\xC3\xB3hannsson-\xE3\x83\x87\xE3\x83\xBC\xE3\x82\xBF-" + name)) {
         fs::remove_all(path_);
         fs::create_directories(path_);
     }
