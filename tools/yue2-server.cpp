@@ -1044,7 +1044,10 @@ private:
             }
             job->transcription.pickup = pickup == "drop" ? yue2::Pickup::drop : yue2::Pickup::keep;
         }
-        if (kind != JobKind::transcribe) parse_song(root, *job);
+        if (kind != JobKind::transcribe) {
+            parse_song(root, *job);
+            refuse_overlong_source(*job);
+        }
 
         job->id = random_session_id();
         {
@@ -1058,6 +1061,35 @@ private:
         if (kind != JobKind::transcribe) body += ",\"seed\":" + std::to_string(job->song.seed);
         body += ",\"status\":\"queued\"}";
         return yue2::server::json_response(std::move(body));
+    }
+
+    // A continuation keeps every source bar, and a cover is as long as its
+    // source, so a long source used to buy a long render whatever the
+    // natural-length ceiling said: a two-minute clip continued took ten
+    // minutes. Both are refused here, from the decoded audio or the prefix's
+    // own score, before transcription or any model loads.
+    static void refuse_overlong_source(const Job & job) {
+        using yue2::server::SourceUse;
+        const double ceiling = job.song.natural_max_seconds;
+        std::string refusal;
+        if (job.kind == JobKind::continue_audio || job.kind == JobKind::cover) {
+            const double seconds = job.input.sample_rate > 0
+                ? static_cast<double>(job.input.samples.size()) / job.input.sample_rate
+                : 0.0;
+            refusal = yue2::server::source_length_refusal(
+                job.kind == JobKind::cover ? SourceUse::cover : SourceUse::continuation,
+                job.kind == JobKind::cover ? "/cover" : "/continue", seconds, ceiling);
+        } else if (job.song.abc_prefix && ceiling > 0.0) {
+            // A planning header has no bars; only a scored prefix continues.
+            const auto prefix = yue2::inspect_abc_score(*job.song.abc_prefix, true);
+            if (prefix.bars != 0) {
+                refusal = yue2::server::source_length_refusal(
+                    SourceUse::continuation,
+                    job.kind == JobKind::plan ? "/plan abc_prefix" : "/generate abc_prefix",
+                    prefix.duration_seconds, ceiling);
+            }
+        }
+        if (!refusal.empty()) throw std::invalid_argument(refusal);
     }
 
     void parse_song(const json::Value & root, Job & job) {

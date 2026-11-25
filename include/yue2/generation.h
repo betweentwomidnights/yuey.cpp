@@ -123,8 +123,9 @@ std::string trim_to_complete_score(const std::string & abc);
 // any tempo. Returns the score unchanged when it already fits, when the
 // ceiling is zero, or when the score carries no bars to measure.
 // retained_bars are bars the caller already supplied, as a continuation
-// prefix. They do not count against the ceiling: a continuation is measured by
-// what it adds, and must never come back shorter than the source it extends.
+// prefix. They count against the ceiling like any other bar but are never
+// cut: a continuation keeps all of them and adds at least one more, so a
+// prefix at or past the ceiling comes back with a single new bar.
 std::string fit_natural_plan_to_ceiling(
     const std::string & abc,
     double max_seconds,

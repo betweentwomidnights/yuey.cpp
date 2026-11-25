@@ -91,7 +91,8 @@ declarative.
 `YUE2_INSTRUMENTAL_METHOD` (`transfer` or `rest`) and
 `YUE2_USE_INSTRUMENTAL_ADAPTER=0` change what an instrumental request gets when
 it leaves those fields out; a request that sets them still wins. Both are
-reported with the other generation defaults in `/health` and `/props`.
+reported with the other generation defaults in `/health` and `/props`, along with `continue_max_source_seconds`, which is
+derived from the ceiling.
 Port 8007 is the next free port after the services gary4juce already addresses
 (8000, 8002, 8003, 8005, 8006, and 8015).
 
@@ -418,7 +419,9 @@ sampling, and adapter fields as `/cover`. It rejects caller-supplied `abc`,
 `abc_prefix`, and `planning` because both prefixes must be derived from the same
 audio. `continuation_bars` is the number of *new* bars (1–256); zero or omission
 lets the planner choose. The server converts it to a total target only after it
-knows the transcribed source length. `use_continuation_adapter` defaults to
+knows the transcribed source length. Either way the source itself is bounded:
+one too long to leave room under the natural-length ceiling is refused at
+submit, before transcription. See [natural length](#natural-length). `use_continuation_adapter` defaults to
 true. Setting it false rejects `/continue`, because those semantic tokens cannot
 be decoded safely with stock NAR weights; clients should use the composed score
 continuation workflow instead.
@@ -446,9 +449,27 @@ The ceiling applies wherever yuey chooses how long the result runs:
 |---|---|
 | `/plan` and `/generate` with `planning` or nothing | yes |
 | `/generate` with `abc` | no, the score is the caller's |
-| `/cover` | no, the length comes from the source audio |
-| `/continue`, or `/generate` with a transcribed `abc_prefix` | yes, by what it adds: the source bars are kept whatever their length, and the ceiling applies to the bars after them |
-| anything with `target_bars` | no, the explicit bar fit already governs |
+| `/cover` | by its source: the render is as long as the source, so a source longer than the ceiling is refused |
+| `/continue`, or `/plan` and `/generate` with a scored `abc_prefix` | yes, as a whole: source plus new bars stay within the ceiling. The source bars are never cut, and a source that leaves too little room is refused |
+| anything with `target_bars` | no, the explicit bar fit already governs; the source bounds above still apply |
+
+A continuation used to be held only by what it added, so a long source bought a
+long render: continuing a two-minute output took about ten minutes, and the
+result sounded worse for it. The source now counts. It may run to
+`continue_max_source_seconds`, which is the ceiling less the room left for new
+music: ten seconds, or half the ceiling when the ceiling is under twenty. With
+the default 180 that is 170 s; gary4local's 96 gives 86 s. A planner-chosen
+continuation then adds whatever the ceiling leaves, and always at least one
+bar. An explicit `continuation_bars` or `target_bars` still decides how much is
+added; only the source is bounded.
+
+The check runs when the job is submitted, from the decoded audio or the
+prefix's own score, so an over-long source is refused at once with a `400`
+naming its length and the limit, before anything is transcribed or loaded. A
+request that lowers `natural_max_seconds` is checked against its own ceiling.
+`/health` and `/props` report `continue_max_source_seconds` beside
+`natural_max_seconds` so a client can refuse before uploading. A cover may run
+to the full `natural_max_seconds`. A ceiling of `0` lifts every bound here.
 
 Set it to `0` for a local install where a fifteen-minute render is the user's
 own time to spend. Leave it on for anything shared: a request may lower the
@@ -474,7 +495,9 @@ the kept length takes whatever the planner happened to be writing instead. The
 margin buys room for an ending to arrive while bounding the runaway case. On
 a continuation the margin covers only the bars being added, since the
 transcribed prefix is kept as it is: a 10-bar clip continued by 8 stops at
-10 + 8 × 2 = 26 bars, not (10 + 8) × 2.
+10 + 8 × 2 = 26 bars, not (10 + 8) × 2. On natural length it covers the room
+the prefix leaves under the ceiling: a 60 s prefix under a 96 s ceiling stops
+at 60 + 36 × 2 = 132 s.
 
 A stop can only land where the score parses, which is a balanced Vocal/Ins
 block boundary, so both are block-granular and overshoot the threshold by up

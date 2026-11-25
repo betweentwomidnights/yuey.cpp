@@ -1,5 +1,26 @@
 # changelog
 
+## v0.3.3
+
+**a long source no longer buys a long render.** a continuation kept every
+source bar and held only what it added to the natural-length ceiling, so
+continuing a two-minute output ran about ten minutes and sounded worse for it.
+`/continue`, and `/plan` or `/generate` with a scored `abc_prefix`, are now
+held to `natural_max_seconds` as a whole, source plus new bars. a source that
+leaves less than ten seconds of room (half the ceiling under twenty) is refused
+with a `400` at submit, before anything is transcribed or loaded, and the
+message names its length and the limit. `/cover` is as long as its source, so a
+source longer than the ceiling is refused the same way. `/health` and `/props`
+report the limit as `continue_max_source_seconds`. with the default ceiling of
+180 a continuation source may run to 170 s, and with gary4local's 96 to 86 s.
+an explicit `continuation_bars` or `target_bars` still sets how much is added.
+a ceiling of `0` lifts every bound, as before.
+
+**a tight ceiling no longer cuts a continuation's source.** the natural fit
+lifted its outro from the plan's tail even when the room past the prefix was
+smaller than the outro, which displaced the last source bars. the outro now
+comes only from the new bars.
+
 ## v0.3.1
 
 **ggml moves from `b77ae790` to `e3db5210`,** the shared fork on upstream GGML
