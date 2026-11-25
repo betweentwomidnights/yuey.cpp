@@ -251,11 +251,14 @@ public:
                         ? std::numeric_limits<std::uint32_t>::max()
                         : static_cast<std::uint32_t>(wanted);
                 } else if (effective.natural_max_seconds > 0.0) {
-                    // A continuation keeps its prefix whatever the ceiling
-                    // says, so the plan has to clear the prefix before the
-                    // ceiling means anything.
-                    planning_stop_seconds = supplied_prefix_seconds +
-                        effective.natural_max_seconds * effective.planning_overrun;
+                    // The ceiling holds a continuation as a whole, prefix
+                    // included, so the margin covers only the room the prefix
+                    // leaves. With none left this stops at the first block
+                    // past the prefix, which is all the fit keeps anyway.
+                    const double room = std::max(
+                        effective.natural_max_seconds - supplied_prefix_seconds, 0.0);
+                    planning_stop_seconds =
+                        supplied_prefix_seconds + room * effective.planning_overrun;
                 }
             }
             const auto planning_loop_bars = effective.planning_loop_bars;
@@ -384,9 +387,9 @@ public:
             // window: the score sets the semantic floor, so a plan that runs
             // long forces a render that runs long. A supplied score is the
             // caller's own decision and is left alone. A continuation is held
-            // too, but by what it adds: its prefix bars are retained whatever
-            // the ceiling says, so the result never comes back shorter than the
-            // audio it extends.
+            // as a whole, prefix included: its prefix bars are never cut and it
+            // always adds at least one, and the server refuses a prefix that
+            // leaves too little room before it gets this far.
             auto held = fit_natural_plan_to_ceiling(
                 result.abc, effective.natural_max_seconds, effective.outro_bars,
                 supplied_prefix_bars);

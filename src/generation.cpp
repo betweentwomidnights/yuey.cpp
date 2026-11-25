@@ -836,7 +836,8 @@ std::string fit_natural_plan_to_ceiling(
     if (!(max_seconds > 0.0) || !std::isfinite(max_seconds)) return abc;
     const auto score = inspect_abc_score(abc);
     if (score.bars == 0 || !std::isfinite(score.duration_seconds)) return abc;
-    if (retained_bars == 0 && score.duration_seconds <= max_seconds) return abc;
+    if (score.duration_seconds <= max_seconds) return abc;
+    if (retained_bars >= score.bars) return abc;
 
     const double seconds_per_bar =
         score.duration_seconds / static_cast<double>(score.bars);
@@ -849,20 +850,17 @@ std::string fit_natural_plan_to_ceiling(
         : static_cast<std::uint32_t>(std::min(
               allowance, static_cast<double>(std::numeric_limits<std::uint32_t>::max())));
 
-    // A continuation is measured by what it adds. Its source is already as long
-    // as it is, and cutting below that would hand back less than was given.
-    if (retained_bars != 0) {
-        if (retained_bars >= score.bars) return abc;
-        allowed = retained_bars
-            > std::numeric_limits<std::uint32_t>::max() - allowed
-            ? std::numeric_limits<std::uint32_t>::max()
-            : retained_bars + allowed;
-    }
+    // A continuation counts against the ceiling as a whole. It used to be
+    // measured only by what it added, which let a long source buy a long
+    // render. The source is still never cut, and at least one bar is added.
+    if (retained_bars != 0) allowed = std::max(allowed, retained_bars + 1);
     if (allowed >= score.bars) return abc;
 
     // Keep an ending even when the ceiling is tighter than the outro we would
-    // normally lift from the tail.
-    const auto outro = std::min(outro_bars == 0 ? 1U : outro_bars, allowed);
+    // normally lift from the tail. On a continuation the outro comes only out
+    // of the new bars, so lifting it never displaces source bars.
+    const auto room = allowed - retained_bars;
+    const auto outro = std::min(outro_bars == 0 ? 1U : outro_bars, room);
     return fit_abc_score_to_bars(abc, allowed, outro);
 }
 

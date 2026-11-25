@@ -68,7 +68,8 @@ void check_generation_policy() {
     const auto body = yue2::server::generation_policy_json(policy);
 
     for (const char * key : {"natural_max_seconds", "planning_overrun", "planning_loop_bars",
-                             "instrumental_method", "use_instrumental_adapter"}) {
+                             "instrumental_method", "use_instrumental_adapter",
+                             "continue_max_source_seconds"}) {
         assert(body.find(std::string("\"") + key + "\":") != std::string::npos);
     }
     // Spliceable into a larger object: no braces, no leading comma.
@@ -82,6 +83,8 @@ void check_generation_policy() {
     assert(yue2::server::json::u32(parsed, "planning_loop_bars", 0) == 12);
     assert(yue2::server::json::string(parsed, "instrumental_method") == "rest");
     assert(!yue2::server::json::boolean(parsed, "use_instrumental_adapter", true));
+    // Derived, so a client can refuse an over-long continuation before upload.
+    assert(yue2::server::json::number(parsed, "continue_max_source_seconds", 0.0) == 86.0);
 
     // A zero disables either bound and still has to be reported, not omitted.
     yue2::server::GenerationPolicy off;
@@ -90,6 +93,45 @@ void check_generation_policy() {
     const auto disabled = yue2::server::generation_policy_json(off);
     assert(disabled.find("\"planning_overrun\":") != std::string::npos);
     assert(disabled.find("\"planning_loop_bars\":") != std::string::npos);
+
+    // An unbounded server reports an unbounded continuation source.
+    yue2::server::GenerationPolicy unbounded;
+    unbounded.natural_max_seconds = 0.0;
+    const auto open = yue2::server::json::parse(
+        "{" + yue2::server::generation_policy_json(unbounded) + "}");
+    assert(yue2::server::json::number(open, "continue_max_source_seconds", -1.0) == 0.0);
+}
+
+void check_source_length() {
+    using yue2::server::SourceUse;
+    using yue2::server::continuation_max_source_seconds;
+    using yue2::server::source_length_refusal;
+
+    // A continuation is held to the ceiling as a whole and has to leave room
+    // for new music: ten seconds, or half the ceiling under twenty.
+    assert(continuation_max_source_seconds(96.0) == 86.0);
+    assert(continuation_max_source_seconds(180.0) == 170.0);
+    assert(continuation_max_source_seconds(12.0) == 6.0);
+    assert(continuation_max_source_seconds(0.0) == 0.0);
+
+    assert(source_length_refusal(SourceUse::continuation, "/continue", 30.0, 96.0).empty());
+    assert(source_length_refusal(SourceUse::continuation, "/continue", 86.0, 96.0).empty());
+    // The case that ran for ten minutes: a two-minute yuey output continued.
+    const auto refused =
+        source_length_refusal(SourceUse::continuation, "/continue", 128.4, 96.0);
+    assert(!refused.empty());
+    for (const char * part : {"/continue", "128.4 s", "96 s", "natural_max_seconds", "86 s"}) {
+        assert(refused.find(part) != std::string::npos);
+    }
+    // Zero is unbounded, for a local install whose time is its own.
+    assert(source_length_refusal(SourceUse::continuation, "/continue", 900.0, 0.0).empty());
+
+    // A cover is as long as its source, so the whole ceiling is available.
+    assert(source_length_refusal(SourceUse::cover, "/cover", 96.0, 96.0).empty());
+    const auto cover = source_length_refusal(SourceUse::cover, "/cover", 240.0, 96.0);
+    assert(cover.find("/cover") != std::string::npos);
+    assert(cover.find("240 s") != std::string::npos);
+    assert(source_length_refusal(SourceUse::cover, "/cover", 240.0, 0.0).empty());
 }
 
 void check_dice_prompts() {
@@ -192,6 +234,7 @@ void check_dice_prompts() {
 int main() {
     check_dice_prompts();
     check_generation_policy();
+    check_source_length();
     using namespace yue2::server;
     const auto parsed = json::parse(
         "{\"text\":\"line\\n\\ud83c\\udfb5\",\"seed\":\"18446744073709551615\","

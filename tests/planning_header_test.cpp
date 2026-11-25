@@ -216,17 +216,36 @@ int main() {
         assert(yue2::score_aligned_semantic_budget(timed) == 12250); // was 20125
     }
 
-    // A continuation is measured by what it adds, so its prefix is retained
-    // whatever the ceiling says and the result is never shorter than its source.
+    // A continuation is held as a whole, prefix included. Its prefix bars are
+    // never cut, and it always adds at least one.
     {
-        // long_score is 8 bars of 4/4 at 120bpm: 2 seconds a bar.
-        // Six bars of prefix plus a four second allowance keeps eight bars, so
-        // the score is already within its budget and comes back untouched.
-        assert(yue2::fit_natural_plan_to_ceiling(long_score, 4.0, 4, 6) == long_score);
+        // long_score is 8 bars of 4/4 at 120bpm: 2 seconds a bar, and its
+        // Vocal bars run C D E F G A B c.
+        // A four-bar prefix under a twelve second ceiling keeps six bars in
+        // all: the prefix and two new. This used to keep the whole eight,
+        // because only the added bars counted against the ceiling.
+        const auto whole = yue2::fit_natural_plan_to_ceiling(long_score, 12.0, 4, 4);
+        const auto whole_info = yue2::inspect_abc_score(whole);
+        assert(whole_info.bars == 6);
+        assert(whole_info.duration_seconds <= 12.0);
+        assert(whole.find("\"C\"F32|") != std::string::npos);
+        assert(whole.find("\"C\"c32|") != std::string::npos);
 
-        // The same six-bar prefix with a two second allowance keeps seven.
+        // A six-bar prefix with no room left under the ceiling still comes
+        // back with every source bar and exactly one new one.
+        assert(yue2::inspect_abc_score(
+            yue2::fit_natural_plan_to_ceiling(long_score, 4.0, 4, 6)).bars == 7);
+
+        // The outro is lifted from the new bars only. With an outro of two and
+        // one bar of room it used to displace the sixth source bar (A).
         const auto extended = yue2::fit_natural_plan_to_ceiling(long_score, 2.0, 2, 6);
         assert(yue2::inspect_abc_score(extended).bars == 7);
+        assert(extended.find("\"F\"A32|") != std::string::npos);
+        assert(extended.find("\"G\"B32|") == std::string::npos);
+        assert(extended.find("\"C\"c32|") != std::string::npos);
+
+        // A score already under the ceiling is untouched, prefix or not.
+        assert(yue2::fit_natural_plan_to_ceiling(long_score, 16.0, 4, 6) == long_score);
 
         // A prefix at or beyond the score is handed back whole rather than cut.
         assert(yue2::fit_natural_plan_to_ceiling(long_score, 2.0, 2, 8) == long_score);
