@@ -1,5 +1,18 @@
 # changelog
 
+## v0.3.4
+
+**Windows tools read and write non-ASCII paths.** the tools took a narrow
+`argv` and opened files through the legacy system code page, so a path
+outside it reached them as `?`, and an accented name came back to the
+orchestrator or into server JSON as invalid UTF-8. a dataset file named
+`Jóhannsson- A Deal with Chaos` stopped a gary4local user's SA3 LoRA run the
+same way. every executable now embeds a manifest that sets the process code
+page to UTF-8 (Windows 10 1903 and newer), so `yue2-train`, `yue2-ar-train`,
+`yue2-vae-encode`, `yue2-score`, `yue2-server` and the rest agree with
+`yue2-train-run`, which already used the wide APIs. the native training test
+now runs in a folder with accented and Japanese characters.
+
 ## v0.3.3
 
 **a long source no longer buys a long render.** a continuation kept every
